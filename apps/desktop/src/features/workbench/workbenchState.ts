@@ -760,7 +760,7 @@ export function createSearchEnabledState(
     summary: string;
   }
 ): WorkbenchState {
-  const rollbackEntryId = `search-enabled-${payload.provider.toLowerCase()}`;
+  const rollbackEntryId = createWorkbenchEventId(state, "search-enabled", payload.provider.toLowerCase());
 
   return recordRollbackEntry(
     {
@@ -818,7 +818,7 @@ export function createToolExecutionState(
     source: string;
   }
 ): WorkbenchState {
-  const rollbackEntryId = `tool-result-${payload.source}`;
+  const rollbackEntryId = createWorkbenchEventId(state, "tool-result", payload.source);
 
   return recordRollbackEntry(
     {
@@ -968,4 +968,12 @@ function prependConversationEntry(
   entry: ConversationEntry
 ): ConversationEntry[] {
   return [entry, ...entries].slice(0, 12);
+}
+
+function createWorkbenchEventId(
+  state: WorkbenchState,
+  prefix: string,
+  suffix: string
+): string {
+  return `${prefix}-${suffix}-${state.rollback.entries.length}`;
 }
