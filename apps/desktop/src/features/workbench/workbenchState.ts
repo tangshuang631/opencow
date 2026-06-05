@@ -31,6 +31,15 @@ export type RollbackPreviewState = {
   }>;
 };
 
+export type ConversationEntry = {
+  id: string;
+  kind: "assistant" | "system";
+  title: string;
+  summary: string;
+  actionLabel?: string;
+  rollbackTargetId?: string;
+};
+
 export type WorkbenchState = {
   model: {
     label: string;
@@ -55,6 +64,9 @@ export type WorkbenchState = {
   };
   confirmation: {
     pending: PendingConfirmation | null;
+  };
+  conversation: {
+    entries: ConversationEntry[];
   };
   rollback: {
     defaultLimit: number;
@@ -123,6 +135,16 @@ export function createInitialWorkbenchState(): WorkbenchState {
     confirmation: {
       pending: null
     },
+    conversation: {
+      entries: [
+        {
+          id: "assistant-welcome",
+          kind: "assistant",
+          title: "Ollama 本地优先",
+          summary: "默认使用本地 Ollama，并优先展示可追溯、可回退、可确认的桌面工作流。"
+        }
+      ]
+    },
     rollback: {
       ...createRollbackJournal({
         baselineEntry: createRollbackEntry(
@@ -174,6 +196,16 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
           diagnostic: overview.diagnostic,
           availableModels: overview.models
         },
+        conversation: {
+          entries: prependConversationEntry(state.conversation.entries, {
+            id: "ollama-offline",
+            kind: "system",
+            title: "Ollama 检查失败",
+            summary: overview.diagnostic,
+            actionLabel: "预览回退到 启动基线",
+            rollbackTargetId: "startup-baseline"
+          })
+        },
         audit: {
           summary: "Ollama 离线，等待本地服务恢复",
           lastEvent: {
@@ -210,6 +242,16 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         diagnostic: overview.diagnostic,
         availableModels: overview.models
       },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "ollama-ready",
+          kind: "system",
+          title: "本地模型读取完成",
+          summary: `已读取 ${overview.models.length} 个本地模型，当前模型 ${overview.selectedModel || "未选择模型"}。`,
+          actionLabel: "预览回退到 启动基线",
+          rollbackTargetId: "startup-baseline"
+        })
+      },
       audit: {
         summary: `已读取 ${overview.models.length} 个本地模型`,
         lastEvent: {
@@ -236,6 +278,16 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
         ...state.model,
         status: "等待 Ollama",
         diagnostic: detail
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "ollama-load-error",
+          kind: "system",
+          title: "Ollama 状态读取异常",
+          summary: detail,
+          actionLabel: "预览回退到 启动基线",
+          rollbackTargetId: "startup-baseline"
+        })
       },
       audit: {
         summary: "Ollama 状态读取失败，工作台保持可用",
@@ -273,6 +325,14 @@ export function createCommandPolicyBlockedState(
 ): WorkbenchState {
   return {
     ...state,
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `blocked-${payload.source}`,
+        kind: "system",
+        title: payload.summary,
+        summary: payload.detail
+      })
+    },
     audit: {
       summary: payload.summary,
       lastEvent: {
@@ -302,6 +362,16 @@ export function createHighRiskConfirmationState(
     confirmation: {
       pending
     },
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: "dangerous-confirmation",
+        kind: "system",
+        title: "等待高风险操作确认",
+        summary: pending.summary,
+        actionLabel: "预览回退到 启动基线",
+        rollbackTargetId: "startup-baseline"
+      })
+    },
     audit: {
       summary: "等待用户确认高风险操作",
       lastEvent: {
@@ -326,6 +396,16 @@ export function approvePendingConfirmationState(state: WorkbenchState): Workbenc
       ...state,
       confirmation: {
         pending: null
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "confirmation-approved",
+          kind: "system",
+          title: "已批准高风险操作",
+          summary: pending.summary,
+          actionLabel: "预览回退到 confirmation-approved",
+          rollbackTargetId: "confirmation-approved"
+        })
       },
       audit: {
         summary: "用户已批准高风险操作",
@@ -357,6 +437,16 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
       confirmation: {
         pending: null
       },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "confirmation-cancelled",
+          kind: "system",
+          title: "已取消高风险操作",
+          summary: pending.summary,
+          actionLabel: "预览回退到 confirmation-cancelled",
+          rollbackTargetId: "confirmation-cancelled"
+        })
+      },
       audit: {
         summary: "用户已取消高风险操作",
         lastEvent: {
@@ -384,6 +474,16 @@ export function requestPermissionModeChangeState(
       ...state.permission,
       pendingModeChange
     },
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `permission-request-${pendingModeChange.targetMode}`,
+        kind: "system",
+        title: "等待权限升级",
+        summary: pendingModeChange.reason,
+        actionLabel: "预览回退到 启动基线",
+        rollbackTargetId: "startup-baseline"
+      })
+    },
     audit: {
       summary: "等待用户确认权限升级",
       lastEvent: {
@@ -410,6 +510,16 @@ export function approvePermissionModeChangeState(state: WorkbenchState): Workben
         ...state.permission,
         ...getPermissionPresentation(pendingModeChange.targetMode),
         pendingModeChange: null
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "permission-approved",
+          kind: "system",
+          title: "已批准权限升级",
+          summary: pendingModeChange.reason,
+          actionLabel: "预览回退到 permission-mode-approved",
+          rollbackTargetId: "permission-mode-approved"
+        })
       },
       audit: {
         summary: "用户已批准权限升级",
@@ -442,6 +552,16 @@ export function cancelPermissionModeChangeState(state: WorkbenchState): Workbenc
         ...state.permission,
         pendingModeChange: null
       },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "permission-cancelled",
+          kind: "system",
+          title: "已取消权限升级",
+          summary: pendingModeChange.reason,
+          actionLabel: "预览回退到 permission-mode-cancelled",
+          rollbackTargetId: "permission-mode-cancelled"
+        })
+      },
       audit: {
         summary: "用户已取消权限升级",
         lastEvent: {
@@ -469,6 +589,16 @@ export function requestRollbackPreviewState(state: WorkbenchState, targetEntryId
 
   return {
     ...state,
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `rollback-preview-${targetEntryId}`,
+        kind: "system",
+        title: "等待确认回退",
+        summary: `准备回退到 ${targetEntry.label}，将撤销 ${preview.willRevertCount} 个后续状态。`,
+        actionLabel: `预览回退到 ${targetEntry.label}`,
+        rollbackTargetId: targetEntryId
+      })
+    },
     rollback: {
       ...state.rollback,
       pendingPreview: {
@@ -513,6 +643,16 @@ export function applyPendingRollbackState(state: WorkbenchState): WorkbenchState
   return {
     ...state,
     ...snapshot,
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `rollback-applied-${pendingPreview.targetEntryId}`,
+        kind: "system",
+        title: `已回退到 ${pendingPreview.targetLabel}`,
+        summary: `已恢复目标快照，并撤销 ${pendingPreview.willRevertCount} 个后续状态。`,
+        actionLabel: `预览回退到 ${pendingPreview.targetLabel}`,
+        rollbackTargetId: pendingPreview.targetEntryId
+      })
+    },
     rollback: {
       ...restoredJournal,
       snapshots: pruneRollbackSnapshots(state.rollback.snapshots, restoredJournal.entries),
@@ -539,6 +679,16 @@ export function cancelPendingRollbackState(state: WorkbenchState): WorkbenchStat
 
   return {
     ...state,
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `rollback-cancelled-${pendingPreview.targetEntryId}`,
+        kind: "system",
+        title: "已取消回退",
+        summary: `已取消回退到 ${pendingPreview.targetLabel}。`,
+        actionLabel: `预览回退到 ${pendingPreview.targetLabel}`,
+        rollbackTargetId: pendingPreview.targetEntryId
+      })
+    },
     rollback: {
       ...state.rollback,
       pendingPreview: null
@@ -652,4 +802,11 @@ function pruneRollbackSnapshots(
   return Object.fromEntries(
     Object.entries(snapshots).filter(([entryId]) => allowedIds.has(entryId))
   );
+}
+
+function prependConversationEntry(
+  entries: ConversationEntry[],
+  entry: ConversationEntry
+): ConversationEntry[] {
+  return [entry, ...entries].slice(0, 12);
 }

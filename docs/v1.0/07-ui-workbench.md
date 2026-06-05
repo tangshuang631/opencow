@@ -61,6 +61,7 @@ Left Sidebar | Main Conversation | Right Inspector
 - 工具调用状态。
 - 计划步骤。
 - 错误和修复提示。
+- 会话流中同时容纳欢迎消息、系统事件、最近操作和直接回退入口。
 
 底部：
 
@@ -86,6 +87,7 @@ Left Sidebar | Main Conversation | Right Inspector
 - hover 显示说明。
 - 点击后弹出确认面板。
 - 确认后回退到该消息执行操作前状态。
+- 在纯原型阶段，尚未接入真实用户消息时，可先用系统事件卡片承载相同回退入口，但后续要平滑替换到真实消息旁。
 
 ## 5. 错误交互
 

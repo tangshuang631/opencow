@@ -289,7 +289,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "确认回退" }));
 
-    expect(screen.getByText("已回退到 启动基线")).toBeInTheDocument();
+    expect(screen.getAllByText("已回退到 启动基线").length).toBeGreaterThan(0);
     expect(screen.getByText("权限: 只读")).toBeInTheDocument();
   });
 
@@ -304,11 +304,14 @@ describe("App", () => {
 
     render(<App />);
 
+    expect(screen.getAllByText("Ollama 本地优先").length).toBeGreaterThan(0);
+
     fireEvent.click(await screen.findByRole("button", { name: "模拟提权申请" }));
     fireEvent.click(screen.getByRole("button", { name: "批准提权" }));
 
     fireEvent.click(screen.getByRole("button", { name: "从会话区预览回退到 已批准权限升级" }));
 
+    expect(screen.getByText("等待确认回退")).toBeInTheDocument();
     expect(screen.getByText("目标回退点: 已批准权限升级")).toBeInTheDocument();
     expect(screen.getByText("将回退 0 个后续状态")).toBeInTheDocument();
   });

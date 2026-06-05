@@ -30,6 +30,11 @@ describe("createInitialWorkbenchState", () => {
     expect(state.rollback.maxLimit).toBe(20);
     expect(state.rollback.entries).toHaveLength(1);
     expect(state.rollback.entries[0]?.label).toBe("启动基线");
+    expect(state.conversation.entries[0]).toMatchObject({
+      id: "assistant-welcome",
+      kind: "assistant",
+      title: "Ollama 本地优先"
+    });
   });
 
   it("keeps a safe rollback record when ollama loading throws", () => {
@@ -115,6 +120,11 @@ describe("createInitialWorkbenchState", () => {
     });
     expect(updated.audit.summary).toBe("等待用户确认权限升级");
     expect(updated.audit.lastEvent.source).toBe("permission_mode_change");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      title: "等待权限升级",
+      actionLabel: "预览回退到 启动基线"
+    });
   });
 
   it("applies an approved permission mode change", () => {
@@ -166,6 +176,10 @@ describe("createInitialWorkbenchState", () => {
     });
     expect(previewed.rollback.pendingPreview?.affectedEntries[0]?.label).toBe("已批准权限升级");
     expect(previewed.audit.summary).toBe("等待用户确认回退");
+    expect(previewed.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      title: "等待确认回退"
+    });
   });
 
   it("applies rollback and restores the target snapshot", () => {
