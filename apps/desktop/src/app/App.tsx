@@ -14,6 +14,7 @@ import {
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
   createTaskExecutionRetriedState,
   createTaskExecutionStartedState,
@@ -247,6 +248,12 @@ export function App() {
     });
   }
 
+  function handleCancelActiveTask() {
+    startTransition(() => {
+      setState((current) => createTaskExecutionCancelledState(current));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -264,6 +271,7 @@ export function App() {
       onApplyRollback={handleApplyRollback}
       onCancelRollback={handleCancelRollback}
       onRetryLocalTask={handleRetryLocalTask}
+      onCancelActiveTask={handleCancelActiveTask}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}

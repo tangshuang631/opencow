@@ -1259,6 +1259,72 @@ export function createTaskExecutionRetriedState(state: WorkbenchState): Workbenc
   );
 }
 
+export function createTaskExecutionCancelledState(state: WorkbenchState): WorkbenchState {
+  const activeTaskId = state.tasks.activeTaskId;
+
+  if (!activeTaskId) {
+    return state;
+  }
+
+  const activeTask = state.tasks.items.find((item) => item.id === activeTaskId);
+
+  if (!activeTask) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tasks: {
+        pendingCount: state.tasks.pendingCount,
+        activeTaskId: null,
+        items: state.tasks.items.map((item) =>
+          item.id === activeTaskId
+            ? {
+                ...item,
+                status: "failed" as const
+              }
+            : item
+        )
+      },
+      output: {
+        title: "本地任务已停止",
+        summary: "当前任务已中断，未继续执行高风险或长耗时步骤。"
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `${activeTaskId}-cancelled`,
+          kind: "system",
+          title: "本地任务已停止",
+          summary: activeTask.summary,
+          detailLines: ["模块: tasks", "来源: local_task_cancelled", "建议: 可稍后重新排队执行"]
+        })
+      },
+      audit: {
+        summary: "本地任务已停止",
+        lastEvent: {
+          module: "tasks",
+          detail: activeTask.summary,
+          timestamp: "已停止",
+          source: "local_task_cancelled"
+        }
+      },
+      error: {
+        module: "tasks",
+        summary: "本地任务已停止",
+        detail: "用户主动中断了当前本地任务，系统已保持可恢复状态。",
+        actionLabel: "可稍后重新排队执行",
+        timestamp: "已停止",
+        source: "local_task_cancelled"
+      }
+    },
+    `${activeTaskId}-cancelled`,
+    "本地任务已停止",
+    `已停止本地任务: ${activeTask.summary}`,
+    "tool"
+  );
+}
+
 function getPermissionPresentation(mode: PermissionMode) {
   if (mode === "workspace-write") {
     return {

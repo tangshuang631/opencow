@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createInitialWorkbenchState,
+  createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
   createTaskExecutionRetriedState,
   createTaskExecutionStartedState,
@@ -127,5 +128,29 @@ describe("task queue state", () => {
     expect(retried.output.summary).toBe("当前有 1 条待处理的本地任务。");
     expect(retried.error).toBeNull();
     expect(retried.audit.summary).toBe("已重试本地任务");
+  });
+
+  it("cancels the running local task and keeps the app responsive", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "请检查当前工作区并整理待办"
+    });
+    const running = createTaskExecutionStartedState(queued);
+
+    const cancelled = createTaskExecutionCancelledState(running);
+
+    expect(cancelled.tasks.pendingCount).toBe(0);
+    expect(cancelled.tasks.activeTaskId).toBeNull();
+    expect(cancelled.tasks.items[0]).toMatchObject({
+      status: "failed",
+      summary: "请检查当前工作区并整理待办"
+    });
+    expect(cancelled.output.title).toBe("本地任务已停止");
+    expect(cancelled.output.summary).toBe("当前任务已中断，未继续执行高风险或长耗时步骤。");
+    expect(cancelled.error).toMatchObject({
+      module: "tasks",
+      summary: "本地任务已停止",
+      actionLabel: "可稍后重新排队执行"
+    });
+    expect(cancelled.audit.summary).toBe("本地任务已停止");
   });
 });

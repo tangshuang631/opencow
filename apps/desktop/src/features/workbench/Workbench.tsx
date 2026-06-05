@@ -14,6 +14,7 @@ type WorkbenchProps = {
   onApplyRollback: () => void;
   onCancelRollback: () => void;
   onRetryLocalTask: () => void;
+  onCancelActiveTask: () => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -33,6 +34,7 @@ export function Workbench({
   onApplyRollback,
   onCancelRollback,
   onRetryLocalTask,
+  onCancelActiveTask,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -53,7 +55,7 @@ export function Workbench({
       />
       <section className="workbench-main">
         <MainConversation state={state} onPreviewRollback={onPreviewRollback} />
-        <Composer state={state} onSubmitTask={onSubmitTask} />
+        <Composer state={state} onSubmitTask={onSubmitTask} onCancelActiveTask={onCancelActiveTask} />
       </section>
       <Inspector
         state={state}

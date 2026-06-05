@@ -1,19 +1,21 @@
-import { ArrowUp, Paperclip, Shield } from "lucide-react";
+import { ArrowUp, Paperclip, Shield, Square } from "lucide-react";
 import { useState } from "react";
 import type { WorkbenchState } from "../workbenchState";
 
 type ComposerProps = {
   state: WorkbenchState;
   onSubmitTask: (message: string) => void;
+  onCancelActiveTask: () => void;
 };
 
-export function Composer({ state, onSubmitTask }: ComposerProps) {
+export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerProps) {
   const [draft, setDraft] = useState("");
+  const hasActiveTask = state.tasks.activeTaskId !== null;
 
   function submitTask() {
     const message = draft.trim();
 
-    if (!message) {
+    if (!message || hasActiveTask) {
       return;
     }
 
@@ -43,6 +45,7 @@ export function Composer({ state, onSubmitTask }: ComposerProps) {
           aria-label="输入任务"
           placeholder="输入任务，默认使用本地 Ollama..."
           value={draft}
+          disabled={hasActiveTask}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -51,9 +54,15 @@ export function Composer({ state, onSubmitTask }: ComposerProps) {
             }
           }}
         />
-        <button className="send-button" type="button" aria-label="发送" onClick={submitTask}>
-          <ArrowUp aria-hidden="true" size={18} />
-        </button>
+        {hasActiveTask ? (
+          <button className="send-button" type="button" aria-label="停止任务" onClick={onCancelActiveTask}>
+            <Square aria-hidden="true" size={18} />
+          </button>
+        ) : (
+          <button className="send-button" type="button" aria-label="发送" onClick={submitTask}>
+            <ArrowUp aria-hidden="true" size={18} />
+          </button>
+        )}
       </div>
     </footer>
   );

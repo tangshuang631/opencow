@@ -145,6 +145,34 @@ describe("App", () => {
     expect(screen.getAllByText(/队列中/).length).toBeGreaterThan(0);
   });
 
+  it("stops the active local task from the composer without freezing the workbench", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "请检查当前工作区并整理待办" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    const stopButton = await screen.findByRole("button", { name: "停止任务" });
+    fireEvent.click(stopButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/本地任务已停止/).length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole("button", { name: "发送" })).toBeInTheDocument();
+    expect(screen.getByText(/当前任务已中断/)).toBeInTheDocument();
+  });
+
   it("renders queued local tasks in the inspector", () => {
     const state = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "请检查当前工作区并整理待办"
