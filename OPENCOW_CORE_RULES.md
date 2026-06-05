@@ -30,6 +30,8 @@ Rules:
 - Prefer direct push without proxy when pushing is needed.
 - If network fails, keep local commits complete and push later.
 - Do not rewrite history, change remotes, or alter branch strategy without explicit user approval.
+- Commit locally after a meaningful verified batch of work, not after every tiny edit.
+- Prefer fewer coherent commits over noisy micro-commits.
 
 ## 3. Use Skills And Superpowers
 
@@ -110,7 +112,32 @@ Rules:
 - Keep modules clear, small, and testable.
 - Prefer stable interfaces over hidden coupling.
 
-## 7. Module Split And File Size
+## 7. Desktop-First Product Target
+
+opencow is a desktop-first product. The web view is only a development preview and fallback surface.
+
+Rules:
+
+- Tauri desktop behavior is the primary product behavior.
+- Desktop startup, window layout, permissions, native dialogs, file access, shell controls, audit logs, and rollback are the main acceptance path.
+- Browser/Vite preview is useful for fast UI iteration, but it must not become the product target.
+- Do not optimize for web deployment at the expense of desktop reliability.
+- Do not add web-only flows that cannot be carried into the desktop app.
+- When browser preview and desktop behavior disagree, desktop behavior wins.
+
+## 8. Figma-Friendly UI Evolution
+
+The frontend should keep a clean path for future Figma-driven redesign and refinement.
+
+Rules:
+
+- Keep UI components modular and named by product role, such as `Sidebar`, `Composer`, `Inspector`, and `Workbench`.
+- Keep layout tokens, colors, spacing, and typography centralized enough to map to Figma variables later.
+- Avoid hardcoding complex visual decisions deep in business logic.
+- Preserve a clear path for exporting, comparing, or rebuilding screens from Figma.
+- UI copy remains Chinese-first, but developer-facing implementation notes may use English when it prevents encoding problems.
+
+## 9. Module Split And File Size
 
 Modules should be easy to inspect, debug, and optimize.
 
@@ -122,7 +149,7 @@ Rules:
 - Permission, safety, audit, rollback, and shell execution must not be buried inside ordinary UI event handlers.
 - Directory changes must be reflected in docs immediately.
 
-## 8. Directory Documentation
+## 10. Directory Documentation
 
 The directory map is part of the product's maintainability.
 
@@ -133,7 +160,7 @@ Rules:
 - Document new scripts, test commands, and entrypoints.
 - For any module being developed, read and update its matching doc first.
 
-## 9. Safety-Critical Development
+## 11. Safety-Critical Development
 
 Permissions, shell, safety, logs, and rollback are core safety paths.
 
@@ -147,7 +174,7 @@ Rules:
 - Dangerous operations not explicitly requested by the user must not run.
 - Rollback changes must verify rollback records and audit records.
 
-## 10. Error Handling
+## 12. Error Handling
 
 All errors must be traceable, explainable, and repairable.
 
@@ -160,7 +187,7 @@ Rules:
 - A failed task must not freeze the app.
 - Long tasks must be interruptible.
 
-## 11. Pre-Push Checklist
+## 13. Pre-Push Checklist
 
 Minimum requirements before push:
 
@@ -173,4 +200,3 @@ Minimum requirements before push:
 - Directory docs are updated.
 
 If a check cannot run, record the reason, risk, and substitute verification.
-
