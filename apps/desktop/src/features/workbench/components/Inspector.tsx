@@ -39,7 +39,31 @@ export function Inspector({ state }: InspectorProps) {
           <ScrollText aria-hidden="true" size={16} />
           日志
         </h2>
-        <p className="muted">可追溯记录将在这里显示</p>
+        <p className="muted">{state.audit.summary}</p>
+        <p className="muted">模块: {state.audit.lastEvent.module}</p>
+        <p className="muted">{state.audit.lastEvent.detail}</p>
+      </section>
+      <section>
+        <h2>错误</h2>
+        {state.error ? (
+          <>
+            <p className="muted">{state.error.summary}</p>
+            <p className="muted">模块: {state.error.module}</p>
+            <p className="muted">{state.error.detail}</p>
+            <p className="muted">建议: {state.error.actionLabel}</p>
+          </>
+        ) : (
+          <p className="muted">当前没有活动错误</p>
+        )}
+      </section>
+      <section>
+        <h2>高级设置</h2>
+        <p className="muted">远程 API 默认关闭</p>
+        <p className="muted">
+          {state.settings.remoteApi.collapsed
+            ? "保留 baseUrl 和 API 接入入口，按需展开。"
+            : "远程 API 设置已展开。"}
+        </p>
       </section>
     </aside>
   );

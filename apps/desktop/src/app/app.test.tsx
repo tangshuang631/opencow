@@ -23,5 +23,8 @@ describe("App", () => {
     expect(screen.getByRole("textbox", { name: "输入任务" })).toBeInTheDocument();
     expect(screen.getByText("输出")).toBeInTheDocument();
     expect((await screen.findAllByText("qwen2.5-coder:7b")).length).toBeGreaterThan(0);
+    expect(screen.getByText("高级设置")).toBeInTheDocument();
+    expect(screen.getByText("远程 API 默认关闭")).toBeInTheDocument();
+    expect(screen.getByText("已读取 1 个本地模型")).toBeInTheDocument();
   });
 });

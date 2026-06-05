@@ -7,6 +7,8 @@ describe("createInitialWorkbenchState", () => {
 
     expect(state.model.label).toBe("Ollama 本地优先");
     expect(state.model.remoteApiEnabled).toBe(false);
+    expect(state.settings.remoteApi.baseUrl).toBe("");
+    expect(state.settings.remoteApi.collapsed).toBe(true);
     expect(state.permission.mode).toBe("readonly");
     expect(state.rollback.defaultLimit).toBe(10);
     expect(state.rollback.maxLimit).toBe(20);
