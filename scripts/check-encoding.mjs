@@ -24,4 +24,11 @@ for (const file of globSync("apps/desktop/src/**/*.{ts,tsx,css}")) {
   }
 }
 
+for (const file of globSync("packages/**/*.{ts,tsx,css,json,md}")) {
+  const text = readFileSync(file).toString("utf8");
+  if (text.includes("\uFFFD")) {
+    throw new Error(`Encoding check failed: ${file}`);
+  }
+}
+
 console.log("encoding check passed");

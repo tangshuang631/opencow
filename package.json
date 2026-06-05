@@ -6,14 +6,17 @@
   "scripts": {
     "dev": "npm --workspace apps/desktop run dev",
     "desktop:dev": "npm --workspace apps/desktop run tauri:dev",
-    "build": "npm --workspace apps/desktop run build",
+    "build": "npm --workspaces --if-present run build",
     "test": "npm --workspaces --if-present run test",
-    "test:unit": "npm --workspace apps/desktop run test:unit",
+    "test:unit": "npm --workspaces --if-present run test:unit",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:health": "node scripts/check-health.mjs"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "devDependencies": {
+    "@types/node": "^22.19.19"
+  }
 }

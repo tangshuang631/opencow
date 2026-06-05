@@ -3,10 +3,14 @@ import { existsSync } from "node:fs";
 const requiredPaths = [
   "OPENCOW_CORE_RULES.md",
   "docs/v1.0/00-overview.md",
+  "docs/v1.0/10-openclaw-adapter.md",
   "apps/desktop/package.json",
   "apps/desktop/src/app/App.tsx",
   "apps/desktop/src/features/workbench/Workbench.tsx",
   "apps/desktop/src-tauri/tauri.conf.json",
+  "packages/openclaw-adapter/package.json",
+  "packages/openclaw-adapter/src/index.ts",
+  "packages/openclaw-adapter/src/upstreamMetadata.ts",
   "vendor"
 ];
 
