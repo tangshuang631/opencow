@@ -10,6 +10,7 @@ export function Composer({ state }: ComposerProps) {
     <footer className="composer-shell">
       <div className="composer-meta">
         <span>{state.model.label}</span>
+        <span>{state.model.activeModel}</span>
         <span aria-label="当前权限">
           <Shield aria-hidden="true" size={14} />
           {state.permission.label}

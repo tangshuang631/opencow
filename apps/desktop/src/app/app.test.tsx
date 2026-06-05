@@ -1,9 +1,20 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../features/ollama/ollamaService", () => ({
+  loadOllamaOverview: vi.fn().mockResolvedValue({
+    reachable: true,
+    endpoint: "http://127.0.0.1:11434",
+    selectedModel: "qwen2.5-coder:7b",
+    diagnostic: "",
+    models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+  })
+}));
+
 import { App } from "./App";
 
 describe("App", () => {
-  it("renders the local-first workbench shell", () => {
+  it("renders the local-first workbench shell", async () => {
     render(<App />);
 
     expect(screen.getByRole("button", { name: "新对话" })).toBeInTheDocument();
@@ -11,5 +22,6 @@ describe("App", () => {
     expect(screen.getByLabelText("当前权限")).toHaveTextContent("只读");
     expect(screen.getByRole("textbox", { name: "输入任务" })).toBeInTheDocument();
     expect(screen.getByText("输出")).toBeInTheDocument();
+    expect((await screen.findAllByText("qwen2.5-coder:7b")).length).toBeGreaterThan(0);
   });
 });

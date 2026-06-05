@@ -6,6 +6,8 @@ type MainConversationProps = {
 };
 
 export function MainConversation({ state }: MainConversationProps) {
+  const modelCount = state.model.availableModels.length;
+
   return (
     <section className="conversation" aria-label="会话">
       <header className="conversation-header">
@@ -30,6 +32,21 @@ export function MainConversation({ state }: MainConversationProps) {
               当前界面先接入本地模型、权限状态、回退点和右侧结果面板。OpenClaw
               源码放入 vendor 后，将通过 adapter 接入后端能力。
             </p>
+            <dl className="model-summary" aria-label="Ollama 状态">
+              <div>
+                <dt>连接地址</dt>
+                <dd>{state.model.endpoint}</dd>
+              </div>
+              <div>
+                <dt>当前模型</dt>
+                <dd>{state.model.activeModel}</dd>
+              </div>
+              <div>
+                <dt>本地模型数</dt>
+                <dd>{modelCount}</dd>
+              </div>
+            </dl>
+            {state.model.diagnostic ? <p className="message-note">{state.model.diagnostic}</p> : null}
           </div>
         </article>
       </div>

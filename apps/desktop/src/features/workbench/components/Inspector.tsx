@@ -21,13 +21,18 @@ export function Inspector({ state }: InspectorProps) {
           来源
         </h2>
         <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
+        <p className="muted">Ollama: {state.model.status}</p>
       </section>
       <section>
         <h2>
           <ListChecks aria-hidden="true" size={16} />
           工具
         </h2>
-        <p className="muted">等待任务</p>
+        <p className="muted">
+          {state.model.availableModels.length > 0
+            ? `已检测 ${state.model.availableModels.length} 个本地模型`
+            : "等待本地模型"}
+        </p>
       </section>
       <section>
         <h2>

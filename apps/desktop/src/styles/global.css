@@ -159,6 +159,39 @@ h1 {
   margin-bottom: 0;
 }
 
+.model-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 0;
+}
+
+.model-summary div {
+  padding: 12px;
+  border: 1px solid #edf0ee;
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.model-summary dt {
+  margin-bottom: 6px;
+  color: #7c858b;
+  font-size: 12px;
+}
+
+.model-summary dd {
+  margin: 0;
+  color: #243038;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.message-note {
+  margin-top: 12px;
+  color: #6f777d;
+  font-size: 13px;
+}
+
 .composer-shell {
   padding: 0 44px 28px;
 }
@@ -257,5 +290,9 @@ h1 {
 
   .inspector {
     display: none;
+  }
+
+  .model-summary {
+    grid-template-columns: 1fr;
   }
 }
