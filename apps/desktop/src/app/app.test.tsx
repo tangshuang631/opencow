@@ -409,6 +409,8 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getAllByText("已提交 1 条本地任务").length).toBeGreaterThan(0);
     });
+    expect(screen.getByText("本地任务队列")).toBeInTheDocument();
+    expect(screen.getByText("当前有 1 条待处理的本地任务。")).toBeInTheDocument();
     expect(screen.getAllByText("会话输入").length).toBeGreaterThan(0);
   });
 });

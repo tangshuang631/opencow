@@ -55,6 +55,13 @@ export type ToolExecutionResult = {
   source: string;
 };
 
+export type LocalTaskItem = {
+  id: string;
+  source: "composer";
+  status: "queued" | "running" | "completed" | "failed";
+  summary: string;
+};
+
 export type WorkbenchState = {
   model: {
     label: string;
@@ -102,6 +109,11 @@ export type WorkbenchState = {
   tools: {
     lastResult: ToolExecutionResult | null;
   };
+  tasks: {
+    pendingCount: number;
+    activeTaskId: string | null;
+    items: LocalTaskItem[];
+  };
   output: {
     title: string;
     summary: string;
@@ -141,6 +153,7 @@ export type RollbackSnapshot = Pick<
   | "search"
   | "sources"
   | "tools"
+  | "tasks"
   | "output"
   | "settings"
   | "audit"
@@ -201,6 +214,11 @@ export function createInitialWorkbenchState(): WorkbenchState {
     },
     tools: {
       lastResult: null
+    },
+    tasks: {
+      pendingCount: 0,
+      activeTaskId: null,
+      items: []
     },
     output: {
       title: "暂无产物",
@@ -935,6 +953,23 @@ export function createUserTaskSubmittedState(
   return recordRollbackEntry(
     {
       ...state,
+      tasks: {
+        pendingCount: state.tasks.pendingCount + 1,
+        activeTaskId: null,
+        items: [
+          {
+            id: rollbackEntryId,
+            source: "composer" as const,
+            status: "queued" as const,
+            summary: payload.message
+          },
+          ...state.tasks.items
+        ].slice(0, 20)
+      },
+      output: {
+        title: "\u672c\u5730\u4efb\u52a1\u961f\u5217",
+        summary: `\u5f53\u524d\u6709 ${state.tasks.pendingCount + 1} \u6761\u5f85\u5904\u7406\u7684\u672c\u5730\u4efb\u52a1\u3002`
+      },
       conversation: {
         entries: prependConversationEntries(state.conversation.entries, [
           {
@@ -1059,6 +1094,7 @@ function captureRollbackSnapshot(state: WorkbenchState): RollbackSnapshot {
     search: state.search,
     sources: state.sources,
     tools: state.tools,
+    tasks: state.tasks,
     output: state.output,
     settings: state.settings,
     audit: state.audit,
