@@ -3,9 +3,19 @@ import type { WorkbenchState } from "../workbenchState";
 
 type InspectorProps = {
   state: WorkbenchState;
+  onApproveDangerousAction: () => void;
+  onCancelDangerousAction: () => void;
+  onApprovePermissionRequest: () => void;
+  onCancelPermissionRequest: () => void;
 };
 
-export function Inspector({ state }: InspectorProps) {
+export function Inspector({
+  state,
+  onApproveDangerousAction,
+  onCancelDangerousAction,
+  onApprovePermissionRequest,
+  onCancelPermissionRequest
+}: InspectorProps) {
   return (
     <aside className="inspector" aria-label="右侧面板">
       <section>
@@ -15,6 +25,7 @@ export function Inspector({ state }: InspectorProps) {
         </h2>
         <p className="muted">暂无产物</p>
       </section>
+
       <section>
         <h2>
           <Globe2 aria-hidden="true" size={16} />
@@ -25,6 +36,7 @@ export function Inspector({ state }: InspectorProps) {
         <p className="muted">权限: {state.permission.label}</p>
         <p className="muted">{state.permission.summary}</p>
       </section>
+
       <section>
         <h2>{state.permission.confirmationTitle}</h2>
         <p className="muted">{state.permission.confirmationSummary}</p>
@@ -33,10 +45,19 @@ export function Inspector({ state }: InspectorProps) {
             <p className="muted">待切换权限: {state.permission.pendingModeChange.targetMode}</p>
             <p className="muted">提权原因: {state.permission.pendingModeChange.reason}</p>
             <p className="muted">风险说明: {state.permission.pendingModeChange.riskSummary}</p>
+            <div className="action-row">
+              <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
+                批准提权
+              </button>
+              <button className="action-button" type="button" onClick={onCancelPermissionRequest}>
+                取消提权
+              </button>
+            </div>
           </>
         ) : (
           <p className="muted">当前没有待确认的权限升级</p>
         )}
+
         {state.confirmation.pending ? (
           <>
             <p className="muted">{state.confirmation.pending.title}</p>
@@ -44,11 +65,20 @@ export function Inspector({ state }: InspectorProps) {
             <p className="muted">命令预览: {state.confirmation.pending.commandPreview}</p>
             <p className="muted">影响范围: {state.confirmation.pending.impact}</p>
             <p className="muted">所需权限: {state.confirmation.pending.requiredMode}</p>
+            <div className="action-row">
+              <button className="action-button action-button-primary" type="button" onClick={onApproveDangerousAction}>
+                批准高风险操作
+              </button>
+              <button className="action-button" type="button" onClick={onCancelDangerousAction}>
+                取消高风险操作
+              </button>
+            </div>
           </>
         ) : (
           <p className="muted">当前没有待确认的高风险操作</p>
         )}
       </section>
+
       <section>
         <h2>
           <ListChecks aria-hidden="true" size={16} />
@@ -60,6 +90,7 @@ export function Inspector({ state }: InspectorProps) {
             : "等待本地模型"}
         </p>
       </section>
+
       <section>
         <h2>
           <ScrollText aria-hidden="true" size={16} />
@@ -71,6 +102,7 @@ export function Inspector({ state }: InspectorProps) {
         <p className="muted">时间: {state.audit.lastEvent.timestamp}</p>
         <p className="muted">{state.audit.lastEvent.detail}</p>
       </section>
+
       <section>
         <h2>错误</h2>
         {state.error ? (
@@ -86,6 +118,7 @@ export function Inspector({ state }: InspectorProps) {
           <p className="muted">当前没有活动错误</p>
         )}
       </section>
+
       <section>
         <h2>高级设置</h2>
         <p className="muted">远程 API 默认关闭</p>
@@ -95,6 +128,7 @@ export function Inspector({ state }: InspectorProps) {
             : "远程 API 设置已展开。"}
         </p>
       </section>
+
       <section>
         <h2>回退记录</h2>
         {state.rollback.entries.map((entry) => (

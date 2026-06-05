@@ -81,6 +81,35 @@ textarea {
   margin-top: auto;
 }
 
+.sidebar-demo {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e6ece9;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.sidebar-demo-title {
+  margin: 0;
+  color: #657078;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-demo-button {
+  min-height: 34px;
+  border: 1px solid #dde5e1;
+  border-radius: 8px;
+  color: #273038;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.sidebar-demo-button:hover {
+  background: #f6f8f7;
+}
+
 .workbench-main {
   display: grid;
   grid-template-rows: 1fr auto;
@@ -281,6 +310,28 @@ h1 {
   margin: 0;
   color: #9aa1a6;
   font-size: 13px;
+}
+
+.action-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.action-button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #dde4e0;
+  border-radius: 8px;
+  color: #314049;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.action-button-primary {
+  border-color: #1f2328;
+  color: #ffffff;
+  background: #1f2328;
 }
 
 @media (max-width: 1180px) {

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Inspector } from "../features/workbench/components/Inspector";
 import {
@@ -20,6 +20,13 @@ vi.mock("../features/ollama/ollamaService", () => ({
 }));
 
 import { App } from "./App";
+
+const inspectorActions = {
+  onApproveDangerousAction: vi.fn(),
+  onCancelDangerousAction: vi.fn(),
+  onApprovePermissionRequest: vi.fn(),
+  onCancelPermissionRequest: vi.fn()
+};
 
 describe("App", () => {
   it("keeps the workbench visible and shows rollback records", async () => {
@@ -94,7 +101,7 @@ describe("App", () => {
       requiredMode: "controlled-full"
     });
 
-    render(<Inspector state={state} />);
+    render(<Inspector state={state} {...inspectorActions} />);
 
     expect(screen.getByText("确认删除临时目录")).toBeInTheDocument();
     expect(screen.getAllByText("模型计划删除工作区内的 temp-output 目录。").length).toBeGreaterThan(0);
@@ -114,7 +121,7 @@ describe("App", () => {
 
     const approved = approvePendingConfirmationState(pending);
 
-    render(<Inspector state={approved} />);
+    render(<Inspector state={approved} {...inspectorActions} />);
 
     expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
     expect(screen.getByText("用户已批准高风险操作")).toBeInTheDocument();
@@ -132,7 +139,7 @@ describe("App", () => {
 
     const cancelled = cancelPendingConfirmationState(pending);
 
-    render(<Inspector state={cancelled} />);
+    render(<Inspector state={cancelled} {...inspectorActions} />);
 
     expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
     expect(screen.getByText("用户已取消高风险操作")).toBeInTheDocument();
@@ -146,7 +153,7 @@ describe("App", () => {
       riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
     });
 
-    render(<Inspector state={requested} />);
+    render(<Inspector state={requested} {...inspectorActions} />);
 
     expect(screen.getByText("待切换权限: workspace-write")).toBeInTheDocument();
     expect(screen.getByText("提权原因: 需要在工作区内写入修复文件。")).toBeInTheDocument();
@@ -161,7 +168,7 @@ describe("App", () => {
     });
     const approved = approvePermissionModeChangeState(requested);
 
-    render(<Inspector state={approved} />);
+    render(<Inspector state={approved} {...inspectorActions} />);
 
     expect(screen.getByText("权限: 工作区读写")).toBeInTheDocument();
     expect(screen.getByText("允许在授权工作区内创建和修改文件。")).toBeInTheDocument();
@@ -177,10 +184,72 @@ describe("App", () => {
     });
     const cancelled = cancelPermissionModeChangeState(requested);
 
-    render(<Inspector state={cancelled} />);
+    render(<Inspector state={cancelled} {...inspectorActions} />);
 
     expect(screen.getByText("权限: 只读")).toBeInTheDocument();
     expect(screen.getByText("用户已取消权限升级")).toBeInTheDocument();
     expect(screen.getByText("当前没有待确认的权限升级")).toBeInTheDocument();
+  });
+
+  it("lets the desktop prototype approve or cancel a pending dangerous action", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    const { unmount } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟高风险操作" }));
+
+    expect(screen.getByText("确认删除临时目录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批准高风险操作" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消高风险操作" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "批准高风险操作" }));
+
+    expect(screen.getByText("用户已批准高风险操作")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟高风险操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消高风险操作" }));
+
+    expect(screen.getByText("用户已取消高风险操作")).toBeInTheDocument();
+  });
+
+  it("lets the desktop prototype approve or cancel a pending permission upgrade", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    const { unmount } = render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟提权申请" }));
+
+    expect(screen.getByText("待切换权限: workspace-write")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批准提权" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消提权" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "批准提权" }));
+
+    expect(screen.getByText("用户已批准权限升级")).toBeInTheDocument();
+    expect(screen.getByText("权限: 工作区读写")).toBeInTheDocument();
+
+    unmount();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟提权申请" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消提权" }));
+
+    expect(screen.getByText("用户已取消权限升级")).toBeInTheDocument();
   });
 });

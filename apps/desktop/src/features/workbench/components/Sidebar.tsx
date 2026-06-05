@@ -20,7 +20,12 @@ const navItems = [
   { label: "安全", icon: ShieldCheck }
 ];
 
-export function Sidebar() {
+type SidebarProps = {
+  onDemoDangerousAction: () => void;
+  onDemoPermissionRequest: () => void;
+};
+
+export function Sidebar({ onDemoDangerousAction, onDemoPermissionRequest }: SidebarProps) {
   return (
     <aside className="sidebar" aria-label="主导航">
       <button className="sidebar-primary" type="button">
@@ -38,6 +43,15 @@ export function Sidebar() {
           );
         })}
       </nav>
+      <section className="sidebar-demo" aria-label="安全演练入口">
+        <p className="sidebar-demo-title">桌面安全演练</p>
+        <button className="sidebar-demo-button" type="button" onClick={onDemoDangerousAction}>
+          模拟高风险操作
+        </button>
+        <button className="sidebar-demo-button" type="button" onClick={onDemoPermissionRequest}>
+          模拟提权申请
+        </button>
+      </section>
       <button className="sidebar-settings" type="button">
         <Settings aria-hidden="true" size={17} />
         设置

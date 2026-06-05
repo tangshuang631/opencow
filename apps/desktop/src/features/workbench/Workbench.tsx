@@ -6,17 +6,40 @@ import { Sidebar } from "./components/Sidebar";
 
 type WorkbenchProps = {
   state: WorkbenchState;
+  onApproveDangerousAction: () => void;
+  onCancelDangerousAction: () => void;
+  onApprovePermissionRequest: () => void;
+  onCancelPermissionRequest: () => void;
+  onDemoDangerousAction: () => void;
+  onDemoPermissionRequest: () => void;
 };
 
-export function Workbench({ state }: WorkbenchProps) {
+export function Workbench({
+  state,
+  onApproveDangerousAction,
+  onCancelDangerousAction,
+  onApprovePermissionRequest,
+  onCancelPermissionRequest,
+  onDemoDangerousAction,
+  onDemoPermissionRequest
+}: WorkbenchProps) {
   return (
     <main className="workbench" aria-label="opencow 工作台">
-      <Sidebar />
+      <Sidebar
+        onDemoDangerousAction={onDemoDangerousAction}
+        onDemoPermissionRequest={onDemoPermissionRequest}
+      />
       <section className="workbench-main">
         <MainConversation state={state} />
         <Composer state={state} />
       </section>
-      <Inspector state={state} />
+      <Inspector
+        state={state}
+        onApproveDangerousAction={onApproveDangerousAction}
+        onCancelDangerousAction={onCancelDangerousAction}
+        onApprovePermissionRequest={onApprovePermissionRequest}
+        onCancelPermissionRequest={onCancelPermissionRequest}
+      />
     </main>
   );
 }
