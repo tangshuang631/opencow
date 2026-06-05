@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Inspector } from "../features/workbench/components/Inspector";
 import {
@@ -8,6 +8,7 @@ import {
   cancelPermissionModeChangeState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
+  createUserTaskSubmittedState,
   createSearchEnabledState,
   requestPermissionModeChangeState
 } from "../features/workbench/workbenchState";
@@ -412,5 +413,21 @@ describe("App", () => {
     expect(screen.getByText("本地任务队列")).toBeInTheDocument();
     expect(screen.getByText("当前有 1 条待处理的本地任务。")).toBeInTheDocument();
     expect(screen.getAllByText("会话输入").length).toBeGreaterThan(0);
+  });
+  it("renders queued local tasks in the inspector", () => {
+    const state = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "\u8bf7\u68c0\u67e5\u5f53\u524d\u5de5\u4f5c\u533a\u5e76\u6574\u7406\u5f85\u529e"
+    });
+
+    render(<Inspector state={state} {...inspectorActions} />);
+
+    const taskSection = screen.getByText("\u672c\u5730\u4efb\u52a1").closest("section");
+
+    expect(taskSection).not.toBeNull();
+    expect(within(taskSection as HTMLElement).getByText("\u5f85\u5904\u7406 1 \u6761")).toBeInTheDocument();
+    expect(within(taskSection as HTMLElement).getByText("\u961f\u5217\u4e2d")).toBeInTheDocument();
+    expect(
+      within(taskSection as HTMLElement).getByText("\u8bf7\u68c0\u67e5\u5f53\u524d\u5de5\u4f5c\u533a\u5e76\u6574\u7406\u5f85\u529e")
+    ).toBeInTheDocument();
   });
 });

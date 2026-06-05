@@ -413,6 +413,39 @@ h1 {
   background: #1f2328;
 }
 
+.task-queue-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.task-queue-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #e8eeea;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fcfdfc 0%, #f8fbf9 100%);
+}
+
+.task-queue-status {
+  display: inline-flex;
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #4a5a64;
+  background: #eef4f7;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-queue-summary {
+  margin: 0;
+  color: #48545c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 @media (max-width: 1180px) {
   .workbench {
     grid-template-columns: 220px minmax(420px, 1fr);

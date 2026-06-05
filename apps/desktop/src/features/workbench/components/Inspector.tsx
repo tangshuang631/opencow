@@ -23,6 +23,10 @@ export function Inspector({
   onApplyRollback,
   onCancelRollback
 }: InspectorProps) {
+  const visibleSources = state.sources.items.slice(0, 3);
+  const visibleTasks = state.tasks.items.slice(0, 3);
+  const hasModels = state.model.availableModels.length > 0;
+
   return (
     <aside className="inspector" aria-label="右侧面板">
       <section>
@@ -44,7 +48,7 @@ export function Inspector({
         <p className="muted">Ollama: {state.model.status}</p>
         <p className="muted">权限: {state.permission.label}</p>
         <p className="muted">{state.permission.summary}</p>
-        {state.sources.items.slice(0, 3).map((item) => (
+        {visibleSources.map((item) => (
           <div key={`${item.provider}-${item.url}`}>
             <p className="muted">来源标题: {item.title}</p>
             <p className="muted">来源地址: {item.url}</p>
@@ -100,12 +104,32 @@ export function Inspector({
       <section>
         <h2>
           <ListChecks aria-hidden="true" size={16} />
+          本地任务
+        </h2>
+        <p className="muted">待处理 {state.tasks.pendingCount} 条</p>
+        {visibleTasks.length > 0 ? (
+          <div className="task-queue-list">
+            {visibleTasks.map((task) => (
+              <div key={task.id} className="task-queue-item">
+                <span className="task-queue-status">{getTaskStatusLabel(task.status)}</span>
+                <p className="task-queue-summary">{task.summary}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="muted">暂无本地任务</p>
+        )}
+      </section>
+
+      <section>
+        <h2>
+          <ListChecks aria-hidden="true" size={16} />
           工具
         </h2>
         <p className="muted">
           {state.tools.lastResult
             ? `${state.tools.lastResult.toolLabel}: ${state.tools.lastResult.summary}`
-            : state.model.availableModels.length > 0
+            : hasModels
               ? `已检测 ${state.model.availableModels.length} 个本地模型`
               : "等待本地模型"}
         </p>
@@ -148,6 +172,7 @@ export function Inspector({
             : "远程 API 设置已展开。"}
         </p>
       </section>
+
       <RollbackPanel
         state={state}
         onPreviewRollback={onPreviewRollback}
@@ -156,4 +181,20 @@ export function Inspector({
       />
     </aside>
   );
+}
+
+function getTaskStatusLabel(status: WorkbenchState["tasks"]["items"][number]["status"]) {
+  if (status === "running") {
+    return "执行中";
+  }
+
+  if (status === "completed") {
+    return "已完成";
+  }
+
+  if (status === "failed") {
+    return "已失败";
+  }
+
+  return "队列中";
 }
