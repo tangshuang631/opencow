@@ -133,6 +133,29 @@ describe("App", () => {
     expect(screen.queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
   });
 
+  it("requires confirmation before enabling remote api from conversation", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "请开启远程 API" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect((await screen.findAllByText(/确认开启远程 API/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/等待用户确认能力变更/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
+  });
+
   it("shows a traceable local task failure after desktop demo action", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,

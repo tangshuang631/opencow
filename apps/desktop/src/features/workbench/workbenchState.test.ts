@@ -159,6 +159,43 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.lastEvent.source).toBe("capability_toggle_approved");
   });
 
+  it("requests confirmation before enabling remote api from conversation", () => {
+    const updated = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "remote-api",
+      enabled: true,
+      source: "conversation_request",
+      reason: "用户要求开启远程 API 作为高级设置兼容入口。"
+    });
+
+    expect(updated.confirmation.pending).toMatchObject({
+      title: "确认开启远程 API",
+      summary: "用户要求开启远程 API 作为高级设置兼容入口。",
+      requiredMode: "readonly",
+      requestedFeature: "remote-api",
+      requestedEnabled: true
+    });
+    expect(updated.settings.remoteApi.enabled).toBe(false);
+    expect(updated.model.remoteApiEnabled).toBe(false);
+    expect(updated.audit.summary).toBe("等待用户确认能力变更");
+  });
+
+  it("applies requested remote api enablement after approval", () => {
+    const pending = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "remote-api",
+      enabled: true,
+      source: "conversation_request",
+      reason: "用户要求开启远程 API 作为高级设置兼容入口。"
+    });
+
+    const updated = approvePendingConfirmationState(pending);
+
+    expect(updated.confirmation.pending).toBeNull();
+    expect(updated.settings.remoteApi.enabled).toBe(true);
+    expect(updated.model.remoteApiEnabled).toBe(true);
+    expect(updated.audit.summary).toBe("已开启远程 API");
+    expect(updated.audit.lastEvent.source).toBe("capability_toggle_approved");
+  });
+
   it("tracks a pending permission mode change request", () => {
     const state = createInitialWorkbenchState();
 
