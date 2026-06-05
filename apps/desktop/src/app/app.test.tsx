@@ -5,6 +5,8 @@ import { Inspector } from "../features/workbench/components/Inspector";
 import {
   createInitialWorkbenchState,
   createSearchEnabledState,
+  createTaskExecutionFailedState,
+  createTaskExecutionStartedState,
   createUserTaskSubmittedState
 } from "../features/workbench/workbenchState";
 
@@ -24,7 +26,8 @@ const inspectorActions = {
   onPreviewRollback: vi.fn(),
   onApplyRollback: vi.fn(),
   onCancelRollback: vi.fn(),
-  onRetryLocalTask: vi.fn()
+  onRetryLocalTask: vi.fn(),
+  onCancelActiveTask: vi.fn()
 };
 
 describe("App", () => {
@@ -136,7 +139,10 @@ describe("App", () => {
       expect(screen.getAllByText(/本地任务执行失败/).length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "重试本地任务" }));
+    const taskSection = screen.getByRole("heading", { name: "本地任务" }).closest("section");
+
+    expect(taskSection).not.toBeNull();
+    fireEvent.click(within(taskSection as HTMLElement).getByRole("button", { name: "重试本地任务" }));
 
     await waitFor(() => {
       expect(screen.getAllByText(/已重试本地任务/).length).toBeGreaterThan(0);
@@ -163,7 +169,11 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    const stopButton = await screen.findByRole("button", { name: "停止任务" });
+    const composerInput = screen.getByRole("textbox", { name: "输入任务" });
+    const composerSection = composerInput.closest("section");
+
+    expect(composerSection).not.toBeNull();
+    const stopButton = await within(composerSection as HTMLElement).findByRole("button", { name: "停止任务" });
     fireEvent.click(stopButton);
 
     await waitFor(() => {
@@ -185,6 +195,40 @@ describe("App", () => {
     expect(taskSection).not.toBeNull();
     expect(within(taskSection as HTMLElement).getByText("待处理 1 条")).toBeInTheDocument();
     expect(within(taskSection as HTMLElement).getByText("队列中")).toBeInTheDocument();
+  });
+
+  it("shows a stop action for the running local task inside the inspector queue", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "请检查当前工作区并整理待办"
+    });
+    const running = createTaskExecutionStartedState(queued);
+
+    render(<Inspector state={running} {...inspectorActions} />);
+
+    const taskSection = screen.getByText("本地任务").closest("section");
+
+    expect(taskSection).not.toBeNull();
+    expect(within(taskSection as HTMLElement).getByRole("button", { name: "停止任务" })).toBeInTheDocument();
+  });
+
+  it("shows a retry action for the failed local task inside the inspector queue", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "请检查当前工作区并整理待办"
+    });
+    const running = createTaskExecutionStartedState(queued);
+    const failed = createTaskExecutionFailedState(running, {
+      summary: "本地任务执行失败",
+      detail: "Ollama 响应超时，请检查本地模型状态。",
+      actionLabel: "检查 Ollama 服务并重试",
+      source: "local_task_runner"
+    });
+
+    render(<Inspector state={failed} {...inspectorActions} />);
+
+    const taskSection = screen.getByText("本地任务").closest("section");
+
+    expect(taskSection).not.toBeNull();
+    expect(within(taskSection as HTMLElement).getByRole("button", { name: "重试本地任务" })).toBeInTheDocument();
   });
 
   it("renders multiple search sources in the inspector", () => {

@@ -12,6 +12,7 @@ type InspectorProps = {
   onApplyRollback: () => void;
   onCancelRollback: () => void;
   onRetryLocalTask: () => void;
+  onCancelActiveTask: () => void;
 };
 
 export function Inspector({
@@ -23,7 +24,8 @@ export function Inspector({
   onPreviewRollback,
   onApplyRollback,
   onCancelRollback,
-  onRetryLocalTask
+  onRetryLocalTask,
+  onCancelActiveTask
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
@@ -115,6 +117,30 @@ export function Inspector({
               <div key={task.id} className="task-queue-item">
                 <span className="task-queue-status">{getTaskStatusLabel(task.status)}</span>
                 <p className="task-queue-summary">{task.summary}</p>
+                {task.status === "running" ? (
+                  <div className="action-row">
+                    <button
+                      aria-label="停止任务"
+                      className="action-button"
+                      type="button"
+                      onClick={onCancelActiveTask}
+                    >
+                      鍋滄浠诲姟
+                    </button>
+                  </div>
+                ) : null}
+                {task.status === "failed" ? (
+                  <div className="action-row">
+                    <button
+                      aria-label="重试本地任务"
+                      className="action-button action-button-primary"
+                      type="button"
+                      onClick={onRetryLocalTask}
+                    >
+                      閲嶈瘯鏈湴浠诲姟
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>

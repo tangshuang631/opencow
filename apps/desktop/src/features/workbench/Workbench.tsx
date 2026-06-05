@@ -67,6 +67,7 @@ export function Workbench({
         onApplyRollback={onApplyRollback}
         onCancelRollback={onCancelRollback}
         onRetryLocalTask={onRetryLocalTask}
+        onCancelActiveTask={onCancelActiveTask}
       />
     </main>
   );
