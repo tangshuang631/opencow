@@ -58,14 +58,17 @@ export function createRemoteApiConfigState(
   payload: {
     baseUrl: string;
     providerLabel: string;
+    apiKey: string;
   }
 ): WorkbenchState {
   const nextBaseUrl = payload.baseUrl.trim();
   const nextProviderLabel = payload.providerLabel.trim();
+  const nextApiKey = payload.apiKey.trim();
 
   if (
     state.settings.remoteApi.baseUrl === nextBaseUrl &&
-    state.settings.remoteApi.providerLabel === nextProviderLabel
+    state.settings.remoteApi.providerLabel === nextProviderLabel &&
+    state.settings.remoteApi.apiKey === nextApiKey
   ) {
     return state;
   }
@@ -78,7 +81,8 @@ export function createRemoteApiConfigState(
         remoteApi: {
           ...state.settings.remoteApi,
           baseUrl: nextBaseUrl,
-          providerLabel: nextProviderLabel
+          providerLabel: nextProviderLabel,
+          apiKey: nextApiKey
         }
       },
       conversation: {
@@ -95,7 +99,7 @@ export function createRemoteApiConfigState(
         summary: "已更新远程 API 配置",
         lastEvent: {
           module: "network",
-          detail: `baseUrl=${nextBaseUrl || "未填写"} provider=${nextProviderLabel || "未填写"}`,
+          detail: `baseUrl=${nextBaseUrl || "未填写"} provider=${nextProviderLabel || "未填写"} apiKey=${nextApiKey ? "已填写" : "未填写"}`,
           timestamp: "已执行",
           source: "remote_api_config"
         }

@@ -124,6 +124,7 @@ export type WorkbenchState = {
       enabled: boolean;
       baseUrl: string;
       providerLabel: string;
+      apiKey: string;
     };
   };
   storage: {

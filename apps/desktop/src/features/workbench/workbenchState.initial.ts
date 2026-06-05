@@ -70,7 +70,8 @@ export function createInitialWorkbenchState(): WorkbenchState {
         collapsed: true,
         enabled: false,
         baseUrl: "",
-        providerLabel: ""
+        providerLabel: "",
+        apiKey: ""
       }
     },
     storage: {

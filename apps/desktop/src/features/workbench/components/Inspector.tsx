@@ -19,7 +19,7 @@ type InspectorProps = {
   onCleanupStorage: (target: StorageCleanupTarget) => void;
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
-  onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string }) => void;
+  onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
 };
 
@@ -77,6 +77,7 @@ const TEXT = {
   saveSearchProvider: "\u4fdd\u5b58\u8054\u7f51\u641c\u7d22\u914d\u7f6e",
   remoteApiBaseUrl: "\u8fdc\u7a0b API Base URL",
   remoteApiProvider: "\u8fdc\u7a0b API Provider",
+  remoteApiKey: "\u8fdc\u7a0b API Key",
   saveRemoteApi: "\u4fdd\u5b58\u8fdc\u7a0b API \u914d\u7f6e",
   rollbackLimit: "\u56de\u9000\u70b9\u4e0a\u9650",
   rollbackHintPrefix: "\u5f53\u524d\u6700\u591a\u4fdd\u7559",
@@ -122,6 +123,7 @@ export function Inspector({
   const hasModels = state.model.availableModels.length > 0;
   const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
   const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
+  const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
   const [searchProviderLabel, setSearchProviderLabel] = useState(state.search.providerLabel || "Tavily");
 
   return (
@@ -352,13 +354,25 @@ export function Inspector({
           </label>
         </div>
         <div className="action-row">
+          <label>
+            <span className="muted">{TEXT.remoteApiKey}</span>
+            <input
+              aria-label={TEXT.remoteApiKey}
+              type="password"
+              value={remoteApiKey}
+              onChange={(event) => setRemoteApiKey(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="action-row">
           <button
             className="action-button"
             type="button"
             onClick={() =>
               onSaveRemoteApiConfig({
                 baseUrl: remoteApiBaseUrl,
-                providerLabel: remoteApiProviderLabel
+                providerLabel: remoteApiProviderLabel,
+                apiKey: remoteApiKey
               })
             }
           >

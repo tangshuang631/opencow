@@ -310,6 +310,7 @@ describe("App", () => {
     expect(settingsSection).not.toBeNull();
     expect(within(settingsSection as HTMLElement).getByLabelText("远程 API Base URL")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByLabelText("远程 API Provider")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByLabelText("远程 API Key")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByRole("button", { name: "保存远程 API 配置" })).toBeInTheDocument();
   });
 

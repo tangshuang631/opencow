@@ -531,11 +531,13 @@ describe("createInitialWorkbenchState", () => {
     const enabled = createRemoteApiToggleState(createInitialWorkbenchState(), true);
     const updated = createRemoteApiConfigState(enabled, {
       baseUrl: "http://127.0.0.1:8787/v1",
-      providerLabel: "ccswitch"
+      providerLabel: "ccswitch",
+      apiKey: "sk-opencow-local"
     });
 
     expect(updated.settings.remoteApi.baseUrl).toBe("http://127.0.0.1:8787/v1");
     expect(updated.settings.remoteApi.providerLabel).toBe("ccswitch");
+    expect(updated.settings.remoteApi.apiKey).toBe("sk-opencow-local");
     expect(updated.audit.summary).toBe("已更新远程 API 配置");
     expect(updated.audit.lastEvent.source).toBe("remote_api_config");
     expect(updated.conversation.entries[0]).toMatchObject({

@@ -289,7 +289,7 @@ export function App() {
     });
   }
 
-  function handleSaveRemoteApiConfig(payload: { baseUrl: string; providerLabel: string }) {
+  function handleSaveRemoteApiConfig(payload: { baseUrl: string; providerLabel: string; apiKey: string }) {
     startTransition(() => {
       setState((current) => createRemoteApiConfigState(current, payload));
     });
