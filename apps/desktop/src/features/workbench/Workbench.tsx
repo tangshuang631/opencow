@@ -16,6 +16,7 @@ type WorkbenchProps = {
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
+  onDemoTaskFailure: () => void;
   onDemoToolResult: () => void;
   onDemoToolError: () => void;
   onSubmitTask: (message: string) => void;
@@ -33,6 +34,7 @@ export function Workbench({
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
+  onDemoTaskFailure,
   onDemoToolResult,
   onDemoToolError,
   onSubmitTask
@@ -43,6 +45,7 @@ export function Workbench({
         onDemoDangerousAction={onDemoDangerousAction}
         onDemoPermissionRequest={onDemoPermissionRequest}
         onDemoSearch={onDemoSearch}
+        onDemoTaskFailure={onDemoTaskFailure}
         onDemoToolResult={onDemoToolResult}
         onDemoToolError={onDemoToolError}
       />

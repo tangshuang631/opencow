@@ -24,6 +24,7 @@ type SidebarProps = {
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
+  onDemoTaskFailure: () => void;
   onDemoToolResult: () => void;
   onDemoToolError: () => void;
 };
@@ -32,6 +33,7 @@ export function Sidebar({
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
+  onDemoTaskFailure,
   onDemoToolResult,
   onDemoToolError
 }: SidebarProps) {
@@ -52,16 +54,19 @@ export function Sidebar({
           );
         })}
       </nav>
-      <section className="sidebar-demo" aria-label="安全演练入口">
+      <section className="sidebar-demo" aria-label="桌面演练入口">
         <p className="sidebar-demo-title">桌面安全演练</p>
         <button className="sidebar-demo-button" type="button" onClick={onDemoDangerousAction}>
           模拟高风险操作
         </button>
         <button className="sidebar-demo-button" type="button" onClick={onDemoPermissionRequest}>
-          模拟提权申请
+          模拟提权请求
         </button>
         <button className="sidebar-demo-button" type="button" onClick={onDemoSearch}>
           模拟联网搜索
+        </button>
+        <button className="sidebar-demo-button" type="button" onClick={onDemoTaskFailure}>
+          模拟本地任务失败
         </button>
         <button className="sidebar-demo-button" type="button" onClick={onDemoToolResult}>
           模拟工具结果

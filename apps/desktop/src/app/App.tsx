@@ -14,6 +14,7 @@ import {
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createTaskExecutionFailedState,
   createTaskExecutionStartedState,
   createTaskExecutionSucceededState,
   createUserTaskSubmittedState,
@@ -219,6 +220,26 @@ export function App() {
     });
   }
 
+  function handleDemoTaskFailure() {
+    startTransition(() => {
+      setState((current) =>
+        createTaskExecutionFailedState(
+          createTaskExecutionStartedState(
+            createUserTaskSubmittedState(current, {
+              message: "请检查本地模型状态并重试当前任务"
+            })
+          ),
+          {
+            summary: "本地任务执行失败",
+            detail: "Ollama 响应超时，请检查本地模型状态。",
+            actionLabel: "检查 Ollama 服务并重试",
+            source: "local_task_runner"
+          }
+        )
+      );
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -238,6 +259,7 @@ export function App() {
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}
+      onDemoTaskFailure={handleDemoTaskFailure}
       onDemoToolResult={handleDemoToolResult}
       onDemoToolError={handleDemoToolError}
       onSubmitTask={handleSubmitTask}
