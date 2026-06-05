@@ -23,9 +23,16 @@ const navItems = [
 type SidebarProps = {
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
+  onDemoSearch: () => void;
+  onDemoToolResult: () => void;
 };
 
-export function Sidebar({ onDemoDangerousAction, onDemoPermissionRequest }: SidebarProps) {
+export function Sidebar({
+  onDemoDangerousAction,
+  onDemoPermissionRequest,
+  onDemoSearch,
+  onDemoToolResult
+}: SidebarProps) {
   return (
     <aside className="sidebar" aria-label="主导航">
       <button className="sidebar-primary" type="button">
@@ -50,6 +57,12 @@ export function Sidebar({ onDemoDangerousAction, onDemoPermissionRequest }: Side
         </button>
         <button className="sidebar-demo-button" type="button" onClick={onDemoPermissionRequest}>
           模拟提权申请
+        </button>
+        <button className="sidebar-demo-button" type="button" onClick={onDemoSearch}>
+          模拟联网搜索
+        </button>
+        <button className="sidebar-demo-button" type="button" onClick={onDemoToolResult}>
+          模拟工具结果
         </button>
       </section>
       <button className="sidebar-settings" type="button">

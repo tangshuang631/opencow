@@ -10,6 +10,8 @@ import {
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
+  createSearchEnabledState,
+  createToolExecutionState,
   requestRollbackPreviewState,
   requestPermissionModeChangeState
 } from "./workbenchState";
@@ -235,6 +237,49 @@ describe("createInitialWorkbenchState", () => {
       detail: "工作目录超出授权范围: c:/windows",
       actionLabel: "检查工作目录与权限范围",
       source: "command_policy"
+    });
+  });
+
+  it("records search enablement, source metadata, and a conversation event", () => {
+    const updated = createSearchEnabledState(createInitialWorkbenchState(), {
+      provider: "Tavily",
+      query: "OpenClaw Windows 本地助手",
+      sourceTitle: "OpenClaw GitHub",
+      sourceUrl: "https://github.com/example/openclaw",
+      summary: "已启用联网搜索，并注入 1 条来源摘要。"
+    });
+
+    expect(updated.search.enabled).toBe(true);
+    expect(updated.search.providerLabel).toBe("Tavily");
+    expect(updated.sources.items[0]).toMatchObject({
+      title: "OpenClaw GitHub",
+      url: "https://github.com/example/openclaw",
+      provider: "Tavily"
+    });
+    expect(updated.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      title: "联网搜索已开启"
+    });
+  });
+
+  it("records a tool execution result in the tool panel and conversation feed", () => {
+    const updated = createToolExecutionState(createInitialWorkbenchState(), {
+      toolLabel: "Skill 扫描",
+      summary: "已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。",
+      outputTitle: "本地 Skill 清单",
+      outputSummary: "生成了最新的本地 Skill 扫描结果，可用于后续启用与审计。",
+      source: "skills_scan"
+    });
+
+    expect(updated.tools.lastResult).toMatchObject({
+      toolLabel: "Skill 扫描",
+      summary: "已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。",
+      source: "skills_scan"
+    });
+    expect(updated.output.title).toBe("本地 Skill 清单");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      title: "工具执行完成"
     });
   });
 });

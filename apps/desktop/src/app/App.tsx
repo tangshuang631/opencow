@@ -13,6 +13,8 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
+  createSearchEnabledState,
+  createToolExecutionState,
   mergeOllamaOverview,
   requestRollbackPreviewState,
   requestPermissionModeChangeState
@@ -143,6 +145,34 @@ export function App() {
     });
   }
 
+  function handleDemoSearch() {
+    startTransition(() => {
+      setState((current) =>
+        createSearchEnabledState(current, {
+          provider: "Tavily",
+          query: "OpenClaw Windows 本地助手",
+          sourceTitle: "OpenClaw GitHub",
+          sourceUrl: "https://github.com/example/openclaw",
+          summary: "已启用联网搜索，并注入 1 条来源摘要。"
+        })
+      );
+    });
+  }
+
+  function handleDemoToolResult() {
+    startTransition(() => {
+      setState((current) =>
+        createToolExecutionState(current, {
+          toolLabel: "Skill 扫描",
+          summary: "已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。",
+          outputTitle: "本地 Skill 清单",
+          outputSummary: "生成了最新的本地 Skill 扫描结果，可用于后续启用与审计。",
+          source: "skills_scan"
+        })
+      );
+    });
+  }
+
   return (
     <Workbench
       state={state}
@@ -155,6 +185,8 @@ export function App() {
       onCancelRollback={handleCancelRollback}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
+      onDemoSearch={handleDemoSearch}
+      onDemoToolResult={handleDemoToolResult}
     />
   );
 }

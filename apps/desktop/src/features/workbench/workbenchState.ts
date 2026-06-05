@@ -40,6 +40,20 @@ export type ConversationEntry = {
   rollbackTargetId?: string;
 };
 
+export type SearchSourceItem = {
+  title: string;
+  url: string;
+  provider: string;
+  query: string;
+  summary: string;
+};
+
+export type ToolExecutionResult = {
+  toolLabel: string;
+  summary: string;
+  source: string;
+};
+
 export type WorkbenchState = {
   model: {
     label: string;
@@ -79,6 +93,17 @@ export type WorkbenchState = {
   };
   search: {
     enabled: boolean;
+    providerLabel: string;
+  };
+  sources: {
+    items: SearchSourceItem[];
+  };
+  tools: {
+    lastResult: ToolExecutionResult | null;
+  };
+  output: {
+    title: string;
+    summary: string;
   };
   settings: {
     remoteApi: {
@@ -158,7 +183,18 @@ export function createInitialWorkbenchState(): WorkbenchState {
       pendingPreview: null
     },
     search: {
-      enabled: false
+      enabled: false,
+      providerLabel: ""
+    },
+    sources: {
+      items: []
+    },
+    tools: {
+      lastResult: null
+    },
+    output: {
+      title: "暂无产物",
+      summary: "等待工具执行结果或本地产物摘要。"
     },
     settings: {
       remoteApi: {
@@ -700,6 +736,97 @@ export function cancelPendingRollbackState(state: WorkbenchState): WorkbenchStat
         detail: `已取消回退到 ${pendingPreview.targetLabel}。`,
         timestamp: "已取消",
         source: "rollback_cancelled"
+      }
+    }
+  };
+}
+
+export function createSearchEnabledState(
+  state: WorkbenchState,
+  payload: {
+    provider: string;
+    query: string;
+    sourceTitle: string;
+    sourceUrl: string;
+    summary: string;
+  }
+): WorkbenchState {
+  return {
+    ...state,
+    search: {
+      enabled: true,
+      providerLabel: payload.provider
+    },
+    sources: {
+      items: [
+        {
+          title: payload.sourceTitle,
+          url: payload.sourceUrl,
+          provider: payload.provider,
+          query: payload.query,
+          summary: payload.summary
+        },
+        ...state.sources.items
+      ].slice(0, 6)
+    },
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `search-enabled-${payload.provider}`,
+        kind: "system",
+        title: "联网搜索已开启",
+        summary: `${payload.provider} 已返回来源 ${payload.sourceTitle}。`
+      })
+    },
+    audit: {
+      summary: payload.summary,
+      lastEvent: {
+        module: "search",
+        detail: `${payload.provider} 查询: ${payload.query}`,
+        timestamp: "已执行",
+        source: "search_query"
+      }
+    }
+  };
+}
+
+export function createToolExecutionState(
+  state: WorkbenchState,
+  payload: {
+    toolLabel: string;
+    summary: string;
+    outputTitle: string;
+    outputSummary: string;
+    source: string;
+  }
+): WorkbenchState {
+  return {
+    ...state,
+    tools: {
+      lastResult: {
+        toolLabel: payload.toolLabel,
+        summary: payload.summary,
+        source: payload.source
+      }
+    },
+    output: {
+      title: payload.outputTitle,
+      summary: payload.outputSummary
+    },
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `tool-result-${payload.source}`,
+        kind: "system",
+        title: "工具执行完成",
+        summary: `${payload.toolLabel}: ${payload.summary}`
+      })
+    },
+    audit: {
+      summary: `${payload.toolLabel} 已完成`,
+      lastEvent: {
+        module: "tools",
+        detail: payload.summary,
+        timestamp: "已执行",
+        source: payload.source
       }
     }
   };

@@ -315,4 +315,28 @@ describe("App", () => {
     expect(screen.getByText("目标回退点: 已批准权限升级")).toBeInTheDocument();
     expect(screen.getByText("将回退 0 个后续状态")).toBeInTheDocument();
   });
+
+  it("shows search sources and tool results after desktop demo actions", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟联网搜索" }));
+
+    expect(screen.getAllByText("联网搜索已开启").length).toBeGreaterThan(0);
+    expect(screen.getByText("来源标题: OpenClaw GitHub")).toBeInTheDocument();
+    expect(screen.getByText("来源地址: https://github.com/example/openclaw")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "模拟工具结果" }));
+
+    expect(screen.getByText("工具执行完成")).toBeInTheDocument();
+    expect(screen.getByText("本地 Skill 清单")).toBeInTheDocument();
+    expect(screen.getAllByText("Skill 扫描: 已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。").length).toBeGreaterThan(0);
+  });
 });

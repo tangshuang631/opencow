@@ -15,6 +15,8 @@ type WorkbenchProps = {
   onCancelRollback: () => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
+  onDemoSearch: () => void;
+  onDemoToolResult: () => void;
 };
 
 export function Workbench({
@@ -27,13 +29,17 @@ export function Workbench({
   onApplyRollback,
   onCancelRollback,
   onDemoDangerousAction,
-  onDemoPermissionRequest
+  onDemoPermissionRequest,
+  onDemoSearch,
+  onDemoToolResult
 }: WorkbenchProps) {
   return (
     <main className="workbench" aria-label="opencow 工作台">
       <Sidebar
         onDemoDangerousAction={onDemoDangerousAction}
         onDemoPermissionRequest={onDemoPermissionRequest}
+        onDemoSearch={onDemoSearch}
+        onDemoToolResult={onDemoToolResult}
       />
       <section className="workbench-main">
         <MainConversation state={state} onPreviewRollback={onPreviewRollback} />

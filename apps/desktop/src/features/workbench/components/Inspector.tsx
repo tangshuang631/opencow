@@ -30,7 +30,8 @@ export function Inspector({
           <FileText aria-hidden="true" size={16} />
           输出
         </h2>
-        <p className="muted">暂无产物</p>
+        <p className="muted">{state.output.title}</p>
+        <p className="muted">{state.output.summary}</p>
       </section>
 
       <section>
@@ -39,9 +40,16 @@ export function Inspector({
           来源
         </h2>
         <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
+        {state.search.providerLabel ? <p className="muted">搜索提供方: {state.search.providerLabel}</p> : null}
         <p className="muted">Ollama: {state.model.status}</p>
         <p className="muted">权限: {state.permission.label}</p>
         <p className="muted">{state.permission.summary}</p>
+        {state.sources.items[0] ? (
+          <>
+            <p className="muted">来源标题: {state.sources.items[0].title}</p>
+            <p className="muted">来源地址: {state.sources.items[0].url}</p>
+          </>
+        ) : null}
       </section>
 
       <section>
@@ -95,9 +103,11 @@ export function Inspector({
           工具
         </h2>
         <p className="muted">
-          {state.model.availableModels.length > 0
-            ? `已检测 ${state.model.availableModels.length} 个本地模型`
-            : "等待本地模型"}
+          {state.tools.lastResult
+            ? `${state.tools.lastResult.toolLabel}: ${state.tools.lastResult.summary}`
+            : state.model.availableModels.length > 0
+              ? `已检测 ${state.model.availableModels.length} 个本地模型`
+              : "等待本地模型"}
         </p>
       </section>
 
