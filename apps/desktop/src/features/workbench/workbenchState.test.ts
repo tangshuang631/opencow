@@ -23,6 +23,7 @@ describe("createInitialWorkbenchState", () => {
     expect(state.permission.summary).toBe("仅允许读取已授权目录与附件。");
     expect(state.permission.requiresConfirmation).toBe(true);
     expect(state.rollback.defaultLimit).toBe(10);
+    expect(state.rollback.activeLimit).toBe(10);
     expect(state.rollback.maxLimit).toBe(20);
     expect(state.rollback.entries).toHaveLength(1);
     expect(state.rollback.entries[0]?.label).toBe("启动基线");
@@ -36,7 +37,7 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.error?.summary).toBe("无法连接本地 Ollama");
     expect(updated.audit.summary).toBe("Ollama 状态读取失败，工作台保持可用");
     expect(updated.rollback.entries).toHaveLength(2);
-    expect(updated.rollback.entries[1]?.label).toBe("异常保护");
+    expect(updated.rollback.entries[0]?.label).toBe("异常保护");
   });
 
   it("tracks a pending high-risk confirmation before dangerous actions run", () => {
@@ -75,7 +76,7 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.confirmation.pending).toBeNull();
     expect(updated.audit.summary).toBe("用户已批准高风险操作");
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation_approved");
-    expect(updated.rollback.entries[1]?.label).toBe("已批准操作");
+    expect(updated.rollback.entries[0]?.label).toBe("已批准操作");
   });
 
   it("records a cancelled high-risk confirmation and keeps the app safe", () => {
@@ -92,7 +93,7 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.confirmation.pending).toBeNull();
     expect(updated.audit.summary).toBe("用户已取消高风险操作");
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation_cancelled");
-    expect(updated.rollback.entries[1]?.label).toBe("已取消操作");
+    expect(updated.rollback.entries[0]?.label).toBe("已取消操作");
   });
 
   it("tracks a pending permission mode change request", () => {
@@ -127,6 +128,7 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.permission.pendingModeChange).toBeNull();
     expect(updated.audit.summary).toBe("用户已批准权限升级");
     expect(updated.audit.lastEvent.source).toBe("permission_mode_change_approved");
+    expect(updated.rollback.entries[0]?.label).toBe("已批准权限升级");
   });
 
   it("keeps the current permission mode when upgrade is cancelled", () => {

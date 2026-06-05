@@ -1,3 +1,5 @@
+import { appendRollbackEntry, createRollbackJournal } from "@opencow/rollback-core";
+import type { RollbackEntry, RollbackJournal } from "@opencow/rollback-core";
 import type { OllamaOverview } from "../ollama/ollamaService";
 
 export type PermissionMode = "readonly" | "workspace-write" | "controlled-full";
@@ -42,12 +44,10 @@ export type WorkbenchState = {
   };
   rollback: {
     defaultLimit: number;
+    activeLimit: number;
     maxLimit: number;
-    entries: Array<{
-      id: string;
-      label: string;
-      summary: string;
-    }>;
+    entries: RollbackEntry[];
+    lastRollback: RollbackJournal["lastRollback"];
   };
   search: {
     enabled: boolean;
@@ -102,17 +102,14 @@ export function createInitialWorkbenchState(): WorkbenchState {
     confirmation: {
       pending: null
     },
-    rollback: {
-      defaultLimit: 10,
-      maxLimit: 20,
-      entries: [
-        {
-          id: "startup-baseline",
-          label: "启动基线",
-          summary: "应用启动后的本地安全初始状态。"
-        }
-      ]
-    },
+    rollback: createRollbackJournal({
+      baselineEntry: createRollbackEntry(
+        "startup-baseline",
+        "启动基线",
+        "应用启动后的本地安全初始状态。",
+        "session"
+      )
+    }),
     search: {
       enabled: false
     },
@@ -149,17 +146,13 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         diagnostic: overview.diagnostic,
         availableModels: overview.models
       },
-      rollback: {
-        ...state.rollback,
-        entries: [
-          state.rollback.entries[0],
-          {
-            id: "ollama-check-offline",
-            label: "Ollama 检查",
-            summary: "本地模型服务离线，保留最近一次可回退检查点。"
-          }
-        ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
-      },
+      rollback: recordRollbackEntry(
+        state.rollback,
+        "ollama-check-offline",
+        "Ollama 检查",
+        "本地模型服务离线，保留最近一次可回退检查点。",
+        "session"
+      ),
       audit: {
         summary: "Ollama 离线，等待本地服务恢复",
         lastEvent: {
@@ -190,17 +183,13 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
       diagnostic: overview.diagnostic,
       availableModels: overview.models
     },
-    rollback: {
-      ...state.rollback,
-      entries: [
-        state.rollback.entries[0],
-        {
-          id: "ollama-check-ready",
-          label: "Ollama 检查",
-          summary: `已完成 ${overview.models.length} 个本地模型的读取检查。`
-        }
-      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
-    },
+    rollback: recordRollbackEntry(
+      state.rollback,
+      "ollama-check-ready",
+      "Ollama 检查",
+      `已完成 ${overview.models.length} 个本地模型的读取检查。`,
+      "session"
+    ),
     audit: {
       summary: `已读取 ${overview.models.length} 个本地模型`,
       lastEvent: {
@@ -222,17 +211,13 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
       status: "等待 Ollama",
       diagnostic: detail
     },
-    rollback: {
-      ...state.rollback,
-      entries: [
-        state.rollback.entries[0],
-        {
-          id: "ollama-load-error",
-          label: "异常保护",
-          summary: "Ollama 状态读取异常，工作台保留在最近一次安全状态。"
-        }
-      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
-    },
+    rollback: recordRollbackEntry(
+      state.rollback,
+      "ollama-load-error",
+      "异常保护",
+      "Ollama 状态读取异常，工作台保留在最近一次安全状态。",
+      "session"
+    ),
     audit: {
       summary: "Ollama 状态读取失败，工作台保持可用",
       lastEvent: {
@@ -317,17 +302,13 @@ export function approvePendingConfirmationState(state: WorkbenchState): Workbenc
     confirmation: {
       pending: null
     },
-    rollback: {
-      ...state.rollback,
-      entries: [
-        state.rollback.entries[0],
-        {
-          id: "confirmation-approved",
-          label: "已批准操作",
-          summary: `${pending.title} 已获批准，后续执行仍需记录日志与快照。`
-        }
-      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
-    },
+    rollback: recordRollbackEntry(
+      state.rollback,
+      "confirmation-approved",
+      "已批准操作",
+      `${pending.title} 已获批准，后续执行仍需记录日志与快照。`,
+      "tool"
+    ),
     audit: {
       summary: "用户已批准高风险操作",
       lastEvent: {
@@ -352,17 +333,13 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
     confirmation: {
       pending: null
     },
-    rollback: {
-      ...state.rollback,
-      entries: [
-        state.rollback.entries[0],
-        {
-          id: "confirmation-cancelled",
-          label: "已取消操作",
-          summary: `${pending.title} 已取消，工作台保持最近一次安全状态。`
-        }
-      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
-    },
+    rollback: recordRollbackEntry(
+      state.rollback,
+      "confirmation-cancelled",
+      "已取消操作",
+      `${pending.title} 已取消，工作台保持最近一次安全状态。`,
+      "tool"
+    ),
     audit: {
       summary: "用户已取消高风险操作",
       lastEvent: {
@@ -411,6 +388,13 @@ export function approvePermissionModeChangeState(state: WorkbenchState): Workben
       ...getPermissionPresentation(pendingModeChange.targetMode),
       pendingModeChange: null
     },
+    rollback: recordRollbackEntry(
+      state.rollback,
+      "permission-mode-approved",
+      "已批准权限升级",
+      `${pendingModeChange.targetMode} 权限已获批准，后续操作仍受安全链路保护。`,
+      "permission"
+    ),
     audit: {
       summary: "用户已批准权限升级",
       lastEvent: {
@@ -436,6 +420,13 @@ export function cancelPermissionModeChangeState(state: WorkbenchState): Workbenc
       ...state.permission,
       pendingModeChange: null
     },
+    rollback: recordRollbackEntry(
+      state.rollback,
+      "permission-mode-cancelled",
+      "已取消权限升级",
+      "权限保持当前模式，未执行额外提权。",
+      "permission"
+    ),
     audit: {
       summary: "用户已取消权限升级",
       lastEvent: {
@@ -469,5 +460,30 @@ function getPermissionPresentation(mode: PermissionMode) {
     mode: "readonly" as const,
     label: "只读",
     summary: "仅允许读取已授权目录与附件。"
+  };
+}
+
+function recordRollbackEntry(
+  journal: WorkbenchState["rollback"],
+  id: string,
+  label: string,
+  summary: string,
+  scope: RollbackEntry["scope"]
+): WorkbenchState["rollback"] {
+  return appendRollbackEntry(journal, createRollbackEntry(id, label, summary, scope));
+}
+
+function createRollbackEntry(
+  id: string,
+  label: string,
+  summary: string,
+  scope: RollbackEntry["scope"]
+): RollbackEntry {
+  return {
+    id,
+    label,
+    summary,
+    scope,
+    createdAt: "本地最近一次记录"
   };
 }

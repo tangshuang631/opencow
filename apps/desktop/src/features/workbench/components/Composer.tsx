@@ -16,7 +16,7 @@ export function Composer({ state }: ComposerProps) {
           {state.permission.label}
         </span>
         <span>{state.permission.summary}</span>
-        <span>回退点 {state.rollback.defaultLimit}/{state.rollback.maxLimit}</span>
+        <span>回退点 {state.rollback.activeLimit}/{state.rollback.maxLimit}</span>
       </div>
       <div className="composer">
         <button className="icon-button" type="button" aria-label="添加附件">
