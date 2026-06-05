@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useState } from "react";
 import { loadOllamaOverview } from "../features/ollama/ollamaService";
 import { Workbench } from "../features/workbench/Workbench";
+import { evaluateDangerousCommandPolicy } from "../features/workbench/commandPolicyService";
 import {
   approvePendingConfirmationState,
   approvePermissionModeChangeState,
@@ -52,15 +53,29 @@ export function App() {
 
   function handleDemoDangerousAction() {
     startTransition(() => {
-      setState((current) =>
-        createHighRiskConfirmationState(current, {
-          title: "确认删除临时目录",
-          summary: "模型计划删除工作区内的 temp-output 目录。",
-          commandPreview: "Remove-Item .\\temp-output -Recurse",
-          impact: "将删除 12 个文件，写入回退快照后才可执行。",
-          requiredMode: "controlled-full"
-        })
-      );
+      setState((current) => {
+        const result = evaluateDangerousCommandPolicy(current);
+
+        if (result.kind === "permission-request") {
+          return requestPermissionModeChangeState(current, {
+            targetMode: result.targetMode,
+            reason: result.reason,
+            riskSummary: result.riskSummary
+          });
+        }
+
+        if (result.kind === "confirmation") {
+          return createHighRiskConfirmationState(current, {
+            title: result.title,
+            summary: result.summary,
+            commandPreview: result.commandPreview,
+            impact: result.impact,
+            requiredMode: result.requiredMode
+          });
+        }
+
+        return current;
+      });
     });
   }
 

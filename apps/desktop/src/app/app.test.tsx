@@ -191,7 +191,7 @@ describe("App", () => {
     expect(screen.getByText("当前没有待确认的权限升级")).toBeInTheDocument();
   });
 
-  it("lets the desktop prototype approve or cancel a pending dangerous action", async () => {
+  it("routes dangerous commands through permission upgrade before high-risk confirmation", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -203,6 +203,13 @@ describe("App", () => {
     const { unmount } = render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "模拟高风险操作" }));
+
+    expect(screen.getByText("待切换权限: controlled-full")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批准提权" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "批准提权" }));
+    fireEvent.click(screen.getByRole("button", { name: "模拟高风险操作" }));
 
     expect(screen.getByText("确认删除临时目录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批准高风险操作" })).toBeInTheDocument();
@@ -217,6 +224,8 @@ describe("App", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "模拟高风险操作" }));
+    fireEvent.click(screen.getByRole("button", { name: "批准提权" }));
+    fireEvent.click(screen.getByRole("button", { name: "模拟高风险操作" }));
     fireEvent.click(screen.getByRole("button", { name: "取消高风险操作" }));
 
     expect(screen.getByText("用户已取消高风险操作")).toBeInTheDocument();
