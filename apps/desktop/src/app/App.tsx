@@ -3,8 +3,10 @@ import { loadOllamaOverview } from "../features/ollama/ollamaService";
 import { Workbench } from "../features/workbench/Workbench";
 import { evaluateDangerousCommandPolicy } from "../features/workbench/commandPolicyService";
 import {
+  applyPendingRollbackState,
   approvePendingConfirmationState,
   approvePermissionModeChangeState,
+  cancelPendingRollbackState,
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
   createCommandPolicyBlockedState,
@@ -12,6 +14,7 @@ import {
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
   mergeOllamaOverview,
+  requestRollbackPreviewState,
   requestPermissionModeChangeState
 } from "../features/workbench/workbenchState";
 
@@ -122,6 +125,24 @@ export function App() {
     });
   }
 
+  function handlePreviewRollback(targetEntryId: string) {
+    startTransition(() => {
+      setState((current) => requestRollbackPreviewState(current, targetEntryId));
+    });
+  }
+
+  function handleApplyRollback() {
+    startTransition(() => {
+      setState((current) => applyPendingRollbackState(current));
+    });
+  }
+
+  function handleCancelRollback() {
+    startTransition(() => {
+      setState((current) => cancelPendingRollbackState(current));
+    });
+  }
+
   return (
     <Workbench
       state={state}
@@ -129,6 +150,9 @@ export function App() {
       onCancelDangerousAction={handleCancelDangerousAction}
       onApprovePermissionRequest={handleApprovePermissionRequest}
       onCancelPermissionRequest={handleCancelPermissionRequest}
+      onPreviewRollback={handlePreviewRollback}
+      onApplyRollback={handleApplyRollback}
+      onCancelRollback={handleCancelRollback}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
     />

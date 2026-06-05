@@ -25,7 +25,10 @@ const inspectorActions = {
   onApproveDangerousAction: vi.fn(),
   onCancelDangerousAction: vi.fn(),
   onApprovePermissionRequest: vi.fn(),
-  onCancelPermissionRequest: vi.fn()
+  onCancelPermissionRequest: vi.fn(),
+  onPreviewRollback: vi.fn(),
+  onApplyRollback: vi.fn(),
+  onCancelRollback: vi.fn()
 };
 
 describe("App", () => {
@@ -261,5 +264,32 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "取消提权" }));
 
     expect(screen.getByText("用户已取消权限升级")).toBeInTheDocument();
+  });
+
+  it("previews and applies rollback from the desktop inspector", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟提权申请" }));
+    fireEvent.click(screen.getByRole("button", { name: "批准提权" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "预览回退到 启动基线" }));
+
+    expect(screen.getByText("目标回退点: 启动基线")).toBeInTheDocument();
+    expect(screen.getByText("将回退 2 个后续状态")).toBeInTheDocument();
+    expect(screen.getByText("将回退: 已批准权限升级")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认回退" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "确认回退" }));
+
+    expect(screen.getByText("已回退到 启动基线")).toBeInTheDocument();
+    expect(screen.getByText("权限: 只读")).toBeInTheDocument();
   });
 });

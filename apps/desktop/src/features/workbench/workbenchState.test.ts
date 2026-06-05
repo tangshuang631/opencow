@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyPendingRollbackState,
   approvePendingConfirmationState,
   approvePermissionModeChangeState,
+  cancelPendingRollbackState,
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
   createCommandPolicyBlockedState,
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
+  requestRollbackPreviewState,
   requestPermissionModeChangeState
 } from "./workbenchState";
 
@@ -144,6 +147,62 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.permission.pendingModeChange).toBeNull();
     expect(updated.audit.summary).toBe("用户已取消权限升级");
     expect(updated.audit.lastEvent.source).toBe("permission_mode_change_cancelled");
+  });
+
+  it("previews rollback impact before applying a restore", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+    const approved = approvePermissionModeChangeState(requested);
+
+    const previewed = requestRollbackPreviewState(approved, "startup-baseline");
+
+    expect(previewed.rollback.pendingPreview).toMatchObject({
+      targetEntryId: "startup-baseline",
+      targetLabel: "启动基线",
+      willRevertCount: 1
+    });
+    expect(previewed.rollback.pendingPreview?.affectedEntries[0]?.label).toBe("已批准权限升级");
+    expect(previewed.audit.summary).toBe("等待用户确认回退");
+  });
+
+  it("applies rollback and restores the target snapshot", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+    const approved = approvePermissionModeChangeState(requested);
+    const previewed = requestRollbackPreviewState(approved, "startup-baseline");
+
+    const restored = applyPendingRollbackState(previewed);
+
+    expect(restored.permission.mode).toBe("readonly");
+    expect(restored.rollback.pendingPreview).toBeNull();
+    expect(restored.rollback.entries).toHaveLength(1);
+    expect(restored.rollback.entries[0]?.id).toBe("startup-baseline");
+    expect(restored.rollback.lastRollback?.targetEntryId).toBe("startup-baseline");
+    expect(restored.audit.summary).toBe("已回退到 启动基线");
+    expect(restored.audit.lastEvent.source).toBe("rollback_applied");
+  });
+
+  it("cancels rollback preview without mutating current permission state", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+    const approved = approvePermissionModeChangeState(requested);
+    const previewed = requestRollbackPreviewState(approved, "startup-baseline");
+
+    const cancelled = cancelPendingRollbackState(previewed);
+
+    expect(cancelled.permission.mode).toBe("workspace-write");
+    expect(cancelled.rollback.pendingPreview).toBeNull();
+    expect(cancelled.audit.summary).toBe("已取消回退");
+    expect(cancelled.audit.lastEvent.source).toBe("rollback_cancelled");
   });
 
   it("records a traceable blocked command policy result", () => {
