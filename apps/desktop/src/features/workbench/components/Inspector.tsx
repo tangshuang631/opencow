@@ -68,7 +68,9 @@ export function Inspector({
           <>
             <p className="muted">待切换权限: {state.permission.pendingModeChange.targetMode}</p>
             <p className="muted">提权原因: {normalizeWorkbenchText(state.permission.pendingModeChange.reason)}</p>
-            <p className="muted">风险说明: {normalizeWorkbenchText(state.permission.pendingModeChange.riskSummary)}</p>
+            <p className="muted">
+              风险说明: {normalizeWorkbenchText(state.permission.pendingModeChange.riskSummary)}
+            </p>
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
                 批准提权
@@ -199,7 +201,7 @@ export function Inspector({
         <p className="muted">远程 API 默认关闭</p>
         <p className="muted">
           {state.settings.remoteApi.collapsed
-            ? "保留 baseUrl 和 API 接入入口，按需展开。"
+            ? "保留 baseUrl 和 API 接入口，按需展开。"
             : "远程 API 设置已展开。"}
         </p>
       </section>

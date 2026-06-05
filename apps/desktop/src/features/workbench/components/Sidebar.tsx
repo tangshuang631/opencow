@@ -13,7 +13,7 @@ import {
 const navItems = [
   { label: "搜索", icon: Search },
   { label: "知识库", icon: Database },
-  { label: "技能", icon: Wrench },
+  { label: "Skills", icon: Wrench },
   { label: "NPC", icon: Bot },
   { label: "MCP", icon: Folder },
   { label: "审计", icon: FileClock },
