@@ -7,6 +7,7 @@ export type {
   RollbackPreviewState,
   RollbackSnapshot,
   SearchSourceItem,
+  StorageCleanupTarget,
   ToolExecutionResult,
   WorkbenchState
 } from "./workbenchState.types";
@@ -29,6 +30,7 @@ export {
   requestRollbackPreviewState
 } from "./workbenchState.rollbackFlow";
 export { createSearchEnabledState } from "./workbenchState.search";
+export { createStorageCleanupState } from "./workbenchState.storage";
 export { createToolExecutionErrorState, createToolExecutionState } from "./workbenchState.tools";
 export {
   createTaskExecutionCancelledState,

@@ -60,6 +60,8 @@ export type LocalTaskItem = {
   summary: string;
 };
 
+export type StorageCleanupTarget = "conversation" | "logs" | "cache" | "snapshots" | "knowledge";
+
 export type WorkbenchState = {
   model: {
     label: string;
@@ -124,6 +126,13 @@ export type WorkbenchState = {
       providerLabel: string;
     };
   };
+  storage: {
+    sessionCount: number;
+    logCount: number;
+    cacheCount: number;
+    snapshotCount: number;
+    knowledgeCount: number;
+  };
   audit: {
     summary: string;
     lastEvent: {
@@ -154,6 +163,7 @@ export type RollbackSnapshot = Pick<
   | "tasks"
   | "output"
   | "settings"
+  | "storage"
   | "audit"
   | "error"
 >;

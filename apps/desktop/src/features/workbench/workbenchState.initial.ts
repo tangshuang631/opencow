@@ -73,6 +73,13 @@ export function createInitialWorkbenchState(): WorkbenchState {
         providerLabel: ""
       }
     },
+    storage: {
+      sessionCount: 1,
+      logCount: 1,
+      cacheCount: 0,
+      snapshotCount: 1,
+      knowledgeCount: 0
+    },
     audit: {
       summary: "等待本地事件",
       lastEvent: {

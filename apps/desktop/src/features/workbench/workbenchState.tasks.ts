@@ -1,5 +1,6 @@
 import { recordRollbackEntry } from "./workbenchState.rollback";
 import { createWorkbenchEventId, prependConversationEntries, prependConversationEntry } from "./workbenchState.shared";
+import { withStorageDelta } from "./workbenchState.storage";
 import type { WorkbenchState } from "./workbenchState.types";
 
 export function createUserTaskSubmittedState(
@@ -11,58 +12,63 @@ export function createUserTaskSubmittedState(
   const rollbackEntryId = createWorkbenchEventId(state, "composer-submit", "local-task");
 
   return recordRollbackEntry(
-    {
-      ...state,
-      tasks: {
-        pendingCount: state.tasks.pendingCount + 1,
-        activeTaskId: null,
-        items: [
-          {
-            id: rollbackEntryId,
-            source: "composer" as const,
-            status: "queued" as const,
-            summary: payload.message
-          },
-          ...state.tasks.items
-        ].slice(0, 20)
-      },
-      output: {
-        title: "本地任务队列",
-        summary: `当前有 ${state.tasks.pendingCount + 1} 条待处理的本地任务。`
-      },
-      conversation: {
-        entries: prependConversationEntries(state.conversation.entries, [
-          {
-            id: `${rollbackEntryId}-user`,
-            kind: "user",
-            title: "本地任务",
-            summary: payload.message
-          },
-          {
-            id: `${rollbackEntryId}-system`,
-            kind: "system",
-            title: "任务已进入本地队列",
-            summary: "将优先使用本地 Ollama 处理这条任务。",
-            detailLines: [
-              `模型: ${state.model.activeModel}`,
-              `权限: ${state.permission.label}`,
-              `联网搜索: ${state.search.enabled ? "已开启" : "默认关闭"}`
-            ],
-            actionLabel: "预览回退到 本次输入前",
-            rollbackTargetId: rollbackEntryId
+    withStorageDelta(
+      {
+        ...state,
+        tasks: {
+          pendingCount: state.tasks.pendingCount + 1,
+          activeTaskId: null,
+          items: [
+            {
+              id: rollbackEntryId,
+              source: "composer" as const,
+              status: "queued" as const,
+              summary: payload.message
+            },
+            ...state.tasks.items
+          ].slice(0, 20)
+        },
+        output: {
+          title: "本地任务队列",
+          summary: `当前有 ${state.tasks.pendingCount + 1} 条待处理的本地任务。`
+        },
+        conversation: {
+          entries: prependConversationEntries(state.conversation.entries, [
+            {
+              id: `${rollbackEntryId}-user`,
+              kind: "user",
+              title: "本地任务",
+              summary: payload.message
+            },
+            {
+              id: `${rollbackEntryId}-system`,
+              kind: "system",
+              title: "任务已进入本地队列",
+              summary: "将优先使用本地 Ollama 处理这条任务。",
+              detailLines: [
+                `模型: ${state.model.activeModel}`,
+                `权限: ${state.permission.label}`,
+                `联网搜索: ${state.search.enabled ? "已开启" : "默认关闭"}`
+              ],
+              actionLabel: "预览回退到 本次输入前",
+              rollbackTargetId: rollbackEntryId
+            }
+          ])
+        },
+        audit: {
+          summary: "已提交 1 条本地任务",
+          lastEvent: {
+            module: "conversation",
+            detail: payload.message,
+            timestamp: "已提交",
+            source: "composer_submit"
           }
-        ])
-      },
-      audit: {
-        summary: "已提交 1 条本地任务",
-        lastEvent: {
-          module: "conversation",
-          detail: payload.message,
-          timestamp: "已提交",
-          source: "composer_submit"
         }
+      },
+      {
+        sessionCount: state.storage.sessionCount + 1
       }
-    },
+    ),
     rollbackEntryId,
     "会话输入",
     `已提交本地任务: ${payload.message}`,

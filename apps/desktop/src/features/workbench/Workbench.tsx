@@ -1,4 +1,5 @@
 import type { WorkbenchState } from "./workbenchState";
+import type { StorageCleanupTarget } from "./workbenchState";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { MainConversation } from "./components/MainConversation";
@@ -16,6 +17,7 @@ type WorkbenchProps = {
   onRetryLocalTask: () => void;
   onCancelActiveTask: () => void;
   onUpdateRollbackLimit: (limit: number) => void;
+  onCleanupStorage: (target: StorageCleanupTarget) => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -37,6 +39,7 @@ export function Workbench({
   onRetryLocalTask,
   onCancelActiveTask,
   onUpdateRollbackLimit,
+  onCleanupStorage,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -71,6 +74,7 @@ export function Workbench({
         onRetryLocalTask={onRetryLocalTask}
         onCancelActiveTask={onCancelActiveTask}
         onUpdateRollbackLimit={onUpdateRollbackLimit}
+        onCleanupStorage={onCleanupStorage}
       />
     </main>
   );

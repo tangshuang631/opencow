@@ -15,6 +15,7 @@ import {
   createOllamaLoadErrorState,
   createRollbackLimitUpdatedState,
   createSearchEnabledState,
+  createStorageCleanupState,
   createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
   createTaskExecutionRetriedState,
@@ -261,6 +262,12 @@ export function App() {
     });
   }
 
+  function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
+    startTransition(() => {
+      setState((current) => createStorageCleanupState(current, target));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -280,6 +287,7 @@ export function App() {
       onRetryLocalTask={handleRetryLocalTask}
       onCancelActiveTask={handleCancelActiveTask}
       onUpdateRollbackLimit={handleUpdateRollbackLimit}
+      onCleanupStorage={handleCleanupStorage}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}

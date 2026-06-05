@@ -13,6 +13,7 @@ import {
   createSearchEnabledState,
   createUserTaskSubmittedState,
   createRollbackLimitUpdatedState,
+  createStorageCleanupState,
   createToolExecutionErrorState,
   createToolExecutionState,
   requestRollbackPreviewState,
@@ -443,5 +444,48 @@ describe("createInitialWorkbenchState", () => {
     const updated = createRollbackLimitUpdatedState(createInitialWorkbenchState(), 3);
 
     expect(updated.rollback.activeLimit).toBe(10);
+  });
+
+  it("clears cached artifacts and records a traceable maintenance event", () => {
+    const searched = createSearchEnabledState(createInitialWorkbenchState(), {
+      provider: "Tavily",
+      query: "OpenClaw Windows 本地助手",
+      sourceTitle: "OpenClaw GitHub",
+      sourceUrl: "https://github.com/example/openclaw",
+      summary: "已启用联网搜索，并注入 1 条来源摘要。"
+    });
+    const tooled = createToolExecutionState(searched, {
+      toolLabel: "Skill 扫描",
+      summary: "已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。",
+      outputTitle: "本地 Skill 清单",
+      outputSummary: "生成了最新的本地 Skill 扫描结果，可用于后续启用与审计。",
+      source: "skills_scan"
+    });
+
+    const updated = createStorageCleanupState(tooled, "cache");
+
+    expect(updated.sources.items).toHaveLength(0);
+    expect(updated.tools.lastResult).toBeNull();
+    expect(updated.output.title).toBe("暂无产物");
+    expect(updated.storage.cacheCount).toBe(0);
+    expect(updated.audit.summary).toBe("已清理本地缓存");
+    expect(updated.audit.lastEvent.source).toBe("storage_cleanup_cache");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "已清理本地缓存"
+    });
+  });
+
+  it("clears local maintenance buckets independently", () => {
+    const initial = createInitialWorkbenchState();
+
+    const sessionCleared = createStorageCleanupState(initial, "conversation");
+    const logsCleared = createStorageCleanupState(initial, "logs");
+    const snapshotsCleared = createStorageCleanupState(initial, "snapshots");
+    const knowledgeCleared = createStorageCleanupState(initial, "knowledge");
+
+    expect(sessionCleared.storage.sessionCount).toBe(0);
+    expect(logsCleared.storage.logCount).toBe(0);
+    expect(snapshotsCleared.storage.snapshotCount).toBe(0);
+    expect(knowledgeCleared.storage.knowledgeCount).toBe(0);
   });
 });

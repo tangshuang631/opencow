@@ -1,6 +1,6 @@
 import { FileText, Globe2, ListChecks, ScrollText } from "lucide-react";
 import { RollbackPanel } from "./RollbackPanel";
-import type { WorkbenchState } from "../workbenchState";
+import type { StorageCleanupTarget, WorkbenchState } from "../workbenchState";
 import { normalizeWorkbenchText } from "../workbenchText";
 
 type InspectorProps = {
@@ -15,6 +15,7 @@ type InspectorProps = {
   onRetryLocalTask: () => void;
   onCancelActiveTask: () => void;
   onUpdateRollbackLimit: (limit: number) => void;
+  onCleanupStorage: (target: StorageCleanupTarget) => void;
 };
 
 export function Inspector({
@@ -28,7 +29,8 @@ export function Inspector({
   onCancelRollback,
   onRetryLocalTask,
   onCancelActiveTask,
-  onUpdateRollbackLimit
+  onUpdateRollbackLimit,
+  onCleanupStorage
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
@@ -215,6 +217,32 @@ export function Inspector({
           </button>
           <button className="action-button action-button-primary" type="button" onClick={() => onUpdateRollbackLimit(20)}>
             20 段
+          </button>
+        </div>
+        <p className="muted">会话 {state.storage.sessionCount}</p>
+        <p className="muted">日志 {state.storage.logCount}</p>
+        <p className="muted">缓存条目 {state.storage.cacheCount}</p>
+        <p className="muted">快照 {state.storage.snapshotCount}</p>
+        <p className="muted">知识库索引 {state.storage.knowledgeCount}</p>
+        <div className="action-row" aria-label="本地清理入口">
+          <button className="action-button" type="button" onClick={() => onCleanupStorage("conversation")}>
+            清空会话
+          </button>
+          <button className="action-button" type="button" onClick={() => onCleanupStorage("logs")}>
+            清空日志
+          </button>
+        </div>
+        <div className="action-row">
+          <button className="action-button" type="button" onClick={() => onCleanupStorage("cache")}>
+            清空缓存
+          </button>
+          <button className="action-button" type="button" onClick={() => onCleanupStorage("snapshots")}>
+            清空快照
+          </button>
+        </div>
+        <div className="action-row">
+          <button className="action-button" type="button" onClick={() => onCleanupStorage("knowledge")}>
+            清空知识库索引
           </button>
         </div>
       </section>

@@ -6,6 +6,7 @@ import {
   createInitialWorkbenchState,
   createRollbackLimitUpdatedState,
   createSearchEnabledState,
+  createStorageCleanupState,
   createTaskExecutionFailedState,
   createTaskExecutionStartedState,
   createUserTaskSubmittedState
@@ -29,7 +30,8 @@ const inspectorActions = {
   onCancelRollback: vi.fn(),
   onRetryLocalTask: vi.fn(),
   onCancelActiveTask: vi.fn(),
-  onUpdateRollbackLimit: vi.fn()
+  onUpdateRollbackLimit: vi.fn(),
+  onCleanupStorage: vi.fn()
 };
 
 describe("App", () => {
@@ -268,5 +270,21 @@ describe("App", () => {
     expect(settingsSection).not.toBeNull();
     expect(within(settingsSection as HTMLElement).getByText("回退点上限 18 / 20")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByText("当前最多保留 18 段可回退点。")).toBeInTheDocument();
+  });
+
+  it("shows local cleanup entries in advanced settings", () => {
+    const state = createStorageCleanupState(createInitialWorkbenchState(), "cache");
+
+    render(<Inspector state={state} {...inspectorActions} />);
+
+    const settingsSection = screen.getByText("高级设置").closest("section");
+
+    expect(settingsSection).not.toBeNull();
+    expect(within(settingsSection as HTMLElement).getByText("清空会话")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByText("清空日志")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByText("清空缓存")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByText("清空快照")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByText("清空知识库索引")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByText("缓存条目 0")).toBeInTheDocument();
   });
 });

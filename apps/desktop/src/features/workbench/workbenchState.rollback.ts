@@ -72,6 +72,7 @@ export function captureRollbackSnapshot(state: WorkbenchState): RollbackSnapshot
     tasks: state.tasks,
     output: state.output,
     settings: state.settings,
+    storage: state.storage,
     audit: state.audit,
     error: state.error
   };
