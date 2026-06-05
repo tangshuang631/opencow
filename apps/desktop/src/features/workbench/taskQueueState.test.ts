@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createInitialWorkbenchState,
   createTaskExecutionFailedState,
+  createTaskExecutionRetriedState,
   createTaskExecutionStartedState,
   createTaskExecutionSucceededState,
   createUserTaskSubmittedState
@@ -99,5 +100,32 @@ describe("task queue state", () => {
       source: "local_task_runner"
     });
     expect(failed.audit.summary).toBe("本地任务执行失败");
+  });
+
+  it("requeues a failed local task for retry and clears the blocking error", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "请检查当前工作区并整理待办"
+    });
+    const running = createTaskExecutionStartedState(queued);
+    const failed = createTaskExecutionFailedState(running, {
+      summary: "本地任务执行失败",
+      detail: "Ollama 响应超时，请检查本地模型状态。",
+      actionLabel: "检查 Ollama 服务并重试",
+      source: "local_task_runner"
+    });
+
+    const retried = createTaskExecutionRetriedState(failed);
+
+    expect(retried.tasks.pendingCount).toBe(1);
+    expect(retried.tasks.activeTaskId).toBeNull();
+    expect(retried.tasks.items[0]).toMatchObject({
+      id: failed.tasks.items[0]?.id,
+      status: "queued",
+      summary: "请检查当前工作区并整理待办"
+    });
+    expect(retried.output.title).toBe("本地任务队列");
+    expect(retried.output.summary).toBe("当前有 1 条待处理的本地任务。");
+    expect(retried.error).toBeNull();
+    expect(retried.audit.summary).toBe("已重试本地任务");
   });
 });

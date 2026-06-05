@@ -1206,6 +1206,59 @@ export function createTaskExecutionFailedState(
   );
 }
 
+export function createTaskExecutionRetriedState(state: WorkbenchState): WorkbenchState {
+  const failedTask = state.tasks.items.find((item) => item.status === "failed");
+
+  if (!failedTask) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tasks: {
+        pendingCount: state.tasks.pendingCount + 1,
+        activeTaskId: null,
+        items: state.tasks.items.map((item) =>
+          item.id === failedTask.id
+            ? {
+                ...item,
+                status: "queued" as const
+              }
+            : item
+        )
+      },
+      output: {
+        title: "本地任务队列",
+        summary: `当前有 ${state.tasks.pendingCount + 1} 条待处理的本地任务。`
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `${failedTask.id}-retried`,
+          kind: "system",
+          title: "已重试本地任务",
+          summary: failedTask.summary,
+          detailLines: ["模块: tasks", "来源: local_task_retry", "建议: 已重新加入本地队列，等待继续执行"]
+        })
+      },
+      audit: {
+        summary: "已重试本地任务",
+        lastEvent: {
+          module: "tasks",
+          detail: failedTask.summary,
+          timestamp: "已重试",
+          source: "local_task_retry"
+        }
+      },
+      error: null
+    },
+    `${failedTask.id}-retried`,
+    "本地任务重试",
+    `已将本地任务重新加入队列: ${failedTask.summary}`,
+    "tool"
+  );
+}
+
 function getPermissionPresentation(mode: PermissionMode) {
   if (mode === "workspace-write") {
     return {

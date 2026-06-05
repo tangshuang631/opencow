@@ -23,7 +23,8 @@ const inspectorActions = {
   onCancelPermissionRequest: vi.fn(),
   onPreviewRollback: vi.fn(),
   onApplyRollback: vi.fn(),
-  onCancelRollback: vi.fn()
+  onCancelRollback: vi.fn(),
+  onRetryLocalTask: vi.fn()
 };
 
 describe("App", () => {
@@ -116,6 +117,32 @@ describe("App", () => {
     });
     expect(screen.getAllByText(/local_task_runner/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Ollama 响应超时/).length).toBeGreaterThan(0);
+  });
+
+  it("requeues a failed local task after retrying from the inspector", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟本地任务失败" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/本地任务执行失败/).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "重试本地任务" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/已重试本地任务/).length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/Ollama 响应超时/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/队列中/).length).toBeGreaterThan(0);
   });
 
   it("renders queued local tasks in the inspector", () => {

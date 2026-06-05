@@ -11,6 +11,7 @@ type InspectorProps = {
   onPreviewRollback: (targetEntryId: string) => void;
   onApplyRollback: () => void;
   onCancelRollback: () => void;
+  onRetryLocalTask: () => void;
 };
 
 export function Inspector({
@@ -21,7 +22,8 @@ export function Inspector({
   onCancelPermissionRequest,
   onPreviewRollback,
   onApplyRollback,
-  onCancelRollback
+  onCancelRollback,
+  onRetryLocalTask
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
@@ -157,6 +159,13 @@ export function Inspector({
             <p className="muted">时间: {state.error.timestamp}</p>
             <p className="muted">{state.error.detail}</p>
             <p className="muted">建议: {state.error.actionLabel}</p>
+            {state.error.module === "tasks" ? (
+              <div className="action-row">
+                <button className="action-button action-button-primary" type="button" onClick={onRetryLocalTask}>
+                  重试本地任务
+                </button>
+              </div>
+            ) : null}
           </>
         ) : (
           <p className="muted">当前没有活动错误</p>

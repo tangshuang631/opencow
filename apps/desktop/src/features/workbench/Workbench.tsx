@@ -13,6 +13,7 @@ type WorkbenchProps = {
   onPreviewRollback: (targetEntryId: string) => void;
   onApplyRollback: () => void;
   onCancelRollback: () => void;
+  onRetryLocalTask: () => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -31,6 +32,7 @@ export function Workbench({
   onPreviewRollback,
   onApplyRollback,
   onCancelRollback,
+  onRetryLocalTask,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -62,6 +64,7 @@ export function Workbench({
         onPreviewRollback={onPreviewRollback}
         onApplyRollback={onApplyRollback}
         onCancelRollback={onCancelRollback}
+        onRetryLocalTask={onRetryLocalTask}
       />
     </main>
   );
