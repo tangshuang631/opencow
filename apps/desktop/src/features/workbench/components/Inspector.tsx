@@ -1,6 +1,7 @@
 import { FileText, Globe2, ListChecks, ScrollText } from "lucide-react";
 import { RollbackPanel } from "./RollbackPanel";
 import type { WorkbenchState } from "../workbenchState";
+import { normalizeWorkbenchText } from "../workbenchText";
 
 type InspectorProps = {
   state: WorkbenchState;
@@ -38,8 +39,8 @@ export function Inspector({
           <FileText aria-hidden="true" size={16} />
           输出
         </h2>
-        <p className="muted">{state.output.title}</p>
-        <p className="muted">{state.output.summary}</p>
+        <p className="muted">{normalizeWorkbenchText(state.output.title)}</p>
+        <p className="muted">{normalizeWorkbenchText(state.output.summary)}</p>
       </section>
 
       <section>
@@ -49,25 +50,25 @@ export function Inspector({
         </h2>
         <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
         {state.search.providerLabel ? <p className="muted">搜索提供方: {state.search.providerLabel}</p> : null}
-        <p className="muted">Ollama: {state.model.status}</p>
-        <p className="muted">权限: {state.permission.label}</p>
-        <p className="muted">{state.permission.summary}</p>
+        <p className="muted">Ollama: {normalizeWorkbenchText(state.model.status)}</p>
+        <p className="muted">权限: {normalizeWorkbenchText(state.permission.label)}</p>
+        <p className="muted">{normalizeWorkbenchText(state.permission.summary)}</p>
         {visibleSources.map((item) => (
           <div key={`${item.provider}-${item.url}`}>
-            <p className="muted">来源标题: {item.title}</p>
+            <p className="muted">来源标题: {normalizeWorkbenchText(item.title)}</p>
             <p className="muted">来源地址: {item.url}</p>
           </div>
         ))}
       </section>
 
       <section>
-        <h2>{state.permission.confirmationTitle}</h2>
-        <p className="muted">{state.permission.confirmationSummary}</p>
+        <h2>{normalizeWorkbenchText(state.permission.confirmationTitle)}</h2>
+        <p className="muted">{normalizeWorkbenchText(state.permission.confirmationSummary)}</p>
         {state.permission.pendingModeChange ? (
           <>
             <p className="muted">待切换权限: {state.permission.pendingModeChange.targetMode}</p>
-            <p className="muted">提权原因: {state.permission.pendingModeChange.reason}</p>
-            <p className="muted">风险说明: {state.permission.pendingModeChange.riskSummary}</p>
+            <p className="muted">提权原因: {normalizeWorkbenchText(state.permission.pendingModeChange.reason)}</p>
+            <p className="muted">风险说明: {normalizeWorkbenchText(state.permission.pendingModeChange.riskSummary)}</p>
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
                 批准提权
@@ -83,13 +84,13 @@ export function Inspector({
 
         {state.confirmation.pending ? (
           <>
-            <p className="muted">{state.confirmation.pending.title}</p>
-            <p className="muted">{state.confirmation.pending.summary}</p>
-            <p className="muted">命令预览: {state.confirmation.pending.commandPreview}</p>
-            <p className="muted">影响范围: {state.confirmation.pending.impact}</p>
+            <p className="muted">{normalizeWorkbenchText(state.confirmation.pending.title)}</p>
+            <p className="muted">{normalizeWorkbenchText(state.confirmation.pending.summary)}</p>
+            <p className="muted">命令预览: {normalizeWorkbenchText(state.confirmation.pending.commandPreview)}</p>
+            <p className="muted">影响范围: {normalizeWorkbenchText(state.confirmation.pending.impact)}</p>
             <p className="muted">所需权限: {state.confirmation.pending.requiredMode}</p>
             {state.confirmation.pending.safetySummary ? (
-              <p className="muted">安全保护: {state.confirmation.pending.safetySummary}</p>
+              <p className="muted">安全保护: {normalizeWorkbenchText(state.confirmation.pending.safetySummary)}</p>
             ) : null}
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApproveDangerousAction}>
@@ -116,16 +117,11 @@ export function Inspector({
             {visibleTasks.map((task) => (
               <div key={task.id} className="task-queue-item">
                 <span className="task-queue-status">{getTaskStatusLabel(task.status)}</span>
-                <p className="task-queue-summary">{task.summary}</p>
+                <p className="task-queue-summary">{normalizeWorkbenchText(task.summary)}</p>
                 {task.status === "running" ? (
                   <div className="action-row">
-                    <button
-                      aria-label="停止任务"
-                      className="action-button"
-                      type="button"
-                      onClick={onCancelActiveTask}
-                    >
-                      鍋滄浠诲姟
+                    <button aria-label="停止任务" className="action-button" type="button" onClick={onCancelActiveTask}>
+                      停止任务
                     </button>
                   </div>
                 ) : null}
@@ -137,7 +133,7 @@ export function Inspector({
                       type="button"
                       onClick={onRetryLocalTask}
                     >
-                      閲嶈瘯鏈湴浠诲姟
+                      重试本地任务
                     </button>
                   </div>
                 ) : null}
@@ -156,7 +152,7 @@ export function Inspector({
         </h2>
         <p className="muted">
           {state.tools.lastResult
-            ? `${state.tools.lastResult.toolLabel}: ${state.tools.lastResult.summary}`
+            ? `${normalizeWorkbenchText(state.tools.lastResult.toolLabel)}: ${normalizeWorkbenchText(state.tools.lastResult.summary)}`
             : hasModels
               ? `已检测 ${state.model.availableModels.length} 个本地模型`
               : "等待本地模型"}
@@ -168,23 +164,23 @@ export function Inspector({
           <ScrollText aria-hidden="true" size={16} />
           日志
         </h2>
-        <p className="muted">{state.audit.summary}</p>
-        <p className="muted">模块: {state.audit.lastEvent.module}</p>
-        <p className="muted">来源: {state.audit.lastEvent.source}</p>
-        <p className="muted">时间: {state.audit.lastEvent.timestamp}</p>
-        <p className="muted">{state.audit.lastEvent.detail}</p>
+        <p className="muted">{normalizeWorkbenchText(state.audit.summary)}</p>
+        <p className="muted">模块: {normalizeWorkbenchText(state.audit.lastEvent.module)}</p>
+        <p className="muted">来源: {normalizeWorkbenchText(state.audit.lastEvent.source)}</p>
+        <p className="muted">时间: {normalizeWorkbenchText(state.audit.lastEvent.timestamp)}</p>
+        <p className="muted">{normalizeWorkbenchText(state.audit.lastEvent.detail)}</p>
       </section>
 
       <section>
         <h2>错误</h2>
         {state.error ? (
           <>
-            <p className="muted">{state.error.summary}</p>
-            <p className="muted">模块: {state.error.module}</p>
-            <p className="muted">来源: {state.error.source}</p>
-            <p className="muted">时间: {state.error.timestamp}</p>
-            <p className="muted">{state.error.detail}</p>
-            <p className="muted">建议: {state.error.actionLabel}</p>
+            <p className="muted">{normalizeWorkbenchText(state.error.summary)}</p>
+            <p className="muted">模块: {normalizeWorkbenchText(state.error.module)}</p>
+            <p className="muted">来源: {normalizeWorkbenchText(state.error.source)}</p>
+            <p className="muted">时间: {normalizeWorkbenchText(state.error.timestamp)}</p>
+            <p className="muted">{normalizeWorkbenchText(state.error.detail)}</p>
+            <p className="muted">建议: {normalizeWorkbenchText(state.error.actionLabel)}</p>
             {state.error.module === "tasks" ? (
               <div className="action-row">
                 <button className="action-button action-button-primary" type="button" onClick={onRetryLocalTask}>

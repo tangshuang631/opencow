@@ -1,5 +1,6 @@
 import { CheckCircle2, CircleDashed } from "lucide-react";
 import type { WorkbenchState } from "../workbenchState";
+import { normalizeWorkbenchText } from "../workbenchText";
 
 type MainConversationProps = {
   state: WorkbenchState;
@@ -19,7 +20,7 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
         </div>
         <div className="status-pill">
           <CircleDashed aria-hidden="true" size={16} />
-          {state.model.status}
+          {normalizeWorkbenchText(state.model.status)}
         </div>
       </header>
 
@@ -33,11 +34,11 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
               <CheckCircle2 aria-hidden="true" size={18} />
             </div>
             <div className="message-content">
-              <p className="message-title">{entry.title}</p>
-              <p>{entry.summary}</p>
+              <p className="message-title">{normalizeWorkbenchText(entry.title)}</p>
+              <p>{normalizeWorkbenchText(entry.summary)}</p>
               {entry.detailLines?.map((line) => (
                 <p className="message-note" key={`${entry.id}-${line}`}>
-                  {line}
+                  {normalizeWorkbenchText(line)}
                 </p>
               ))}
               {index === 0 ? (
@@ -45,11 +46,11 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
                   <dl className="model-summary" aria-label="Ollama 状态">
                     <div>
                       <dt>连接地址</dt>
-                      <dd>{state.model.endpoint}</dd>
+                      <dd>{normalizeWorkbenchText(state.model.endpoint)}</dd>
                     </div>
                     <div>
                       <dt>当前模型</dt>
-                      <dd>{state.model.activeModel}</dd>
+                      <dd>{normalizeWorkbenchText(state.model.activeModel)}</dd>
                     </div>
                     <div>
                       <dt>本地模型数</dt>
@@ -60,19 +61,22 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
                     <p className="message-title">高风险操作需确认</p>
                     <p className="message-note">Shell 受权限、超时与工作目录限制</p>
                     <p className="message-note">
-                      当前权限: {state.permission.label} · {state.permission.requiresConfirmation ? "敏感操作需弹窗确认" : "当前无需额外确认"}
+                      当前权限: {normalizeWorkbenchText(state.permission.label)} ·{" "}
+                      {state.permission.requiresConfirmation ? "敏感操作需弹窗确认" : "当前无需额外确认"}
                     </p>
                   </div>
-                  {state.model.diagnostic ? <p className="message-note">{state.model.diagnostic}</p> : null}
+                  {state.model.diagnostic ? (
+                    <p className="message-note">{normalizeWorkbenchText(state.model.diagnostic)}</p>
+                  ) : null}
                 </>
               ) : null}
               {entry.actionLabel && entry.rollbackTargetId ? (
                 <button
                   className="timeline-entry-action"
                   type="button"
-                  onClick={() => onPreviewRollback(entry.rollbackTargetId!)}
+                  onClick={() => onPreviewRollback(entry.rollbackTargetId as string)}
                 >
-                  从会话区{entry.actionLabel}
+                  从会话区{normalizeWorkbenchText(entry.actionLabel)}
                 </button>
               ) : null}
             </div>
@@ -89,20 +93,20 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
               .filter((entry) => entry.id !== "startup-baseline")
               .slice(0, 3)
               .map((entry) => (
-              <article className="timeline-entry" key={entry.id}>
-                <div className="timeline-entry-copy">
-                  <p className="timeline-entry-title">{entry.label}</p>
-                  <p className="timeline-entry-summary">{entry.summary}</p>
-                </div>
-                <button
-                  className="timeline-entry-action"
-                  type="button"
-                  onClick={() => onPreviewRollback(entry.id)}
-                >
-                  从会话区预览回退到 {entry.label}
-                </button>
-              </article>
-            ))}
+                <article className="timeline-entry" key={entry.id}>
+                  <div className="timeline-entry-copy">
+                    <p className="timeline-entry-title">{normalizeWorkbenchText(entry.label)}</p>
+                    <p className="timeline-entry-summary">{normalizeWorkbenchText(entry.summary)}</p>
+                  </div>
+                  <button
+                    className="timeline-entry-action"
+                    type="button"
+                    onClick={() => onPreviewRollback(entry.id)}
+                  >
+                    从会话区预览回退到 {normalizeWorkbenchText(entry.label)}
+                  </button>
+                </article>
+              ))}
           </section>
         ) : null}
       </div>

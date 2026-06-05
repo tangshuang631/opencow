@@ -1,6 +1,7 @@
 import { ArrowUp, Paperclip, Shield, Square } from "lucide-react";
 import { useState } from "react";
 import type { WorkbenchState } from "../workbenchState";
+import { normalizeWorkbenchText } from "../workbenchText";
 
 type ComposerProps = {
   state: WorkbenchState;
@@ -26,16 +27,14 @@ export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerPr
   return (
     <footer className="composer-shell">
       <div className="composer-meta">
-        <span>{state.model.label}</span>
-        <span>{state.model.activeModel}</span>
+        <span>{normalizeWorkbenchText(state.model.label)}</span>
+        <span>{normalizeWorkbenchText(state.model.activeModel)}</span>
         <span aria-label="当前权限">
           <Shield aria-hidden="true" size={14} />
-          {state.permission.label}
+          {normalizeWorkbenchText(state.permission.label)}
         </span>
-        <span>{state.permission.summary}</span>
-        <span>
-          回退点 {state.rollback.activeLimit}/{state.rollback.maxLimit}
-        </span>
+        <span>{normalizeWorkbenchText(state.permission.summary)}</span>
+        <span>回退点 {state.rollback.activeLimit}/{state.rollback.maxLimit}</span>
       </div>
       <div className="composer">
         <button className="icon-button" type="button" aria-label="添加附件">
