@@ -10,6 +10,7 @@ import {
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
+  createRemoteApiConfigState,
   createRemoteApiToggleState,
   createSearchEnabledState,
   createSearchToggleState,
@@ -523,5 +524,21 @@ describe("createInitialWorkbenchState", () => {
     expect(disabled.search.enabled).toBe(false);
     expect(disabled.search.providerLabel).toBe("");
     expect(disabled.audit.summary).toBe("已关闭联网搜索");
+  });
+
+  it("updates remote api baseUrl and provider label from advanced settings", () => {
+    const enabled = createRemoteApiToggleState(createInitialWorkbenchState(), true);
+    const updated = createRemoteApiConfigState(enabled, {
+      baseUrl: "http://127.0.0.1:8787/v1",
+      providerLabel: "ccswitch"
+    });
+
+    expect(updated.settings.remoteApi.baseUrl).toBe("http://127.0.0.1:8787/v1");
+    expect(updated.settings.remoteApi.providerLabel).toBe("ccswitch");
+    expect(updated.audit.summary).toBe("已更新远程 API 配置");
+    expect(updated.audit.lastEvent.source).toBe("remote_api_config");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "已更新远程 API 配置"
+    });
   });
 });

@@ -20,6 +20,7 @@ type WorkbenchProps = {
   onCleanupStorage: (target: StorageCleanupTarget) => void;
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
+  onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string }) => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -44,6 +45,7 @@ export function Workbench({
   onCleanupStorage,
   onToggleRemoteApi,
   onToggleSearch,
+  onSaveRemoteApiConfig,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -81,6 +83,7 @@ export function Workbench({
         onCleanupStorage={onCleanupStorage}
         onToggleRemoteApi={onToggleRemoteApi}
         onToggleSearch={onToggleSearch}
+        onSaveRemoteApiConfig={onSaveRemoteApiConfig}
       />
     </main>
   );

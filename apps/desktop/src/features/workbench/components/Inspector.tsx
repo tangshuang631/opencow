@@ -1,4 +1,5 @@
 import { FileText, Globe2, ListChecks, ScrollText } from "lucide-react";
+import { useState } from "react";
 import { RollbackPanel } from "./RollbackPanel";
 import type { StorageCleanupTarget, WorkbenchState } from "../workbenchState";
 import { normalizeWorkbenchText } from "../workbenchText";
@@ -18,6 +19,7 @@ type InspectorProps = {
   onCleanupStorage: (target: StorageCleanupTarget) => void;
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
+  onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string }) => void;
 };
 
 export function Inspector({
@@ -34,11 +36,14 @@ export function Inspector({
   onUpdateRollbackLimit,
   onCleanupStorage,
   onToggleRemoteApi,
-  onToggleSearch
+  onToggleSearch,
+  onSaveRemoteApiConfig
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
   const hasModels = state.model.availableModels.length > 0;
+  const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
+  const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
 
   return (
     <aside className="inspector" aria-label="右侧面板">
@@ -221,6 +226,42 @@ export function Inspector({
           </button>
           <button className="action-button" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
             {state.search.enabled ? "关闭联网搜索" : "开启联网搜索"}
+          </button>
+        </div>
+        <div className="action-row">
+          <label>
+            <span className="muted">远程 API Base URL</span>
+            <input
+              aria-label="远程 API Base URL"
+              type="text"
+              value={remoteApiBaseUrl}
+              onChange={(event) => setRemoteApiBaseUrl(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="action-row">
+          <label>
+            <span className="muted">远程 API Provider</span>
+            <input
+              aria-label="远程 API Provider"
+              type="text"
+              value={remoteApiProviderLabel}
+              onChange={(event) => setRemoteApiProviderLabel(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="action-row">
+          <button
+            className="action-button"
+            type="button"
+            onClick={() =>
+              onSaveRemoteApiConfig({
+                baseUrl: remoteApiBaseUrl,
+                providerLabel: remoteApiProviderLabel
+              })
+            }
+          >
+            保存远程 API 配置
           </button>
         </div>
         <p className="muted">回退点上限 {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>

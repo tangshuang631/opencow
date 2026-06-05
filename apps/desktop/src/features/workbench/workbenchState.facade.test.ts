@@ -17,6 +17,7 @@ describe("workbenchState facade", () => {
     expect(workbenchState.applyPendingRollbackState).toBeTypeOf("function");
     expect(workbenchState.cancelPendingRollbackState).toBeTypeOf("function");
     expect(workbenchState.createRemoteApiToggleState).toBeTypeOf("function");
+    expect(workbenchState.createRemoteApiConfigState).toBeTypeOf("function");
     expect(workbenchState.createSearchToggleState).toBeTypeOf("function");
     expect(workbenchState.createSearchEnabledState).toBeTypeOf("function");
     expect(workbenchState.createStorageCleanupState).toBeTypeOf("function");

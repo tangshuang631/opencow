@@ -13,7 +13,7 @@ export type {
 } from "./workbenchState.types";
 
 export { createInitialWorkbenchState } from "./workbenchState.initial";
-export { createRemoteApiToggleState, createSearchToggleState } from "./workbenchState.network";
+export { createRemoteApiConfigState, createRemoteApiToggleState, createSearchToggleState } from "./workbenchState.network";
 export { mergeOllamaOverview, createOllamaLoadErrorState } from "./workbenchState.ollama";
 export {
   approvePendingConfirmationState,

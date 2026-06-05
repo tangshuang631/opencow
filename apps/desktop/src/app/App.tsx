@@ -13,6 +13,7 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
+  createRemoteApiConfigState,
   createRemoteApiToggleState,
   createRollbackLimitUpdatedState,
   createSearchEnabledState,
@@ -287,6 +288,12 @@ export function App() {
     });
   }
 
+  function handleSaveRemoteApiConfig(payload: { baseUrl: string; providerLabel: string }) {
+    startTransition(() => {
+      setState((current) => createRemoteApiConfigState(current, payload));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -309,6 +316,7 @@ export function App() {
       onCleanupStorage={handleCleanupStorage}
       onToggleRemoteApi={handleToggleRemoteApi}
       onToggleSearch={handleToggleSearch}
+      onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}

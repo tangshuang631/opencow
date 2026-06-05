@@ -53,6 +53,62 @@ export function createRemoteApiToggleState(state: WorkbenchState, enabled: boole
   );
 }
 
+export function createRemoteApiConfigState(
+  state: WorkbenchState,
+  payload: {
+    baseUrl: string;
+    providerLabel: string;
+  }
+): WorkbenchState {
+  const nextBaseUrl = payload.baseUrl.trim();
+  const nextProviderLabel = payload.providerLabel.trim();
+
+  if (
+    state.settings.remoteApi.baseUrl === nextBaseUrl &&
+    state.settings.remoteApi.providerLabel === nextProviderLabel
+  ) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      settings: {
+        ...state.settings,
+        remoteApi: {
+          ...state.settings.remoteApi,
+          baseUrl: nextBaseUrl,
+          providerLabel: nextProviderLabel
+        }
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `remote-api-config-${state.rollback.entries.length}`,
+          kind: "system",
+          title: "已更新远程 API 配置",
+          summary: `已保存 ${nextProviderLabel || "远程 provider"} 的 Base URL 配置。`,
+          actionLabel: "预览回退到 启动基线",
+          rollbackTargetId: "startup-baseline"
+        })
+      },
+      audit: {
+        summary: "已更新远程 API 配置",
+        lastEvent: {
+          module: "network",
+          detail: `baseUrl=${nextBaseUrl || "未填写"} provider=${nextProviderLabel || "未填写"}`,
+          timestamp: "已执行",
+          source: "remote_api_config"
+        }
+      },
+      error: null
+    },
+    `remote-api-config-${state.rollback.entries.length}`,
+    "远程 API 配置更新",
+    "已保存远程 API 基础连接信息。",
+    "session"
+  );
+}
+
 export function createSearchToggleState(
   state: WorkbenchState,
   payload: {
