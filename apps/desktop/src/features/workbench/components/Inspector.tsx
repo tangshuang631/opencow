@@ -44,12 +44,12 @@ export function Inspector({
         <p className="muted">Ollama: {state.model.status}</p>
         <p className="muted">权限: {state.permission.label}</p>
         <p className="muted">{state.permission.summary}</p>
-        {state.sources.items[0] ? (
-          <>
-            <p className="muted">来源标题: {state.sources.items[0].title}</p>
-            <p className="muted">来源地址: {state.sources.items[0].url}</p>
-          </>
-        ) : null}
+        {state.sources.items.slice(0, 3).map((item) => (
+          <div key={`${item.provider}-${item.url}`}>
+            <p className="muted">来源标题: {item.title}</p>
+            <p className="muted">来源地址: {item.url}</p>
+          </div>
+        ))}
       </section>
 
       <section>

@@ -260,6 +260,7 @@ describe("createInitialWorkbenchState", () => {
       kind: "system",
       title: "联网搜索已开启"
     });
+    expect(updated.rollback.entries[0]?.label).toBe("联网搜索");
   });
 
   it("records a tool execution result in the tool panel and conversation feed", () => {
@@ -281,5 +282,40 @@ describe("createInitialWorkbenchState", () => {
       kind: "system",
       title: "工具执行完成"
     });
+    expect(updated.rollback.entries[0]?.label).toBe("工具执行结果");
+  });
+
+  it("restores search state back to baseline after rollback", () => {
+    const searched = createSearchEnabledState(createInitialWorkbenchState(), {
+      provider: "Tavily",
+      query: "OpenClaw Windows 本地助手",
+      sourceTitle: "OpenClaw GitHub",
+      sourceUrl: "https://github.com/example/openclaw",
+      summary: "已启用联网搜索，并注入 1 条来源摘要。"
+    });
+    const previewed = requestRollbackPreviewState(searched, "startup-baseline");
+
+    const restored = applyPendingRollbackState(previewed);
+
+    expect(restored.search.enabled).toBe(false);
+    expect(restored.search.providerLabel).toBe("");
+    expect(restored.sources.items).toHaveLength(0);
+  });
+
+  it("restores tool output back to baseline after rollback", () => {
+    const tooled = createToolExecutionState(createInitialWorkbenchState(), {
+      toolLabel: "Skill 扫描",
+      summary: "已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。",
+      outputTitle: "本地 Skill 清单",
+      outputSummary: "生成了最新的本地 Skill 扫描结果，可用于后续启用与审计。",
+      source: "skills_scan"
+    });
+    const previewed = requestRollbackPreviewState(tooled, "startup-baseline");
+
+    const restored = applyPendingRollbackState(previewed);
+
+    expect(restored.tools.lastResult).toBeNull();
+    expect(restored.output.title).toBe("暂无产物");
+    expect(restored.output.summary).toBe("等待工具执行结果或本地产物摘要。");
   });
 });

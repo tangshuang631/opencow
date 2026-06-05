@@ -8,6 +8,7 @@ import {
   cancelPermissionModeChangeState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
+  createSearchEnabledState,
   requestPermissionModeChangeState
 } from "../features/workbench/workbenchState";
 
@@ -111,6 +112,30 @@ describe("App", () => {
     expect(screen.getByText("命令预览: Remove-Item .\\temp-output -Recurse")).toBeInTheDocument();
     expect(screen.getByText("影响范围: 将删除 12 个文件，写入回退快照后才可执行。")).toBeInTheDocument();
     expect(screen.getByText("所需权限: controlled-full")).toBeInTheDocument();
+  });
+
+  it("renders multiple search sources in the inspector", () => {
+    const searchedOnce = createSearchEnabledState(createInitialWorkbenchState(), {
+      provider: "Tavily",
+      query: "OpenClaw Windows 本地助手",
+      sourceTitle: "OpenClaw GitHub",
+      sourceUrl: "https://github.com/example/openclaw",
+      summary: "已启用联网搜索，并注入 1 条来源摘要。"
+    });
+    const searchedTwice = createSearchEnabledState(searchedOnce, {
+      provider: "Bocha",
+      query: "OpenCow 桌面端",
+      sourceTitle: "OpenCow Desktop Spec",
+      sourceUrl: "https://example.com/opencow-desktop",
+      summary: "已追加 1 条桌面端参考来源。"
+    });
+
+    render(<Inspector state={searchedTwice} {...inspectorActions} />);
+
+    expect(screen.getByText("来源标题: OpenCow Desktop Spec")).toBeInTheDocument();
+    expect(screen.getByText("来源地址: https://example.com/opencow-desktop")).toBeInTheDocument();
+    expect(screen.getByText("来源标题: OpenClaw GitHub")).toBeInTheDocument();
+    expect(screen.getByText("来源地址: https://github.com/example/openclaw")).toBeInTheDocument();
   });
 
   it("shows an approved confirmation as cleared and traceable", () => {

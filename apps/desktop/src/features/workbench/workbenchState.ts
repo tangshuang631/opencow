@@ -134,7 +134,16 @@ export type WorkbenchState = {
 
 export type RollbackSnapshot = Pick<
   WorkbenchState,
-  "model" | "permission" | "confirmation" | "search" | "settings" | "audit" | "error"
+  | "model"
+  | "permission"
+  | "confirmation"
+  | "search"
+  | "sources"
+  | "tools"
+  | "output"
+  | "settings"
+  | "audit"
+  | "error"
 >;
 
 export function createInitialWorkbenchState(): WorkbenchState {
@@ -751,42 +760,52 @@ export function createSearchEnabledState(
     summary: string;
   }
 ): WorkbenchState {
-  return {
-    ...state,
-    search: {
-      enabled: true,
-      providerLabel: payload.provider
-    },
-    sources: {
-      items: [
-        {
-          title: payload.sourceTitle,
-          url: payload.sourceUrl,
-          provider: payload.provider,
-          query: payload.query,
-          summary: payload.summary
-        },
-        ...state.sources.items
-      ].slice(0, 6)
-    },
-    conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
-        id: `search-enabled-${payload.provider}`,
-        kind: "system",
-        title: "联网搜索已开启",
-        summary: `${payload.provider} 已返回来源 ${payload.sourceTitle}。`
-      })
-    },
-    audit: {
-      summary: payload.summary,
-      lastEvent: {
-        module: "search",
-        detail: `${payload.provider} 查询: ${payload.query}`,
-        timestamp: "已执行",
-        source: "search_query"
+  const rollbackEntryId = `search-enabled-${payload.provider.toLowerCase()}`;
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      search: {
+        enabled: true,
+        providerLabel: payload.provider
+      },
+      sources: {
+        items: [
+          {
+            title: payload.sourceTitle,
+            url: payload.sourceUrl,
+            provider: payload.provider,
+            query: payload.query,
+            summary: payload.summary
+          },
+          ...state.sources.items
+        ].slice(0, 6)
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: rollbackEntryId,
+          kind: "system",
+          title: "联网搜索已开启",
+          summary: `${payload.provider} 已返回来源 ${payload.sourceTitle}。`,
+          actionLabel: `预览回退到 ${payload.provider} 搜索前`,
+          rollbackTargetId: rollbackEntryId
+        })
+      },
+      audit: {
+        summary: payload.summary,
+        lastEvent: {
+          module: "search",
+          detail: `${payload.provider} 查询: ${payload.query}`,
+          timestamp: "已执行",
+          source: "search_query"
+        }
       }
-    }
-  };
+    },
+    rollbackEntryId,
+    "联网搜索",
+    `${payload.provider} 已返回来源 ${payload.sourceTitle}。`,
+    "session"
+  );
 }
 
 export function createToolExecutionState(
@@ -799,37 +818,47 @@ export function createToolExecutionState(
     source: string;
   }
 ): WorkbenchState {
-  return {
-    ...state,
-    tools: {
-      lastResult: {
-        toolLabel: payload.toolLabel,
-        summary: payload.summary,
-        source: payload.source
+  const rollbackEntryId = `tool-result-${payload.source}`;
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tools: {
+        lastResult: {
+          toolLabel: payload.toolLabel,
+          summary: payload.summary,
+          source: payload.source
+        }
+      },
+      output: {
+        title: payload.outputTitle,
+        summary: payload.outputSummary
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: rollbackEntryId,
+          kind: "system",
+          title: "工具执行完成",
+          summary: `${payload.toolLabel}: ${payload.summary}`,
+          actionLabel: `预览回退到 ${payload.toolLabel} 执行前`,
+          rollbackTargetId: rollbackEntryId
+        })
+      },
+      audit: {
+        summary: `${payload.toolLabel} 已完成`,
+        lastEvent: {
+          module: "tools",
+          detail: payload.summary,
+          timestamp: "已执行",
+          source: payload.source
+        }
       }
     },
-    output: {
-      title: payload.outputTitle,
-      summary: payload.outputSummary
-    },
-    conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
-        id: `tool-result-${payload.source}`,
-        kind: "system",
-        title: "工具执行完成",
-        summary: `${payload.toolLabel}: ${payload.summary}`
-      })
-    },
-    audit: {
-      summary: `${payload.toolLabel} 已完成`,
-      lastEvent: {
-        module: "tools",
-        detail: payload.summary,
-        timestamp: "已执行",
-        source: payload.source
-      }
-    }
-  };
+    rollbackEntryId,
+    "工具执行结果",
+    `${payload.toolLabel} 已写入当前工作台产物与日志。`,
+    "tool"
+  );
 }
 
 function getPermissionPresentation(mode: PermissionMode) {
@@ -914,6 +943,9 @@ function captureRollbackSnapshot(state: WorkbenchState): RollbackSnapshot {
     permission: state.permission,
     confirmation: state.confirmation,
     search: state.search,
+    sources: state.sources,
+    tools: state.tools,
+    output: state.output,
     settings: state.settings,
     audit: state.audit,
     error: state.error
