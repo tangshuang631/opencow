@@ -177,7 +177,7 @@ export function createInitialWorkbenchState(): WorkbenchState {
       summary: "仅允许读取已授权目录与附件。",
       requiresConfirmation: true,
       confirmationTitle: "权限确认",
-      confirmationSummary: "删除、覆盖、递归删除、进程结束前必须弹窗确认。",
+      confirmationSummary: "删除、覆盖、递归删除、结束进程前必须弹窗确认。",
       pendingModeChange: null
     },
     confirmation: {
@@ -195,12 +195,7 @@ export function createInitialWorkbenchState(): WorkbenchState {
     },
     rollback: {
       ...createRollbackJournal({
-        baselineEntry: createRollbackEntry(
-          "startup-baseline",
-          "启动基线",
-          "应用启动后的本地安全初始状态。",
-          "session"
-        )
+        baselineEntry: createRollbackEntry("startup-baseline", "启动基线", "应用启动后的本地安全初始状态。", "session")
       }),
       snapshots: {},
       pendingPreview: null
@@ -344,15 +339,15 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
         diagnostic: detail
       },
       conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
-        id: "ollama-load-error",
-        kind: "system",
-        title: "Ollama 状态读取异常",
-        summary: detail,
-        detailLines: ["模块: ollama", "来源: ollama_overview", "建议: 检查 Ollama 服务"],
-        actionLabel: "预览回退到 启动基线",
-        rollbackTargetId: "startup-baseline"
-      })
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: "ollama-load-error",
+          kind: "system",
+          title: "Ollama 状态读取异常",
+          summary: detail,
+          detailLines: ["模块: ollama", "来源: ollama_overview", "建议: 检查 Ollama 服务"],
+          actionLabel: "预览回退到 启动基线",
+          rollbackTargetId: "startup-baseline"
+        })
       },
       audit: {
         summary: "Ollama 状态读取失败，工作台保持可用",
@@ -396,11 +391,7 @@ export function createCommandPolicyBlockedState(
         kind: "system",
         title: payload.summary,
         summary: payload.detail,
-        detailLines: [
-          "模块: permission",
-          `来源: ${payload.source}`,
-          `建议: ${payload.actionLabel}`
-        ]
+        detailLines: ["模块: permission", `来源: ${payload.source}`, `建议: ${payload.actionLabel}`]
       })
     },
     audit: {
@@ -967,8 +958,8 @@ export function createUserTaskSubmittedState(
         ].slice(0, 20)
       },
       output: {
-        title: "\u672c\u5730\u4efb\u52a1\u961f\u5217",
-        summary: `\u5f53\u524d\u6709 ${state.tasks.pendingCount + 1} \u6761\u5f85\u5904\u7406\u7684\u672c\u5730\u4efb\u52a1\u3002`
+        title: "本地任务队列",
+        summary: `当前有 ${state.tasks.pendingCount + 1} 条待处理的本地任务。`
       },
       conversation: {
         entries: prependConversationEntries(state.conversation.entries, [
@@ -1330,7 +1321,7 @@ function getPermissionPresentation(mode: PermissionMode) {
     return {
       mode,
       label: "工作区读写",
-      summary: "允许在授权工作区内创建和修改文件。"
+      summary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
     };
   }
 
@@ -1423,9 +1414,7 @@ function pruneRollbackSnapshots(
 ): Record<string, RollbackSnapshot> {
   const allowedIds = new Set(entries.map((entry) => entry.id));
 
-  return Object.fromEntries(
-    Object.entries(snapshots).filter(([entryId]) => allowedIds.has(entryId))
-  );
+  return Object.fromEntries(Object.entries(snapshots).filter(([entryId]) => allowedIds.has(entryId)));
 }
 
 function prependConversationEntry(
