@@ -28,6 +28,17 @@ export function Inspector({ state }: InspectorProps) {
       <section>
         <h2>{state.permission.confirmationTitle}</h2>
         <p className="muted">{state.permission.confirmationSummary}</p>
+        {state.confirmation.pending ? (
+          <>
+            <p className="muted">{state.confirmation.pending.title}</p>
+            <p className="muted">{state.confirmation.pending.summary}</p>
+            <p className="muted">命令预览: {state.confirmation.pending.commandPreview}</p>
+            <p className="muted">影响范围: {state.confirmation.pending.impact}</p>
+            <p className="muted">所需权限: {state.confirmation.pending.requiredMode}</p>
+          </>
+        ) : (
+          <p className="muted">当前没有待确认的高风险操作</p>
+        )}
       </section>
       <section>
         <h2>

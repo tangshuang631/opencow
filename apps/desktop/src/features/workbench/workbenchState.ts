@@ -1,6 +1,13 @@
 import type { OllamaOverview } from "../ollama/ollamaService";
 
 export type PermissionMode = "readonly" | "workspace-write" | "controlled-full";
+export type PendingConfirmation = {
+  title: string;
+  summary: string;
+  commandPreview: string;
+  impact: string;
+  requiredMode: PermissionMode;
+};
 
 export type WorkbenchState = {
   model: {
@@ -22,6 +29,9 @@ export type WorkbenchState = {
     requiresConfirmation: boolean;
     confirmationTitle: string;
     confirmationSummary: string;
+  };
+  confirmation: {
+    pending: PendingConfirmation | null;
   };
   rollback: {
     defaultLimit: number;
@@ -80,6 +90,9 @@ export function createInitialWorkbenchState(): WorkbenchState {
       requiresConfirmation: true,
       confirmationTitle: "权限确认",
       confirmationSummary: "删除、覆盖、递归删除、进程结束前必须弹窗确认。"
+    },
+    confirmation: {
+      pending: null
     },
     rollback: {
       defaultLimit: 10,
@@ -228,6 +241,27 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
       actionLabel: "检查 Ollama 服务",
       timestamp: "本地最近一次检查",
       source: "ollama_overview"
+    }
+  };
+}
+
+export function createHighRiskConfirmationState(
+  state: WorkbenchState,
+  pending: PendingConfirmation
+): WorkbenchState {
+  return {
+    ...state,
+    confirmation: {
+      pending
+    },
+    audit: {
+      summary: "等待用户确认高风险操作",
+      lastEvent: {
+        module: "permission",
+        detail: pending.summary,
+        timestamp: "待用户确认",
+        source: "permission_confirmation"
+      }
     }
   };
 }

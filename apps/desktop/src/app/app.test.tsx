@@ -1,5 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { Inspector } from "../features/workbench/components/Inspector";
+import {
+  createHighRiskConfirmationState,
+  createInitialWorkbenchState
+} from "../features/workbench/workbenchState";
 
 const { loadOllamaOverviewMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn()
@@ -56,6 +61,7 @@ describe("App", () => {
     expect(screen.getByText("当前权限: 只读 · 敏感操作需弹窗确认")).toBeInTheDocument();
     expect(screen.getByText("权限确认")).toBeInTheDocument();
     expect(screen.getByText("删除、覆盖、递归删除、进程结束前必须弹窗确认。")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
   });
 
   it("surfaces a traceable error when loading Ollama overview throws", async () => {
@@ -71,5 +77,23 @@ describe("App", () => {
 
     expect(screen.getAllByText("来源: ollama_overview").length).toBeGreaterThan(0);
     expect(screen.getByText("建议: 检查 Ollama 服务")).toBeInTheDocument();
+  });
+
+  it("renders pending confirmation details for dangerous actions", () => {
+    const state = createHighRiskConfirmationState(createInitialWorkbenchState(), {
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+
+    render(<Inspector state={state} />);
+
+    expect(screen.getByText("确认删除临时目录")).toBeInTheDocument();
+    expect(screen.getAllByText("模型计划删除工作区内的 temp-output 目录。").length).toBeGreaterThan(0);
+    expect(screen.getByText("命令预览: Remove-Item .\\temp-output -Recurse")).toBeInTheDocument();
+    expect(screen.getByText("影响范围: 将删除 12 个文件，写入回退快照后才可执行。")).toBeInTheDocument();
+    expect(screen.getByText("所需权限: controlled-full")).toBeInTheDocument();
   });
 });

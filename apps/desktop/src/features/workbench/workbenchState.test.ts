@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createInitialWorkbenchState,
+  createHighRiskConfirmationState,
   createOllamaLoadErrorState
 } from "./workbenchState";
 
@@ -30,5 +31,27 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.summary).toBe("Ollama 状态读取失败，工作台保持可用");
     expect(updated.rollback.entries).toHaveLength(2);
     expect(updated.rollback.entries[1]?.label).toBe("异常保护");
+  });
+
+  it("tracks a pending high-risk confirmation before dangerous actions run", () => {
+    const state = createInitialWorkbenchState();
+
+    const updated = createHighRiskConfirmationState(state, {
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+
+    expect(updated.confirmation.pending).toMatchObject({
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+    expect(updated.audit.summary).toBe("等待用户确认高风险操作");
+    expect(updated.audit.lastEvent.source).toBe("permission_confirmation");
   });
 });
