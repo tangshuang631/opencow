@@ -21,6 +21,7 @@ opencow/
 ```
 
 `vendor/openclaw` 保留上游源码和许可证信息，`packages/openclaw-adapter` 负责统一对接模型、工具、会话、任务和权限。
+`packages/shell-runtime` 负责承接桌面端和后续 Tauri 执行器共享的 shell 执行前计划、超时归一化、策略结果映射与审计摘要生成。
 
 ## 2. 总体架构
 
@@ -114,3 +115,4 @@ opencow/
 - UI 视图、状态、服务、类型、测试分文件。
 - 权限、安全、日志、回退不得散落在 UI 事件里。
 - shell 执行必须通过 `shell-runtime`，不能由 UI 直接拼接执行。
+- `shell-runtime` 先输出可审计的计划对象，再决定是否进入真实执行层。

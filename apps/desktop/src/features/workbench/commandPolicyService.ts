@@ -1,4 +1,4 @@
-import { analyzeControlledCommand } from "@opencow/openclaw-adapter/browser";
+import { planControlledCommand } from "@opencow/shell-runtime";
 import type { WorkbenchState } from "./workbenchState";
 
 const desktopWorkspaceRoot = "E:\\2026\\opencow";
@@ -29,14 +29,15 @@ export type DangerousCommandPolicyResult =
 export function evaluateDangerousCommandPolicy(state: WorkbenchState): DangerousCommandPolicyResult {
   const command = "Remove-Item .\\temp-output -Recurse";
 
-  const analysis = analyzeControlledCommand({
+  const plan = planControlledCommand({
     command,
     cwd: desktopWorkspaceRoot,
     allowedRoots: [desktopWorkspaceRoot],
-    permissionMode: state.permission.mode
+    permissionMode: state.permission.mode,
+    timeoutMs: 20_000
   });
 
-  if (analysis.reasonCode === "permission_upgrade_required" || analysis.reasonCode === "permission_denied") {
+  if (plan.status === "blocked" && plan.requiredPermission === "controlled-full") {
     return {
       kind: "permission-request",
       targetMode: "controlled-full",
@@ -45,7 +46,7 @@ export function evaluateDangerousCommandPolicy(state: WorkbenchState): Dangerous
     };
   }
 
-  if (analysis.status === "needs-confirmation") {
+  if (plan.status === "needs-confirmation") {
     return {
       kind: "confirmation",
       title: "确认删除临时目录",
@@ -58,9 +59,9 @@ export function evaluateDangerousCommandPolicy(state: WorkbenchState): Dangerous
 
   return {
     kind: "blocked",
-    summary: analysis.auditSummary,
-    detail: analysis.auditDetail,
+    summary: plan.auditEvent.summary,
+    detail: plan.auditEvent.detail,
     actionLabel: "检查工作目录与权限范围",
-    source: "command_policy"
+    source: plan.auditEvent.source
   };
 }
