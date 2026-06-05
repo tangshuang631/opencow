@@ -292,4 +292,24 @@ describe("App", () => {
     expect(screen.getByText("已回退到 启动基线")).toBeInTheDocument();
     expect(screen.getByText("权限: 只读")).toBeInTheDocument();
   });
+
+  it("lets the conversation area trigger rollback preview beside recent action entries", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟提权申请" }));
+    fireEvent.click(screen.getByRole("button", { name: "批准提权" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "从会话区预览回退到 已批准权限升级" }));
+
+    expect(screen.getByText("目标回退点: 已批准权限升级")).toBeInTheDocument();
+    expect(screen.getByText("将回退 0 个后续状态")).toBeInTheDocument();
+  });
 });

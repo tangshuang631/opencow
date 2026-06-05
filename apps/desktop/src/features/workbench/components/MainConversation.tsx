@@ -3,10 +3,12 @@ import type { WorkbenchState } from "../workbenchState";
 
 type MainConversationProps = {
   state: WorkbenchState;
+  onPreviewRollback: (targetEntryId: string) => void;
 };
 
-export function MainConversation({ state }: MainConversationProps) {
+export function MainConversation({ state, onPreviewRollback }: MainConversationProps) {
   const modelCount = state.model.availableModels.length;
+  const recentEntries = state.rollback.entries.filter((entry) => entry.id !== "startup-baseline").slice(0, 3);
 
   return (
     <section className="conversation" aria-label="会话">
@@ -56,6 +58,30 @@ export function MainConversation({ state }: MainConversationProps) {
             {state.model.diagnostic ? <p className="message-note">{state.model.diagnostic}</p> : null}
           </div>
         </article>
+
+        {recentEntries.length > 0 ? (
+          <section className="conversation-timeline" aria-label="最近操作">
+            <div className="conversation-timeline-header">
+              <p className="message-title">最近操作与可回退点</p>
+              <p className="message-note">点击每条操作右侧按钮，可直接从会话区发起回退预览。</p>
+            </div>
+            {recentEntries.map((entry) => (
+              <article className="timeline-entry" key={entry.id}>
+                <div className="timeline-entry-copy">
+                  <p className="timeline-entry-title">{entry.label}</p>
+                  <p className="timeline-entry-summary">{entry.summary}</p>
+                </div>
+                <button
+                  className="timeline-entry-action"
+                  type="button"
+                  onClick={() => onPreviewRollback(entry.id)}
+                >
+                  从会话区预览回退到 {entry.label}
+                </button>
+              </article>
+            ))}
+          </section>
+        ) : null}
       </div>
     </section>
   );

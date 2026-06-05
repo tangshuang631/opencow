@@ -36,7 +36,7 @@ export function Workbench({
         onDemoPermissionRequest={onDemoPermissionRequest}
       />
       <section className="workbench-main">
-        <MainConversation state={state} />
+        <MainConversation state={state} onPreviewRollback={onPreviewRollback} />
         <Composer state={state} />
       </section>
       <Inspector

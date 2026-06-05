@@ -156,6 +156,8 @@ h1 {
 .conversation-body {
   max-width: 840px;
   margin: 44px auto 0;
+  display: grid;
+  gap: 22px;
 }
 
 .assistant-message {
@@ -219,6 +221,67 @@ h1 {
   margin-top: 12px;
   color: #6f777d;
   font-size: 13px;
+}
+
+.conversation-timeline {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid #e8eeea;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #fcfdfc 0%, #f7faf8 100%);
+}
+
+.conversation-timeline-header {
+  display: grid;
+  gap: 4px;
+}
+
+.conversation-timeline-header .message-note {
+  margin-top: 0;
+}
+
+.timeline-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #edf1ee;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.timeline-entry-copy {
+  min-width: 0;
+}
+
+.timeline-entry-title {
+  margin: 0 0 6px;
+  color: #28343b;
+  font-weight: 600;
+}
+
+.timeline-entry-summary {
+  margin: 0;
+  color: #6f777d;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.timeline-entry-action {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #dbe4df;
+  border-radius: 999px;
+  color: #314049;
+  background: #f8fbfa;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.timeline-entry-action:hover {
+  background: #f0f6f3;
 }
 
 .composer-shell {
