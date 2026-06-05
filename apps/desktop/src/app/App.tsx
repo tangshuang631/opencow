@@ -13,6 +13,7 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
+  createRollbackLimitUpdatedState,
   createSearchEnabledState,
   createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
@@ -254,6 +255,12 @@ export function App() {
     });
   }
 
+  function handleUpdateRollbackLimit(limit: number) {
+    startTransition(() => {
+      setState((current) => createRollbackLimitUpdatedState(current, limit));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -272,6 +279,7 @@ export function App() {
       onCancelRollback={handleCancelRollback}
       onRetryLocalTask={handleRetryLocalTask}
       onCancelActiveTask={handleCancelActiveTask}
+      onUpdateRollbackLimit={handleUpdateRollbackLimit}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}

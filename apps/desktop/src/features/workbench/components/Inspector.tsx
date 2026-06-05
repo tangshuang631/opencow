@@ -14,6 +14,7 @@ type InspectorProps = {
   onCancelRollback: () => void;
   onRetryLocalTask: () => void;
   onCancelActiveTask: () => void;
+  onUpdateRollbackLimit: (limit: number) => void;
 };
 
 export function Inspector({
@@ -26,7 +27,8 @@ export function Inspector({
   onApplyRollback,
   onCancelRollback,
   onRetryLocalTask,
-  onCancelActiveTask
+  onCancelActiveTask,
+  onUpdateRollbackLimit
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
@@ -202,6 +204,19 @@ export function Inspector({
             ? "保留 baseUrl 和 API 接入口，按需展开。"
             : "远程 API 设置已展开。"}
         </p>
+        <p className="muted">回退点上限 {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
+        <p className="muted">当前最多保留 {state.rollback.activeLimit} 段可回退点。</p>
+        <div className="action-row" aria-label="回退点上限快捷设置">
+          <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(10)}>
+            10 段
+          </button>
+          <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(15)}>
+            15 段
+          </button>
+          <button className="action-button action-button-primary" type="button" onClick={() => onUpdateRollbackLimit(20)}>
+            20 段
+          </button>
+        </div>
       </section>
 
       <RollbackPanel

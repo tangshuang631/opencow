@@ -25,6 +25,7 @@ export {
 export {
   applyPendingRollbackState,
   cancelPendingRollbackState,
+  createRollbackLimitUpdatedState,
   requestRollbackPreviewState
 } from "./workbenchState.rollbackFlow";
 export { createSearchEnabledState } from "./workbenchState.search";

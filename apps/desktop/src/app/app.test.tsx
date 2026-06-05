@@ -4,6 +4,7 @@ import { App } from "./App";
 import { Inspector } from "../features/workbench/components/Inspector";
 import {
   createInitialWorkbenchState,
+  createRollbackLimitUpdatedState,
   createSearchEnabledState,
   createTaskExecutionFailedState,
   createTaskExecutionStartedState,
@@ -27,7 +28,8 @@ const inspectorActions = {
   onApplyRollback: vi.fn(),
   onCancelRollback: vi.fn(),
   onRetryLocalTask: vi.fn(),
-  onCancelActiveTask: vi.fn()
+  onCancelActiveTask: vi.fn(),
+  onUpdateRollbackLimit: vi.fn()
 };
 
 describe("App", () => {
@@ -254,5 +256,17 @@ describe("App", () => {
     expect(sourceSection).not.toBeNull();
     expect(within(sourceSection as HTMLElement).getAllByText(/OpenCow Desktop Spec/).length).toBeGreaterThan(0);
     expect(within(sourceSection as HTMLElement).getAllByText(/OpenClaw GitHub/).length).toBeGreaterThan(0);
+  });
+
+  it("shows the updated rollback limit in the desktop workbench chrome", () => {
+    const state = createRollbackLimitUpdatedState(createInitialWorkbenchState(), 18);
+
+    render(<Inspector state={state} {...inspectorActions} />);
+
+    const settingsSection = screen.getByText("高级设置").closest("section");
+
+    expect(settingsSection).not.toBeNull();
+    expect(within(settingsSection as HTMLElement).getByText("回退点上限 18 / 20")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByText("当前最多保留 18 段可回退点。")).toBeInTheDocument();
   });
 });

@@ -12,6 +12,7 @@ import {
   createOllamaLoadErrorState,
   createSearchEnabledState,
   createUserTaskSubmittedState,
+  createRollbackLimitUpdatedState,
   createToolExecutionErrorState,
   createToolExecutionState,
   requestRollbackPreviewState,
@@ -417,5 +418,30 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.summary).toBe("已提交 1 条本地任务");
     expect(updated.audit.lastEvent.source).toBe("composer_submit");
     expect(updated.rollback.entries[0]?.label).toBe("会话输入");
+  });
+
+  it("updates the rollback active limit within the allowed desktop range", () => {
+    const updated = createRollbackLimitUpdatedState(createInitialWorkbenchState(), 16);
+
+    expect(updated.rollback.activeLimit).toBe(16);
+    expect(updated.audit.summary).toBe("已更新回退点上限");
+    expect(updated.audit.lastEvent.source).toBe("rollback_limit_update");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "已更新回退点上限",
+      summary: "当前最多保留 16 段可回退点。"
+    });
+    expect(updated.rollback.entries[0]?.label).toBe("回退点上限调整");
+  });
+
+  it("clamps the rollback active limit to the desktop maximum", () => {
+    const updated = createRollbackLimitUpdatedState(createInitialWorkbenchState(), 99);
+
+    expect(updated.rollback.activeLimit).toBe(20);
+  });
+
+  it("clamps the rollback active limit to the default minimum", () => {
+    const updated = createRollbackLimitUpdatedState(createInitialWorkbenchState(), 3);
+
+    expect(updated.rollback.activeLimit).toBe(10);
   });
 });

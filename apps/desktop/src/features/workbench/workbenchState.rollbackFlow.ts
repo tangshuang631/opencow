@@ -1,4 +1,4 @@
-import { applyRollback, previewRollback } from "./workbenchState.rollback";
+import { applyRollback, previewRollback, recordRollbackEntry } from "./workbenchState.rollback";
 import { prependConversationEntry } from "./workbenchState.shared";
 import type { WorkbenchState } from "./workbenchState.types";
 import { pruneRollbackSnapshots } from "./workbenchState.rollback";
@@ -127,4 +127,45 @@ export function cancelPendingRollbackState(state: WorkbenchState): WorkbenchStat
       }
     }
   };
+}
+
+export function createRollbackLimitUpdatedState(state: WorkbenchState, requestedLimit: number): WorkbenchState {
+  const nextLimit = Math.min(state.rollback.maxLimit, Math.max(state.rollback.defaultLimit, requestedLimit));
+
+  if (nextLimit === state.rollback.activeLimit) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `rollback-limit-updated-${nextLimit}`,
+          kind: "system",
+          title: "已更新回退点上限",
+          summary: `当前最多保留 ${nextLimit} 段可回退点。`,
+          actionLabel: "预览回退到 启动基线",
+          rollbackTargetId: "startup-baseline"
+        })
+      },
+      rollback: {
+        ...state.rollback,
+        activeLimit: nextLimit
+      },
+      audit: {
+        summary: "已更新回退点上限",
+        lastEvent: {
+          module: "rollback",
+          detail: `回退点上限已调整为 ${nextLimit}，默认基线仍为 ${state.rollback.defaultLimit}。`,
+          timestamp: "已调整",
+          source: "rollback_limit_update"
+        }
+      }
+    },
+    `rollback-limit-${nextLimit}`,
+    "回退点上限调整",
+    `当前最多保留 ${nextLimit} 段可回退点。`,
+    "session"
+  );
 }

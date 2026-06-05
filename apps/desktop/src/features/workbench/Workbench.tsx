@@ -15,6 +15,7 @@ type WorkbenchProps = {
   onCancelRollback: () => void;
   onRetryLocalTask: () => void;
   onCancelActiveTask: () => void;
+  onUpdateRollbackLimit: (limit: number) => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -35,6 +36,7 @@ export function Workbench({
   onCancelRollback,
   onRetryLocalTask,
   onCancelActiveTask,
+  onUpdateRollbackLimit,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -68,6 +70,7 @@ export function Workbench({
         onCancelRollback={onCancelRollback}
         onRetryLocalTask={onRetryLocalTask}
         onCancelActiveTask={onCancelActiveTask}
+        onUpdateRollbackLimit={onUpdateRollbackLimit}
       />
     </main>
   );
