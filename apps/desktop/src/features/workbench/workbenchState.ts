@@ -252,6 +252,37 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
   };
 }
 
+export function createCommandPolicyBlockedState(
+  state: WorkbenchState,
+  payload: {
+    summary: string;
+    detail: string;
+    actionLabel: string;
+    source: string;
+  }
+): WorkbenchState {
+  return {
+    ...state,
+    audit: {
+      summary: payload.summary,
+      lastEvent: {
+        module: "permission",
+        detail: payload.detail,
+        timestamp: "策略拦截",
+        source: payload.source
+      }
+    },
+    error: {
+      module: "permission",
+      summary: payload.summary,
+      detail: payload.detail,
+      actionLabel: payload.actionLabel,
+      timestamp: "策略拦截",
+      source: payload.source
+    }
+  };
+}
+
 export function createHighRiskConfirmationState(
   state: WorkbenchState,
   pending: PendingConfirmation

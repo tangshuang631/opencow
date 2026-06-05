@@ -4,6 +4,7 @@ import {
   approvePermissionModeChangeState,
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
+  createCommandPolicyBlockedState,
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
@@ -141,5 +142,24 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.permission.pendingModeChange).toBeNull();
     expect(updated.audit.summary).toBe("用户已取消权限升级");
     expect(updated.audit.lastEvent.source).toBe("permission_mode_change_cancelled");
+  });
+
+  it("records a traceable blocked command policy result", () => {
+    const updated = createCommandPolicyBlockedState(createInitialWorkbenchState(), {
+      summary: "命令执行被阻止",
+      detail: "工作目录超出授权范围: c:/windows",
+      actionLabel: "检查工作目录与权限范围",
+      source: "command_policy"
+    });
+
+    expect(updated.audit.summary).toBe("命令执行被阻止");
+    expect(updated.audit.lastEvent.source).toBe("command_policy");
+    expect(updated.error).toMatchObject({
+      module: "permission",
+      summary: "命令执行被阻止",
+      detail: "工作目录超出授权范围: c:/windows",
+      actionLabel: "检查工作目录与权限范围",
+      source: "command_policy"
+    });
   });
 });

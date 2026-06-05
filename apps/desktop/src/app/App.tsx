@@ -7,6 +7,7 @@ import {
   approvePermissionModeChangeState,
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
+  createCommandPolicyBlockedState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
@@ -74,7 +75,12 @@ export function App() {
           });
         }
 
-        return current;
+        return createCommandPolicyBlockedState(current, {
+          summary: result.summary,
+          detail: result.detail,
+          actionLabel: result.actionLabel,
+          source: result.source
+        });
       });
     });
   }

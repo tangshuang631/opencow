@@ -11,6 +11,8 @@ v1.0 阶段不直接把 OpenClaw 大量源码散落接入桌面端，也不把�
 - 定位本地 `vendor/openclaw` 根目录。
 - 读取 OpenClaw 根包元信息，用于审计、许可声明和兼容性检查。
 - 探测关键能力包是否存在，包括 `llm-core`、`llm-runtime`、`model-catalog-core`、`plugin-sdk`、`terminal-core`、`tool-call-repair`。
+- 提供受控命令策略分析器，用于在真正执行前产出 `blocked / needs-confirmation / ready` 结论。
+- 提供浏览器安全入口 `@opencow/openclaw-adapter/browser`，仅暴露可在桌面前端安全消费的纯策略模块。
 - 不导入、不启动、不修改上游运行时代码。
 
 ## 3. 后续接入顺序
@@ -25,6 +27,7 @@ v1.0 阶段不直接把 OpenClaw 大量源码散落接入桌面端，也不把�
 
 - 新增 adapter 能力必须先写单元测试。
 - 不允许 UI 直接读取 `vendor/openclaw`。
+- 桌面前端如果需要消费 adapter，必须优先走 browser-safe 子入口，不能从包根导入会触发 `node:*` 依赖的模块。
 - 不允许绕过权限、安全、日志、回退模块执行高风险工具。
 - 不批量转换上游编码，不直接重写上游文件。
 - 每次新增 adapter 子能力后，更新本文件和健康检查路径。
