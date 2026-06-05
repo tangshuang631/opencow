@@ -93,3 +93,44 @@ Left Sidebar | Main Conversation | Right Inspector
 - 保留 `baseUrl / API Key / 外部模型` 配置入口
 - 保留联网搜索、Skills 下载、MCP 等能力开关
 - 所有高风险能力都要受权限、确认、日志、超时、工作目录限制约束
+
+## 8. 前端目录约束
+
+工作台前端目录当前按“小模块、单职责、桌面优先”拆分，后续继续开发时必须沿用这一结构，不允许再把状态、类型、权限、回退、任务流转重新堆回单个大文件。
+
+当前关键目录：
+
+```text
+apps/desktop/src/features/workbench/
+  components/
+  Workbench.tsx
+  workbenchText.ts
+  workbenchState.ts
+  workbenchState.types.ts
+  workbenchState.shared.ts
+  workbenchState.initial.ts
+  workbenchState.ollama.ts
+  workbenchState.permissions.ts
+  workbenchState.rollback.ts
+  workbenchState.rollbackFlow.ts
+  workbenchState.search.ts
+  workbenchState.tools.ts
+  workbenchState.tasks.ts
+```
+
+拆分规则：
+
+- `workbenchState.ts` 仅作为统一导出入口，保持调用方稳定。
+- `workbenchState.types.ts` 只放状态类型与共享结构。
+- `workbenchState.shared.ts` 只放无副作用的展示与事件 ID 工具函数。
+- `workbenchState.rollback.ts` 只放回退记录、快照、裁剪等核心逻辑。
+- `workbenchState.rollbackFlow.ts` 只放“预览回退 / 应用回退 / 取消回退”状态流转。
+- `workbenchState.permissions.ts` 只放权限、确认、高风险操作前置状态。
+- `workbenchState.tasks.ts` 只放本地任务队列、执行、失败、取消、重试。
+- `workbenchState.ollama.ts`、`workbenchState.search.ts`、`workbenchState.tools.ts` 分别处理模型、联网搜索、工具结果。
+
+维护要求：
+
+- 新增工作台状态逻辑时，优先扩展对应子模块，不要直接堆到门面文件。
+- 文件接近 `300-500` 行且职责开始混杂时，继续拆分。
+- 新增目录或状态入口后，必须同步更新本节文档。
