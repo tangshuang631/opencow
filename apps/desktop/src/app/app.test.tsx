@@ -26,5 +26,6 @@ describe("App", () => {
     expect(screen.getByText("高级设置")).toBeInTheDocument();
     expect(screen.getByText("远程 API 默认关闭")).toBeInTheDocument();
     expect(screen.getByText("已读取 1 个本地模型")).toBeInTheDocument();
+    expect(screen.getByText("来源: ollama_overview")).toBeInTheDocument();
   });
 });

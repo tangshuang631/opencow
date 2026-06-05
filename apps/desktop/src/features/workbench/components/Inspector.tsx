@@ -41,6 +41,8 @@ export function Inspector({ state }: InspectorProps) {
         </h2>
         <p className="muted">{state.audit.summary}</p>
         <p className="muted">模块: {state.audit.lastEvent.module}</p>
+        <p className="muted">来源: {state.audit.lastEvent.source}</p>
+        <p className="muted">时间: {state.audit.lastEvent.timestamp}</p>
         <p className="muted">{state.audit.lastEvent.detail}</p>
       </section>
       <section>
@@ -49,6 +51,8 @@ export function Inspector({ state }: InspectorProps) {
           <>
             <p className="muted">{state.error.summary}</p>
             <p className="muted">模块: {state.error.module}</p>
+            <p className="muted">来源: {state.error.source}</p>
+            <p className="muted">时间: {state.error.timestamp}</p>
             <p className="muted">{state.error.detail}</p>
             <p className="muted">建议: {state.error.actionLabel}</p>
           </>

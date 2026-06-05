@@ -39,6 +39,8 @@ export type WorkbenchState = {
     lastEvent: {
       module: string;
       detail: string;
+      timestamp: string;
+      source: string;
     };
   };
   error: {
@@ -46,6 +48,8 @@ export type WorkbenchState = {
     summary: string;
     detail: string;
     actionLabel: string;
+    timestamp: string;
+    source: string;
   } | null;
 };
 
@@ -83,7 +87,9 @@ export function createInitialWorkbenchState(): WorkbenchState {
       summary: "等待本地事件",
       lastEvent: {
         module: "startup",
-        detail: "应用已启动，等待读取本地模型状态。"
+        detail: "应用已启动，等待读取本地模型状态。",
+        timestamp: "未记录",
+        source: "desktop-bootstrap"
       }
     },
     error: null
@@ -106,14 +112,18 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         summary: "Ollama 离线，等待本地服务恢复",
         lastEvent: {
           module: "ollama",
-          detail: overview.diagnostic
+          detail: overview.diagnostic,
+          timestamp: "本地最近一次检查",
+          source: "ollama_overview"
         }
       },
       error: {
         module: "ollama",
         summary: "无法连接本地 Ollama",
         detail: overview.diagnostic,
-        actionLabel: "检查 Ollama 服务"
+        actionLabel: "检查 Ollama 服务",
+        timestamp: "本地最近一次检查",
+        source: "ollama_overview"
       }
     };
   }
@@ -132,7 +142,9 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
       summary: `已读取 ${overview.models.length} 个本地模型`,
       lastEvent: {
         module: "ollama",
-        detail: `${overview.endpoint} 已返回模型列表。`
+        detail: `${overview.endpoint} 已返回模型列表。`,
+        timestamp: "本地最近一次检查",
+        source: "ollama_overview"
       }
     },
     error: null

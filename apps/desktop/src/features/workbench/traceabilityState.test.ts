@@ -11,6 +11,8 @@ describe("traceability workbench state", () => {
 
     expect(state.audit.summary).toBe("等待本地事件");
     expect(state.audit.lastEvent.module).toBe("startup");
+    expect(state.audit.lastEvent.timestamp).toBe("未记录");
+    expect(state.audit.lastEvent.source).toBe("desktop-bootstrap");
     expect(state.error).toBeNull();
   });
 
@@ -29,9 +31,12 @@ describe("traceability workbench state", () => {
       module: "ollama",
       summary: "无法连接本地 Ollama",
       detail: "Ollama 未启动，请确认本地服务已运行。",
-      actionLabel: "检查 Ollama 服务"
+      actionLabel: "检查 Ollama 服务",
+      source: "ollama_overview",
+      timestamp: "本地最近一次检查"
     });
     expect(updated.audit.summary).toContain("Ollama 离线");
+    expect(updated.audit.lastEvent.source).toBe("ollama_overview");
   });
 
   it("clears the active error and writes a healthy audit summary when Ollama is reachable", () => {
@@ -54,5 +59,7 @@ describe("traceability workbench state", () => {
     expect(recovered.error).toBeNull();
     expect(recovered.audit.summary).toContain("已读取 1 个本地模型");
     expect(recovered.audit.lastEvent.module).toBe("ollama");
+    expect(recovered.audit.lastEvent.source).toBe("ollama_overview");
+    expect(recovered.audit.lastEvent.timestamp).toBe("本地最近一次检查");
   });
 });
