@@ -8,6 +8,11 @@ export type PendingConfirmation = {
   impact: string;
   requiredMode: PermissionMode;
 };
+export type PendingPermissionModeChange = {
+  targetMode: PermissionMode;
+  reason: string;
+  riskSummary: string;
+};
 
 export type WorkbenchState = {
   model: {
@@ -29,6 +34,7 @@ export type WorkbenchState = {
     requiresConfirmation: boolean;
     confirmationTitle: string;
     confirmationSummary: string;
+    pendingModeChange: PendingPermissionModeChange | null;
   };
   confirmation: {
     pending: PendingConfirmation | null;
@@ -89,7 +95,8 @@ export function createInitialWorkbenchState(): WorkbenchState {
       summary: "仅允许读取已授权目录与附件。",
       requiresConfirmation: true,
       confirmationTitle: "权限确认",
-      confirmationSummary: "删除、覆盖、递归删除、进程结束前必须弹窗确认。"
+      confirmationSummary: "删除、覆盖、递归删除、进程结束前必须弹窗确认。",
+      pendingModeChange: null
     },
     confirmation: {
       pending: null
@@ -333,5 +340,102 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
         source: "permission_confirmation_cancelled"
       }
     }
+  };
+}
+
+export function requestPermissionModeChangeState(
+  state: WorkbenchState,
+  pendingModeChange: PendingPermissionModeChange
+): WorkbenchState {
+  return {
+    ...state,
+    permission: {
+      ...state.permission,
+      pendingModeChange
+    },
+    audit: {
+      summary: "等待用户确认权限升级",
+      lastEvent: {
+        module: "permission",
+        detail: pendingModeChange.reason,
+        timestamp: "待用户确认",
+        source: "permission_mode_change"
+      }
+    }
+  };
+}
+
+export function approvePermissionModeChangeState(state: WorkbenchState): WorkbenchState {
+  const pendingModeChange = state.permission.pendingModeChange;
+
+  if (!pendingModeChange) {
+    return state;
+  }
+
+  return {
+    ...state,
+    permission: {
+      ...state.permission,
+      ...getPermissionPresentation(pendingModeChange.targetMode),
+      pendingModeChange: null
+    },
+    audit: {
+      summary: "用户已批准权限升级",
+      lastEvent: {
+        module: "permission",
+        detail: pendingModeChange.reason,
+        timestamp: "已批准",
+        source: "permission_mode_change_approved"
+      }
+    }
+  };
+}
+
+export function cancelPermissionModeChangeState(state: WorkbenchState): WorkbenchState {
+  const pendingModeChange = state.permission.pendingModeChange;
+
+  if (!pendingModeChange) {
+    return state;
+  }
+
+  return {
+    ...state,
+    permission: {
+      ...state.permission,
+      pendingModeChange: null
+    },
+    audit: {
+      summary: "用户已取消权限升级",
+      lastEvent: {
+        module: "permission",
+        detail: pendingModeChange.reason,
+        timestamp: "已取消",
+        source: "permission_mode_change_cancelled"
+      }
+    }
+  };
+}
+
+function getPermissionPresentation(mode: PermissionMode) {
+  if (mode === "workspace-write") {
+    return {
+      mode,
+      label: "工作区读写",
+      summary: "允许在授权工作区内创建和修改文件。"
+    };
+  }
+
+  if (mode === "controlled-full") {
+    return {
+      mode,
+      label: "受控完全访问",
+      summary: "允许受控高风险操作，但必须保留确认、日志、超时和回退。"
+    };
+  }
+
+  return {
+    mode: "readonly" as const,
+    label: "只读",
+    summary: "仅允许读取已授权目录与附件。"
   };
 }

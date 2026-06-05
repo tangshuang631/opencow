@@ -28,6 +28,15 @@ export function Inspector({ state }: InspectorProps) {
       <section>
         <h2>{state.permission.confirmationTitle}</h2>
         <p className="muted">{state.permission.confirmationSummary}</p>
+        {state.permission.pendingModeChange ? (
+          <>
+            <p className="muted">待切换权限: {state.permission.pendingModeChange.targetMode}</p>
+            <p className="muted">提权原因: {state.permission.pendingModeChange.reason}</p>
+            <p className="muted">风险说明: {state.permission.pendingModeChange.riskSummary}</p>
+          </>
+        ) : (
+          <p className="muted">当前没有待确认的权限升级</p>
+        )}
         {state.confirmation.pending ? (
           <>
             <p className="muted">{state.confirmation.pending.title}</p>

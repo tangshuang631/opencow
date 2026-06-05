@@ -3,9 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { Inspector } from "../features/workbench/components/Inspector";
 import {
   approvePendingConfirmationState,
+  approvePermissionModeChangeState,
   cancelPendingConfirmationState,
+  cancelPermissionModeChangeState,
   createHighRiskConfirmationState,
-  createInitialWorkbenchState
+  createInitialWorkbenchState,
+  requestPermissionModeChangeState
 } from "../features/workbench/workbenchState";
 
 const { loadOllamaOverviewMock } = vi.hoisted(() => ({
@@ -64,6 +67,7 @@ describe("App", () => {
     expect(screen.getByText("权限确认")).toBeInTheDocument();
     expect(screen.getByText("删除、覆盖、递归删除、进程结束前必须弹窗确认。")).toBeInTheDocument();
     expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认的权限升级")).toBeInTheDocument();
   });
 
   it("surfaces a traceable error when loading Ollama overview throws", async () => {
@@ -133,5 +137,50 @@ describe("App", () => {
     expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
     expect(screen.getByText("用户已取消高风险操作")).toBeInTheDocument();
     expect(screen.getByText("已取消操作")).toBeInTheDocument();
+  });
+
+  it("renders a pending permission mode change request", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+
+    render(<Inspector state={requested} />);
+
+    expect(screen.getByText("待切换权限: workspace-write")).toBeInTheDocument();
+    expect(screen.getByText("提权原因: 需要在工作区内写入修复文件。")).toBeInTheDocument();
+    expect(screen.getByText("风险说明: 允许在授权工作区内创建和修改文件，但仍禁止高风险删除。")).toBeInTheDocument();
+  });
+
+  it("renders an approved permission mode change", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+    const approved = approvePermissionModeChangeState(requested);
+
+    render(<Inspector state={approved} />);
+
+    expect(screen.getByText("权限: 工作区读写")).toBeInTheDocument();
+    expect(screen.getByText("允许在授权工作区内创建和修改文件。")).toBeInTheDocument();
+    expect(screen.getByText("用户已批准权限升级")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认的权限升级")).toBeInTheDocument();
+  });
+
+  it("renders a cancelled permission mode change", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "controlled-full",
+      reason: "需要执行受控高风险操作。",
+      riskSummary: "允许受控高风险操作，但必须保留确认、日志、超时和回退。"
+    });
+    const cancelled = cancelPermissionModeChangeState(requested);
+
+    render(<Inspector state={cancelled} />);
+
+    expect(screen.getByText("权限: 只读")).toBeInTheDocument();
+    expect(screen.getByText("用户已取消权限升级")).toBeInTheDocument();
+    expect(screen.getByText("当前没有待确认的权限升级")).toBeInTheDocument();
   });
 });

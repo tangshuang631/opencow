@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   approvePendingConfirmationState,
+  approvePermissionModeChangeState,
   cancelPendingConfirmationState,
+  cancelPermissionModeChangeState,
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
-  createOllamaLoadErrorState
+  createOllamaLoadErrorState,
+  requestPermissionModeChangeState
 } from "./workbenchState";
 
 describe("createInitialWorkbenchState", () => {
@@ -89,5 +92,54 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.summary).toBe("用户已取消高风险操作");
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation_cancelled");
     expect(updated.rollback.entries[1]?.label).toBe("已取消操作");
+  });
+
+  it("tracks a pending permission mode change request", () => {
+    const state = createInitialWorkbenchState();
+
+    const updated = requestPermissionModeChangeState(state, {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+
+    expect(updated.permission.pendingModeChange).toMatchObject({
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+    expect(updated.audit.summary).toBe("等待用户确认权限升级");
+    expect(updated.audit.lastEvent.source).toBe("permission_mode_change");
+  });
+
+  it("applies an approved permission mode change", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "workspace-write",
+      reason: "需要在工作区内写入修复文件。",
+      riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+    });
+
+    const updated = approvePermissionModeChangeState(requested);
+
+    expect(updated.permission.mode).toBe("workspace-write");
+    expect(updated.permission.label).toBe("工作区读写");
+    expect(updated.permission.pendingModeChange).toBeNull();
+    expect(updated.audit.summary).toBe("用户已批准权限升级");
+    expect(updated.audit.lastEvent.source).toBe("permission_mode_change_approved");
+  });
+
+  it("keeps the current permission mode when upgrade is cancelled", () => {
+    const requested = requestPermissionModeChangeState(createInitialWorkbenchState(), {
+      targetMode: "controlled-full",
+      reason: "需要执行受控高风险操作。",
+      riskSummary: "允许受控高风险操作，但必须保留确认、日志、超时和回退。"
+    });
+
+    const updated = cancelPermissionModeChangeState(requested);
+
+    expect(updated.permission.mode).toBe("readonly");
+    expect(updated.permission.pendingModeChange).toBeNull();
+    expect(updated.audit.summary).toBe("用户已取消权限升级");
+    expect(updated.audit.lastEvent.source).toBe("permission_mode_change_cancelled");
   });
 });
