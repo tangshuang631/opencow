@@ -14,6 +14,7 @@ import {
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createUserTaskSubmittedState,
   createToolExecutionErrorState,
   createToolExecutionState,
   mergeOllamaOverview,
@@ -188,6 +189,12 @@ export function App() {
     });
   }
 
+  function handleSubmitTask(message: string) {
+    startTransition(() => {
+      setState((current) => createUserTaskSubmittedState(current, { message }));
+    });
+  }
+
   return (
     <Workbench
       state={state}
@@ -203,6 +210,7 @@ export function App() {
       onDemoSearch={handleDemoSearch}
       onDemoToolResult={handleDemoToolResult}
       onDemoToolError={handleDemoToolError}
+      onSubmitTask={handleSubmitTask}
     />
   );
 }

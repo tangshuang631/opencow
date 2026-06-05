@@ -385,4 +385,30 @@ describe("App", () => {
     expect(screen.getAllByText("来源: skill_download").length).toBeGreaterThan(0);
     expect(screen.getAllByText("建议: 检查联网开关并重新授权后重试").length).toBeGreaterThan(0);
   });
+
+  it("submits a local task from the composer into the workbench flow", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("已读取 1 个本地模型")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "请检查当前工作区并整理待办" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("任务已进入本地队列")).toBeInTheDocument();
+    expect(screen.getAllByText("请检查当前工作区并整理待办").length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(screen.getAllByText("已提交 1 条本地任务").length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByText("会话输入").length).toBeGreaterThan(0);
+  });
 });

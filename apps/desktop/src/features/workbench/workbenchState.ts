@@ -33,7 +33,7 @@ export type RollbackPreviewState = {
 
 export type ConversationEntry = {
   id: string;
-  kind: "assistant" | "system";
+  kind: "assistant" | "system" | "user";
   title: string;
   summary: string;
   detailLines?: string[];
@@ -924,6 +924,57 @@ export function createToolExecutionErrorState(
   );
 }
 
+export function createUserTaskSubmittedState(
+  state: WorkbenchState,
+  payload: {
+    message: string;
+  }
+): WorkbenchState {
+  const rollbackEntryId = createWorkbenchEventId(state, "composer-submit", "local-task");
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      conversation: {
+        entries: prependConversationEntries(state.conversation.entries, [
+          {
+            id: `${rollbackEntryId}-user`,
+            kind: "user",
+            title: "本地任务",
+            summary: payload.message
+          },
+          {
+            id: `${rollbackEntryId}-system`,
+            kind: "system",
+            title: "任务已进入本地队列",
+            summary: "将优先使用本地 Ollama 处理这条任务。",
+            detailLines: [
+              `模型: ${state.model.activeModel}`,
+              `权限: ${state.permission.label}`,
+              `联网搜索: ${state.search.enabled ? "已开启" : "默认关闭"}`
+            ],
+            actionLabel: "预览回退到 本次输入前",
+            rollbackTargetId: rollbackEntryId
+          }
+        ])
+      },
+      audit: {
+        summary: "已提交 1 条本地任务",
+        lastEvent: {
+          module: "conversation",
+          detail: payload.message,
+          timestamp: "已提交",
+          source: "composer_submit"
+        }
+      }
+    },
+    rollbackEntryId,
+    "会话输入",
+    `已提交本地任务: ${payload.message}`,
+    "session"
+  );
+}
+
 function getPermissionPresentation(mode: PermissionMode) {
   if (mode === "workspace-write") {
     return {
@@ -1031,6 +1082,13 @@ function prependConversationEntry(
   entry: ConversationEntry
 ): ConversationEntry[] {
   return [entry, ...entries].slice(0, 12);
+}
+
+function prependConversationEntries(
+  entries: ConversationEntry[],
+  nextEntries: ConversationEntry[]
+): ConversationEntry[] {
+  return [...nextEntries.reverse(), ...entries].slice(0, 12);
 }
 
 function createWorkbenchEventId(

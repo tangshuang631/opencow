@@ -18,6 +18,7 @@ type WorkbenchProps = {
   onDemoSearch: () => void;
   onDemoToolResult: () => void;
   onDemoToolError: () => void;
+  onSubmitTask: (message: string) => void;
 };
 
 export function Workbench({
@@ -33,7 +34,8 @@ export function Workbench({
   onDemoPermissionRequest,
   onDemoSearch,
   onDemoToolResult,
-  onDemoToolError
+  onDemoToolError,
+  onSubmitTask
 }: WorkbenchProps) {
   return (
     <main className="workbench" aria-label="opencow 工作台">
@@ -46,7 +48,7 @@ export function Workbench({
       />
       <section className="workbench-main">
         <MainConversation state={state} onPreviewRollback={onPreviewRollback} />
-        <Composer state={state} />
+        <Composer state={state} onSubmitTask={onSubmitTask} />
       </section>
       <Inspector
         state={state}

@@ -11,6 +11,7 @@ import {
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createUserTaskSubmittedState,
   createToolExecutionErrorState,
   createToolExecutionState,
   requestRollbackPreviewState,
@@ -398,5 +399,23 @@ describe("createInitialWorkbenchState", () => {
     expect(tooledTwice.conversation.entries[0]?.rollbackTargetId).not.toBe(
       tooledTwice.conversation.entries[1]?.rollbackTargetId
     );
+  });
+
+  it("records a submitted local task in conversation, audit, and rollback", () => {
+    const updated = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "请检查当前工作区并整理待办"
+    });
+
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "任务已进入本地队列",
+      summary: "将优先使用本地 Ollama 处理这条任务。"
+    });
+    expect(updated.conversation.entries[1]).toMatchObject({
+      kind: "user",
+      summary: "请检查当前工作区并整理待办"
+    });
+    expect(updated.audit.summary).toBe("已提交 1 条本地任务");
+    expect(updated.audit.lastEvent.source).toBe("composer_submit");
+    expect(updated.rollback.entries[0]?.label).toBe("会话输入");
   });
 });

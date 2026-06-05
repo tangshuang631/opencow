@@ -26,10 +26,10 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
       <div className="conversation-body">
         {recentEntries.map((entry, index) => (
           <article
-            className={entry.kind === "assistant" ? "assistant-message" : "timeline-message"}
+            className={entry.kind === "system" ? "timeline-message" : "assistant-message"}
             key={entry.id}
           >
-            <div className={entry.kind === "assistant" ? "message-icon" : "timeline-message-icon"}>
+            <div className={entry.kind === "system" ? "timeline-message-icon" : "message-icon"}>
               <CheckCircle2 aria-hidden="true" size={18} />
             </div>
             <div className="message-content">
