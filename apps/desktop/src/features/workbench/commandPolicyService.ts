@@ -1,3 +1,4 @@
+import { createPermissionEscalationRequest } from "@opencow/permission-engine";
 import { planControlledCommand } from "@opencow/shell-runtime";
 import type { WorkbenchState } from "./workbenchState";
 
@@ -37,12 +38,14 @@ export function evaluateDangerousCommandPolicy(state: WorkbenchState): Dangerous
     timeoutMs: 20_000
   });
 
-  if (plan.status === "blocked" && plan.requiredPermission === "controlled-full") {
+  const escalation = createPermissionEscalationRequest(plan);
+
+  if (escalation) {
     return {
       kind: "permission-request",
       targetMode: "controlled-full",
-      reason: "需要执行受控高风险操作。",
-      riskSummary: "允许受控高风险操作，但必须保留确认、日志、超时和回退。"
+      reason: escalation.reason,
+      riskSummary: escalation.riskSummary
     };
   }
 

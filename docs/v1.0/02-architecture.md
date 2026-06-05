@@ -23,6 +23,7 @@ opencow/
 `vendor/openclaw` 保留上游源码和许可证信息，`packages/openclaw-adapter` 负责统一对接模型、工具、会话、任务和权限。
 `packages/shell-runtime` 负责承接桌面端和后续 Tauri 执行器共享的 shell 执行前计划、超时归一化、策略结果映射与审计摘要生成。
 `packages/audit-core` 负责承接共享审计事件结构、时间戳标准化与后续日志查询/存储层的公共边界。
+`packages/permission-engine` 负责承接提权请求判断、权限模式升级描述与后续授权记录边界。
 
 ## 2. 总体架构
 

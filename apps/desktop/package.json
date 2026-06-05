@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@assistant-ui/react": "^0.11.0",
+    "@opencow/permission-engine": "^0.1.0",
     "@opencow/shell-runtime": "^0.1.0",
     "@tauri-apps/api": "^2.0.0",
     "lucide-react": "^0.468.0",
