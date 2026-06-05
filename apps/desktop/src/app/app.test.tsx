@@ -370,3 +370,44 @@ describe("App", () => {
     expect(within(settingsSection as HTMLElement).getByRole("button", { name: "保存联网搜索配置" })).toBeInTheDocument();
   });
 });
+
+describe("capability toggle cancellation flow", () => {
+  it("cancels a requested network search enablement without enabling the capability", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    const { container } = render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "请先开启联网搜索" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    expect((await screen.findAllByText(/确认开启联网搜索/)).length).toBeGreaterThan(0);
+
+    const permissionSection = screen.getByRole("heading", { name: "权限确认" }).closest("section");
+    const cancelButton = permissionSection?.querySelectorAll(".action-row button")[1] ?? null;
+
+    expect(cancelButton).not.toBeNull();
+    fireEvent.click(cancelButton as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(within(permissionSection as HTMLElement).getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+    });
+    expect(screen.getAllByText(/capability_toggle_cancelled/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/联网搜索默认关闭/).length).toBeGreaterThan(0);
+  });
+});

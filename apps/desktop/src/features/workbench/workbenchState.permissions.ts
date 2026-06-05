@@ -260,6 +260,42 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
     return state;
   }
 
+  if (pending.requestedFeature) {
+    const featureLabel = pending.requestedFeature === "search" ? "联网搜索" : "远程 API";
+
+    return recordRollbackEntry(
+      {
+        ...state,
+        confirmation: {
+          pending: null
+        },
+        conversation: {
+          entries: prependConversationEntry(state.conversation.entries, {
+            id: `capability-cancelled-${pending.requestedFeature}`,
+            kind: "system",
+            title: `已取消${featureLabel}变更`,
+            summary: pending.summary,
+            actionLabel: "预览回退到 capability-toggle-cancelled",
+            rollbackTargetId: "capability-toggle-cancelled"
+          })
+        },
+        audit: {
+          summary: "用户已取消能力变更",
+          lastEvent: {
+            module: "permission",
+            detail: pending.summary,
+            timestamp: "已取消",
+            source: "capability_toggle_cancelled"
+          }
+        }
+      },
+      "capability-toggle-cancelled",
+      "已取消能力变更",
+      `${pending.title} 已取消，当前能力开关保持原状。`,
+      "tool"
+    );
+  }
+
   return recordRollbackEntry(
     {
       ...state,

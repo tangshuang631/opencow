@@ -640,3 +640,50 @@ describe("createInitialWorkbenchState", () => {
     });
   });
 });
+
+describe("capability toggle cancellation", () => {
+  it("keeps search disabled when enabling search is cancelled", () => {
+    const pending = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "search",
+      enabled: true,
+      source: "conversation_request",
+      reason: "鐢ㄦ埛瑕佹眰寮€鍚仈缃戞悳绱互琛ュ厖鏈€鏂版潵婧愩€?",
+      providerLabel: "Tavily"
+    });
+
+    const updated = cancelPendingConfirmationState(pending);
+
+    expect(updated.confirmation.pending).toBeNull();
+    expect(updated.search.enabled).toBe(false);
+    expect(updated.search.providerLabel).toBe("");
+    expect(updated.audit.summary).not.toBe("鐢ㄦ埛宸插彇娑堥珮椋庨櫓鎿嶄綔");
+    expect(updated.audit.lastEvent.source).toBe("capability_toggle_cancelled");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      rollbackTargetId: "capability-toggle-cancelled"
+    });
+    expect(updated.rollback.entries[0]?.id).toBe("capability-toggle-cancelled");
+  });
+
+  it("keeps remote api disabled when enabling remote api is cancelled", () => {
+    const pending = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "remote-api",
+      enabled: true,
+      source: "conversation_request",
+      reason: "鐢ㄦ埛瑕佹眰寮€鍚繙绋?API 浣滀负楂樼骇璁剧疆鍏煎鍏ュ彛銆?"
+    });
+
+    const updated = cancelPendingConfirmationState(pending);
+
+    expect(updated.confirmation.pending).toBeNull();
+    expect(updated.settings.remoteApi.enabled).toBe(false);
+    expect(updated.model.remoteApiEnabled).toBe(false);
+    expect(updated.audit.summary).not.toBe("鐢ㄦ埛宸插彇娑堥珮椋庨櫓鎿嶄綔");
+    expect(updated.audit.lastEvent.source).toBe("capability_toggle_cancelled");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      rollbackTargetId: "capability-toggle-cancelled"
+    });
+    expect(updated.rollback.entries[0]?.id).toBe("capability-toggle-cancelled");
+  });
+});
