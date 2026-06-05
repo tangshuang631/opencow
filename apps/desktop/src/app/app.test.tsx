@@ -93,7 +93,9 @@ describe("App", () => {
     });
 
     expect(screen.getAllByText("来源: ollama_overview").length).toBeGreaterThan(0);
-    expect(screen.getByText("建议: 检查 Ollama 服务")).toBeInTheDocument();
+    expect(screen.getAllByText("建议: 检查 Ollama 服务").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("模块: ollama").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("connect ECONNREFUSED 127.0.0.1:11434").length).toBeGreaterThan(0);
   });
 
   it("renders pending confirmation details for dangerous actions", () => {
@@ -363,5 +365,24 @@ describe("App", () => {
     expect(screen.getByText("工具执行完成")).toBeInTheDocument();
     expect(screen.getByText("本地 Skill 清单")).toBeInTheDocument();
     expect(screen.getAllByText("Skill 扫描: 已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。").length).toBeGreaterThan(0);
+  });
+
+  it("shows a traceable tool failure after desktop demo action", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟工具失败" }));
+
+    expect(screen.getAllByText("工具执行失败").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Skill 下载失败").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("来源: skill_download").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("建议: 检查联网开关并重新授权后重试").length).toBeGreaterThan(0);
   });
 });

@@ -25,13 +25,15 @@ type SidebarProps = {
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
   onDemoToolResult: () => void;
+  onDemoToolError: () => void;
 };
 
 export function Sidebar({
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
-  onDemoToolResult
+  onDemoToolResult,
+  onDemoToolError
 }: SidebarProps) {
   return (
     <aside className="sidebar" aria-label="主导航">
@@ -63,6 +65,9 @@ export function Sidebar({
         </button>
         <button className="sidebar-demo-button" type="button" onClick={onDemoToolResult}>
           模拟工具结果
+        </button>
+        <button className="sidebar-demo-button" type="button" onClick={onDemoToolError}>
+          模拟工具失败
         </button>
       </section>
       <button className="sidebar-settings" type="button">

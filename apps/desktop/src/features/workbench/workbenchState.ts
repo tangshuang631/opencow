@@ -36,6 +36,7 @@ export type ConversationEntry = {
   kind: "assistant" | "system";
   title: string;
   summary: string;
+  detailLines?: string[];
   actionLabel?: string;
   rollbackTargetId?: string;
 };
@@ -325,14 +326,15 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
         diagnostic: detail
       },
       conversation: {
-        entries: prependConversationEntry(state.conversation.entries, {
-          id: "ollama-load-error",
-          kind: "system",
-          title: "Ollama 状态读取异常",
-          summary: detail,
-          actionLabel: "预览回退到 启动基线",
-          rollbackTargetId: "startup-baseline"
-        })
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: "ollama-load-error",
+        kind: "system",
+        title: "Ollama 状态读取异常",
+        summary: detail,
+        detailLines: ["模块: ollama", "来源: ollama_overview", "建议: 检查 Ollama 服务"],
+        actionLabel: "预览回退到 启动基线",
+        rollbackTargetId: "startup-baseline"
+      })
       },
       audit: {
         summary: "Ollama 状态读取失败，工作台保持可用",
@@ -375,7 +377,12 @@ export function createCommandPolicyBlockedState(
         id: `blocked-${payload.source}`,
         kind: "system",
         title: payload.summary,
-        summary: payload.detail
+        summary: payload.detail,
+        detailLines: [
+          "模块: permission",
+          `来源: ${payload.source}`,
+          `建议: ${payload.actionLabel}`
+        ]
       })
     },
     audit: {
@@ -857,6 +864,62 @@ export function createToolExecutionState(
     rollbackEntryId,
     "工具执行结果",
     `${payload.toolLabel} 已写入当前工作台产物与日志。`,
+    "tool"
+  );
+}
+
+export function createToolExecutionErrorState(
+  state: WorkbenchState,
+  payload: {
+    toolLabel: string;
+    summary: string;
+    detail: string;
+    actionLabel: string;
+    source: string;
+  }
+): WorkbenchState {
+  const rollbackEntryId = createWorkbenchEventId(state, "tool-error", payload.source);
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tools: {
+        lastResult: {
+          toolLabel: payload.toolLabel,
+          summary: payload.summary,
+          source: payload.source
+        }
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: rollbackEntryId,
+          kind: "system",
+          title: "工具执行失败",
+          summary: `${payload.toolLabel}: ${payload.summary}`,
+          detailLines: ["模块: tools", `来源: ${payload.source}`, `建议: ${payload.actionLabel}`]
+        })
+      },
+      audit: {
+        summary: payload.summary,
+        lastEvent: {
+          module: "tools",
+          detail: payload.detail,
+          timestamp: "已执行",
+          source: payload.source
+        }
+      },
+      error: {
+        module: "tools",
+        summary: payload.summary,
+        detail: payload.detail,
+        actionLabel: payload.actionLabel,
+        timestamp: "已执行",
+        source: payload.source
+      }
+    },
+    rollbackEntryId,
+    "工具执行失败",
+    `${payload.toolLabel} 失败，已写入修复建议与审计日志。`,
     "tool"
   );
 }

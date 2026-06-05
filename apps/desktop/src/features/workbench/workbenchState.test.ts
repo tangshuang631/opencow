@@ -11,6 +11,7 @@ import {
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createToolExecutionErrorState,
   createToolExecutionState,
   requestRollbackPreviewState,
   requestPermissionModeChangeState
@@ -48,6 +49,10 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.summary).toBe("Ollama 状态读取失败，工作台保持可用");
     expect(updated.rollback.entries).toHaveLength(2);
     expect(updated.rollback.entries[0]?.label).toBe("异常保护");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "Ollama 状态读取异常",
+      detailLines: ["模块: ollama", "来源: ollama_overview", "建议: 检查 Ollama 服务"]
+    });
   });
 
   it("tracks a pending high-risk confirmation before dangerous actions run", () => {
@@ -238,6 +243,10 @@ describe("createInitialWorkbenchState", () => {
       actionLabel: "检查工作目录与权限范围",
       source: "command_policy"
     });
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "命令执行被阻止",
+      detailLines: ["模块: permission", "来源: command_policy", "建议: 检查工作目录与权限范围"]
+    });
   });
 
   it("records search enablement, source metadata, and a conversation event", () => {
@@ -283,6 +292,34 @@ describe("createInitialWorkbenchState", () => {
       title: "工具执行完成"
     });
     expect(updated.rollback.entries[0]?.label).toBe("工具执行结果");
+  });
+
+  it("records a tool execution error with traceable repair guidance", () => {
+    const updated = createToolExecutionErrorState(createInitialWorkbenchState(), {
+      toolLabel: "Skill 下载",
+      summary: "Skill 下载失败",
+      detail: "下载源返回 403，当前未获得联网下载授权。",
+      actionLabel: "检查联网开关并重新授权后重试",
+      source: "skill_download"
+    });
+
+    expect(updated.error).toMatchObject({
+      module: "tools",
+      summary: "Skill 下载失败",
+      detail: "下载源返回 403，当前未获得联网下载授权。",
+      actionLabel: "检查联网开关并重新授权后重试",
+      source: "skill_download"
+    });
+    expect(updated.audit.summary).toBe("Skill 下载失败");
+    expect(updated.tools.lastResult).toMatchObject({
+      toolLabel: "Skill 下载",
+      summary: "Skill 下载失败",
+      source: "skill_download"
+    });
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "工具执行失败",
+      detailLines: ["模块: tools", "来源: skill_download", "建议: 检查联网开关并重新授权后重试"]
+    });
   });
 
   it("restores search state back to baseline after rollback", () => {

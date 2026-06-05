@@ -35,6 +35,11 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
             <div className="message-content">
               <p className="message-title">{entry.title}</p>
               <p>{entry.summary}</p>
+              {entry.detailLines?.map((line) => (
+                <p className="message-note" key={`${entry.id}-${line}`}>
+                  {line}
+                </p>
+              ))}
               {index === 0 ? (
                 <>
                   <dl className="model-summary" aria-label="Ollama 状态">

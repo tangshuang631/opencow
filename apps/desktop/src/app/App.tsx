@@ -14,6 +14,7 @@ import {
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createToolExecutionErrorState,
   createToolExecutionState,
   mergeOllamaOverview,
   requestRollbackPreviewState,
@@ -173,6 +174,20 @@ export function App() {
     });
   }
 
+  function handleDemoToolError() {
+    startTransition(() => {
+      setState((current) =>
+        createToolExecutionErrorState(current, {
+          toolLabel: "Skill 下载",
+          summary: "Skill 下载失败",
+          detail: "下载源返回 403，当前未获得联网下载授权。",
+          actionLabel: "检查联网开关并重新授权后重试",
+          source: "skill_download"
+        })
+      );
+    });
+  }
+
   return (
     <Workbench
       state={state}
@@ -187,6 +202,7 @@ export function App() {
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}
       onDemoToolResult={handleDemoToolResult}
+      onDemoToolError={handleDemoToolError}
     />
   );
 }
