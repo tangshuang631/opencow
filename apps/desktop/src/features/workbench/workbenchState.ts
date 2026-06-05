@@ -1010,6 +1010,202 @@ export function createUserTaskSubmittedState(
   );
 }
 
+export function createTaskExecutionStartedState(state: WorkbenchState): WorkbenchState {
+  if (state.tasks.activeTaskId) {
+    return state;
+  }
+
+  const nextTask = state.tasks.items.find((item) => item.status === "queued");
+
+  if (!nextTask) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tasks: {
+        pendingCount: Math.max(0, state.tasks.pendingCount - 1),
+        activeTaskId: nextTask.id,
+        items: state.tasks.items.map((item) =>
+          item.id === nextTask.id
+            ? {
+                ...item,
+                status: "running" as const
+              }
+            : item
+        )
+      },
+      output: {
+        title: "本地任务执行中",
+        summary: "正在使用本地 Ollama 处理当前任务。"
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `${nextTask.id}-running`,
+          kind: "system",
+          title: "本地任务开始执行",
+          summary: nextTask.summary,
+          detailLines: [`模型: ${state.model.activeModel}`, `权限: ${state.permission.label}`],
+          actionLabel: "预览回退到 本次任务开始前",
+          rollbackTargetId: nextTask.id
+        })
+      },
+      audit: {
+        summary: "本地任务开始执行",
+        lastEvent: {
+          module: "tasks",
+          detail: nextTask.summary,
+          timestamp: "执行中",
+          source: "local_task_runner"
+        }
+      },
+      error: null
+    },
+    `${nextTask.id}-running`,
+    "本地任务开始执行",
+    `开始执行本地任务: ${nextTask.summary}`,
+    "tool"
+  );
+}
+
+export function createTaskExecutionSucceededState(
+  state: WorkbenchState,
+  payload: {
+    resultTitle: string;
+    resultSummary: string;
+  }
+): WorkbenchState {
+  const activeTaskId = state.tasks.activeTaskId;
+
+  if (!activeTaskId) {
+    return state;
+  }
+
+  const activeTask = state.tasks.items.find((item) => item.id === activeTaskId);
+
+  if (!activeTask) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tasks: {
+        pendingCount: state.tasks.pendingCount,
+        activeTaskId: null,
+        items: state.tasks.items.map((item) =>
+          item.id === activeTaskId
+            ? {
+                ...item,
+                status: "completed" as const
+              }
+            : item
+        )
+      },
+      output: {
+        title: payload.resultTitle,
+        summary: payload.resultSummary
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `${activeTaskId}-completed`,
+          kind: "system",
+          title: "本地任务执行完成",
+          summary: payload.resultSummary,
+          detailLines: [`任务: ${activeTask.summary}`, `产物: ${payload.resultTitle}`],
+          actionLabel: "预览回退到 本次任务完成前",
+          rollbackTargetId: `${activeTaskId}-running`
+        })
+      },
+      audit: {
+        summary: "本地任务执行完成",
+        lastEvent: {
+          module: "tasks",
+          detail: payload.resultSummary,
+          timestamp: "已完成",
+          source: "local_task_runner"
+        }
+      },
+      error: null
+    },
+    `${activeTaskId}-completed`,
+    "本地任务执行完成",
+    `已完成本地任务: ${activeTask.summary}`,
+    "tool"
+  );
+}
+
+export function createTaskExecutionFailedState(
+  state: WorkbenchState,
+  payload: {
+    summary: string;
+    detail: string;
+    actionLabel: string;
+    source: string;
+  }
+): WorkbenchState {
+  const activeTaskId = state.tasks.activeTaskId;
+
+  if (!activeTaskId) {
+    return state;
+  }
+
+  const activeTask = state.tasks.items.find((item) => item.id === activeTaskId);
+
+  if (!activeTask) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      tasks: {
+        pendingCount: state.tasks.pendingCount,
+        activeTaskId: null,
+        items: state.tasks.items.map((item) =>
+          item.id === activeTaskId
+            ? {
+                ...item,
+                status: "failed" as const
+              }
+            : item
+        )
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `${activeTaskId}-failed`,
+          kind: "system",
+          title: payload.summary,
+          summary: activeTask.summary,
+          detailLines: [`模块: tasks`, `来源: ${payload.source}`, `建议: ${payload.actionLabel}`]
+        })
+      },
+      audit: {
+        summary: payload.summary,
+        lastEvent: {
+          module: "tasks",
+          detail: payload.detail,
+          timestamp: "已失败",
+          source: payload.source
+        }
+      },
+      error: {
+        module: "tasks",
+        summary: payload.summary,
+        detail: payload.detail,
+        actionLabel: payload.actionLabel,
+        timestamp: "已失败",
+        source: payload.source
+      }
+    },
+    `${activeTaskId}-failed`,
+    "本地任务执行失败",
+    `本地任务执行失败: ${activeTask.summary}`,
+    "tool"
+  );
+}
+
 function getPermissionPresentation(mode: PermissionMode) {
   if (mode === "workspace-write") {
     return {

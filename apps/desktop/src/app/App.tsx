@@ -14,6 +14,8 @@ import {
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
   createSearchEnabledState,
+  createTaskExecutionStartedState,
+  createTaskExecutionSucceededState,
   createUserTaskSubmittedState,
   createToolExecutionErrorState,
   createToolExecutionState,
@@ -58,6 +60,34 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (state.tasks.activeTaskId || state.tasks.pendingCount === 0) {
+      return;
+    }
+
+    const startTimer = window.setTimeout(() => {
+      startTransition(() => {
+        setState((current) => createTaskExecutionStartedState(current));
+      });
+    }, 80);
+
+    const finishTimer = window.setTimeout(() => {
+      startTransition(() => {
+        setState((current) =>
+          createTaskExecutionSucceededState(current, {
+            resultTitle: "本地任务结果",
+            resultSummary: "已基于本地 Ollama 生成首轮处理结果。"
+          })
+        );
+      });
+    }, 180);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearTimeout(finishTimer);
+    };
+  }, [state.tasks.activeTaskId, state.tasks.pendingCount]);
 
   function handleDemoDangerousAction() {
     startTransition(() => {
