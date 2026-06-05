@@ -25,6 +25,7 @@ export {
   approvePermissionModeChangeState,
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
+  createCapabilityToggleRequestState,
   createCommandPolicyBlockedState,
   createHighRiskConfirmationState,
   requestPermissionModeChangeState

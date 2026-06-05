@@ -10,6 +10,7 @@ import {
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
   createCommandPolicyBlockedState,
+  createCapabilityToggleRequestState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
@@ -35,6 +36,49 @@ import {
 
 export function App() {
   const [state, setState] = useState(createInitialWorkbenchState);
+
+  function parseCapabilityToggleIntent(message: string, currentState = state) {
+    const normalized = message.trim();
+
+    if (normalized.includes("开启联网搜索") || normalized.includes("打开联网搜索")) {
+      return {
+        feature: "search" as const,
+        enabled: true,
+        source: "conversation_request",
+        reason: "用户要求开启联网搜索以补充最新来源。",
+        providerLabel: currentState.search.providerLabel || "Tavily"
+      };
+    }
+
+    if (normalized.includes("关闭联网搜索")) {
+      return {
+        feature: "search" as const,
+        enabled: false,
+        source: "conversation_request",
+        reason: "用户要求关闭联网搜索并回到本地优先模式。"
+      };
+    }
+
+    if (normalized.includes("开启远程 API") || normalized.includes("打开远程 API")) {
+      return {
+        feature: "remote-api" as const,
+        enabled: true,
+        source: "conversation_request",
+        reason: "用户要求开启远程 API 作为高级设置兼容入口。"
+      };
+    }
+
+    if (normalized.includes("关闭远程 API")) {
+      return {
+        feature: "remote-api" as const,
+        enabled: false,
+        source: "conversation_request",
+        reason: "用户要求关闭远程 API 并保持本地 Ollama 优先。"
+      };
+    }
+
+    return null;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -303,7 +347,15 @@ export function App() {
 
   function handleSubmitTask(message: string) {
     startTransition(() => {
-      setState((current) => createUserTaskSubmittedState(current, { message }));
+      setState((current) => {
+        const capabilityIntent = parseCapabilityToggleIntent(message, current);
+
+        if (capabilityIntent) {
+          return createCapabilityToggleRequestState(current, capabilityIntent);
+        }
+
+        return createUserTaskSubmittedState(current, { message });
+      });
     });
   }
 

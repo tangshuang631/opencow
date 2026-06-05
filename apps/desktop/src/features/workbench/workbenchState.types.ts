@@ -9,6 +9,9 @@ export type PendingConfirmation = {
   impact: string;
   requiredMode: PermissionMode;
   safetySummary?: string;
+  requestedFeature?: "search" | "remote-api";
+  requestedEnabled?: boolean;
+  providerLabel?: string;
 };
 
 export type PendingPermissionModeChange = {

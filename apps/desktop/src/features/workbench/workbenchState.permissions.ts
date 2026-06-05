@@ -6,6 +6,14 @@ import type {
   WorkbenchState
 } from "./workbenchState.types";
 
+type CapabilityToggleRequest = {
+  feature: "search" | "remote-api";
+  enabled: boolean;
+  source: string;
+  reason: string;
+  providerLabel?: string;
+};
+
 export function createCommandPolicyBlockedState(
   state: WorkbenchState,
   payload: {
@@ -77,11 +85,139 @@ export function createHighRiskConfirmationState(
   };
 }
 
+export function createCapabilityToggleRequestState(
+  state: WorkbenchState,
+  payload: CapabilityToggleRequest
+): WorkbenchState {
+  const featureLabel = payload.feature === "search" ? "联网搜索" : "远程 API";
+  const title = `${payload.enabled ? "确认开启" : "确认关闭"}${featureLabel}`;
+  const impact =
+    payload.feature === "search"
+      ? payload.enabled
+        ? `将允许后续对话使用 ${payload.providerLabel || "Tavily"} 检索外部来源，并写入审计日志。`
+        : "将停止后续对话自动检索外部来源，但保留历史来源记录与审计日志。"
+      : payload.enabled
+        ? "将允许后续对话切换到远程 API 高级设置链路，但默认仍优先本地 Ollama。"
+        : "将关闭远程 API 链路，后续对话仅保留本地 Ollama 优先路径。";
+
+  return {
+    ...state,
+    confirmation: {
+      pending: {
+        title,
+        summary: payload.reason,
+        commandPreview: `${featureLabel} -> ${payload.enabled ? "enabled" : "disabled"}`,
+        impact,
+        requiredMode: "readonly",
+        requestedFeature: payload.feature,
+        requestedEnabled: payload.enabled,
+        providerLabel: payload.providerLabel,
+        safetySummary: "能力变更需要用户确认，并写入会话、审计与回退记录。"
+      }
+    },
+    conversation: {
+      entries: prependConversationEntry(state.conversation.entries, {
+        id: `capability-request-${payload.feature}-${payload.enabled ? "on" : "off"}`,
+        kind: "system",
+        title,
+        summary: payload.reason,
+        actionLabel: "预览回退到 启动基线",
+        rollbackTargetId: "startup-baseline"
+      })
+    },
+    audit: {
+      summary: "等待用户确认能力变更",
+      lastEvent: {
+        module: "permission",
+        detail: `${featureLabel}: ${payload.reason}`,
+        timestamp: "待用户确认",
+        source: "capability_toggle_request"
+      }
+    }
+  };
+}
+
 export function approvePendingConfirmationState(state: WorkbenchState): WorkbenchState {
   const pending = state.confirmation.pending;
 
   if (!pending) {
     return state;
+  }
+
+  if (pending.requestedFeature) {
+    const nextFeature = pending.requestedFeature;
+    const nextEnabled = pending.requestedEnabled ?? false;
+    const nextProvider = pending.providerLabel?.trim() || state.search.providerLabel || "Tavily";
+    const nextState =
+      nextFeature === "search"
+        ? {
+            ...state,
+            search: {
+              enabled: nextEnabled,
+              providerLabel: nextEnabled ? nextProvider : ""
+            }
+          }
+        : {
+            ...state,
+            model: {
+              ...state.model,
+              remoteApiEnabled: nextEnabled
+            },
+            settings: {
+              ...state.settings,
+              remoteApi: {
+                ...state.settings.remoteApi,
+                enabled: nextEnabled
+              }
+            }
+          };
+
+    return recordRollbackEntry(
+      {
+        ...nextState,
+        confirmation: {
+          pending: null
+        },
+        conversation: {
+          entries: prependConversationEntry(state.conversation.entries, {
+            id: `capability-approved-${nextFeature}-${nextEnabled ? "on" : "off"}`,
+            kind: "system",
+            title:
+              nextFeature === "search"
+                ? nextEnabled
+                  ? "已开启联网搜索"
+                  : "已关闭联网搜索"
+                : nextEnabled
+                  ? "已开启远程 API"
+                  : "已关闭远程 API",
+            summary: pending.summary,
+            actionLabel: "预览回退到 confirmation-approved",
+            rollbackTargetId: "confirmation-approved"
+          })
+        },
+        audit: {
+          summary:
+            nextFeature === "search"
+              ? nextEnabled
+                ? "已开启联网搜索"
+                : "已关闭联网搜索"
+              : nextEnabled
+                ? "已开启远程 API"
+                : "已关闭远程 API",
+          lastEvent: {
+            module: "permission",
+            detail: pending.summary,
+            timestamp: "已批准",
+            source: "capability_toggle_approved"
+          }
+        },
+        error: null
+      },
+      "confirmation-approved",
+      "已批准操作",
+      `${pending.title} 已获批准，后续执行仍需记录日志与快照。`,
+      "tool"
+    );
   }
 
   return recordRollbackEntry(

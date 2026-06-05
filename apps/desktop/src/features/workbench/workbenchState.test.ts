@@ -7,6 +7,7 @@ import {
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
   createCommandPolicyBlockedState,
+  createCapabilityToggleRequestState,
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
@@ -116,6 +117,46 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.summary).toBe("用户已取消高风险操作");
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation_cancelled");
     expect(updated.rollback.entries[0]?.label).toBe("已取消操作");
+  });
+
+  it("requests confirmation before enabling search from conversation", () => {
+    const updated = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "search",
+      enabled: true,
+      source: "conversation_request",
+      reason: "用户要求开启联网搜索以补充最新来源。",
+      providerLabel: "Tavily"
+    });
+
+    expect(updated.confirmation.pending).toMatchObject({
+      title: "确认开启联网搜索",
+      summary: "用户要求开启联网搜索以补充最新来源。",
+      requiredMode: "readonly",
+      requestedFeature: "search",
+      requestedEnabled: true,
+      providerLabel: "Tavily"
+    });
+    expect(updated.search.enabled).toBe(false);
+    expect(updated.audit.summary).toBe("等待用户确认能力变更");
+    expect(updated.audit.lastEvent.source).toBe("capability_toggle_request");
+  });
+
+  it("applies requested search enablement after approval", () => {
+    const pending = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "search",
+      enabled: true,
+      source: "conversation_request",
+      reason: "用户要求开启联网搜索以补充最新来源。",
+      providerLabel: "Tavily"
+    });
+
+    const updated = approvePendingConfirmationState(pending);
+
+    expect(updated.confirmation.pending).toBeNull();
+    expect(updated.search.enabled).toBe(true);
+    expect(updated.search.providerLabel).toBe("Tavily");
+    expect(updated.audit.summary).toBe("已开启联网搜索");
+    expect(updated.audit.lastEvent.source).toBe("capability_toggle_approved");
   });
 
   it("tracks a pending permission mode change request", () => {
