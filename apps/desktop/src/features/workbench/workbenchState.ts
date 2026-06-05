@@ -265,3 +265,73 @@ export function createHighRiskConfirmationState(
     }
   };
 }
+
+export function approvePendingConfirmationState(state: WorkbenchState): WorkbenchState {
+  const pending = state.confirmation.pending;
+
+  if (!pending) {
+    return state;
+  }
+
+  return {
+    ...state,
+    confirmation: {
+      pending: null
+    },
+    rollback: {
+      ...state.rollback,
+      entries: [
+        state.rollback.entries[0],
+        {
+          id: "confirmation-approved",
+          label: "已批准操作",
+          summary: `${pending.title} 已获批准，后续执行仍需记录日志与快照。`
+        }
+      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
+    },
+    audit: {
+      summary: "用户已批准高风险操作",
+      lastEvent: {
+        module: "permission",
+        detail: pending.summary,
+        timestamp: "已批准",
+        source: "permission_confirmation_approved"
+      }
+    }
+  };
+}
+
+export function cancelPendingConfirmationState(state: WorkbenchState): WorkbenchState {
+  const pending = state.confirmation.pending;
+
+  if (!pending) {
+    return state;
+  }
+
+  return {
+    ...state,
+    confirmation: {
+      pending: null
+    },
+    rollback: {
+      ...state.rollback,
+      entries: [
+        state.rollback.entries[0],
+        {
+          id: "confirmation-cancelled",
+          label: "已取消操作",
+          summary: `${pending.title} 已取消，工作台保持最近一次安全状态。`
+        }
+      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
+    },
+    audit: {
+      summary: "用户已取消高风险操作",
+      lastEvent: {
+        module: "permission",
+        detail: pending.summary,
+        timestamp: "已取消",
+        source: "permission_confirmation_cancelled"
+      }
+    }
+  };
+}

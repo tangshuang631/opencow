@@ -2,6 +2,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Inspector } from "../features/workbench/components/Inspector";
 import {
+  approvePendingConfirmationState,
+  cancelPendingConfirmationState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState
 } from "../features/workbench/workbenchState";
@@ -95,5 +97,41 @@ describe("App", () => {
     expect(screen.getByText("命令预览: Remove-Item .\\temp-output -Recurse")).toBeInTheDocument();
     expect(screen.getByText("影响范围: 将删除 12 个文件，写入回退快照后才可执行。")).toBeInTheDocument();
     expect(screen.getByText("所需权限: controlled-full")).toBeInTheDocument();
+  });
+
+  it("shows an approved confirmation as cleared and traceable", () => {
+    const pending = createHighRiskConfirmationState(createInitialWorkbenchState(), {
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+
+    const approved = approvePendingConfirmationState(pending);
+
+    render(<Inspector state={approved} />);
+
+    expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+    expect(screen.getByText("用户已批准高风险操作")).toBeInTheDocument();
+    expect(screen.getByText("已批准操作")).toBeInTheDocument();
+  });
+
+  it("shows a cancelled confirmation as cleared and safe", () => {
+    const pending = createHighRiskConfirmationState(createInitialWorkbenchState(), {
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+
+    const cancelled = cancelPendingConfirmationState(pending);
+
+    render(<Inspector state={cancelled} />);
+
+    expect(screen.getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+    expect(screen.getByText("用户已取消高风险操作")).toBeInTheDocument();
+    expect(screen.getByText("已取消操作")).toBeInTheDocument();
   });
 });

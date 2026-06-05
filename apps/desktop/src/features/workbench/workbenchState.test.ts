@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvePendingConfirmationState,
+  cancelPendingConfirmationState,
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState
@@ -53,5 +55,39 @@ describe("createInitialWorkbenchState", () => {
     });
     expect(updated.audit.summary).toBe("等待用户确认高风险操作");
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation");
+  });
+
+  it("records an approved high-risk confirmation and clears the pending request", () => {
+    const pending = createHighRiskConfirmationState(createInitialWorkbenchState(), {
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+
+    const updated = approvePendingConfirmationState(pending);
+
+    expect(updated.confirmation.pending).toBeNull();
+    expect(updated.audit.summary).toBe("用户已批准高风险操作");
+    expect(updated.audit.lastEvent.source).toBe("permission_confirmation_approved");
+    expect(updated.rollback.entries[1]?.label).toBe("已批准操作");
+  });
+
+  it("records a cancelled high-risk confirmation and keeps the app safe", () => {
+    const pending = createHighRiskConfirmationState(createInitialWorkbenchState(), {
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full"
+    });
+
+    const updated = cancelPendingConfirmationState(pending);
+
+    expect(updated.confirmation.pending).toBeNull();
+    expect(updated.audit.summary).toBe("用户已取消高风险操作");
+    expect(updated.audit.lastEvent.source).toBe("permission_confirmation_cancelled");
+    expect(updated.rollback.entries[1]?.label).toBe("已取消操作");
   });
 });
