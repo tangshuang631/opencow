@@ -162,3 +162,50 @@ export function createSearchToggleState(
     "session"
   );
 }
+
+export function createSearchProviderConfigState(
+  state: WorkbenchState,
+  payload: {
+    providerLabel: string;
+  }
+): WorkbenchState {
+  const nextProviderLabel = payload.providerLabel.trim() || "Tavily";
+
+  if (state.search.providerLabel === nextProviderLabel) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      search: {
+        ...state.search,
+        providerLabel: nextProviderLabel
+      },
+      conversation: {
+        entries: prependConversationEntry(state.conversation.entries, {
+          id: `search-provider-config-${state.rollback.entries.length}`,
+          kind: "system",
+          title: "已更新联网搜索提供方",
+          summary: `联网搜索将优先使用 ${nextProviderLabel}，仍会保留来源记录与审计追踪。`,
+          actionLabel: "预览回退到 启动基线",
+          rollbackTargetId: "startup-baseline"
+        })
+      },
+      audit: {
+        summary: "已更新联网搜索提供方",
+        lastEvent: {
+          module: "search",
+          detail: `provider=${nextProviderLabel}`,
+          timestamp: "已执行",
+          source: "search_provider_config"
+        }
+      },
+      error: null
+    },
+    `search-provider-config-${state.rollback.entries.length}`,
+    "联网搜索 provider 更新",
+    "已保存联网搜索的 provider 配置。",
+    "session"
+  );
+}

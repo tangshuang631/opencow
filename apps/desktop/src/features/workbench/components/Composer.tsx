@@ -9,6 +9,16 @@ type ComposerProps = {
   onCancelActiveTask: () => void;
 };
 
+const TEXT = {
+  permission: "\u5f53\u524d\u6743\u9650",
+  rollbackPoints: "\u56de\u9000\u70b9",
+  addAttachment: "\u6dfb\u52a0\u9644\u4ef6",
+  inputTask: "\u8f93\u5165\u4efb\u52a1",
+  inputPlaceholder: "\u8f93\u5165\u4efb\u52a1\uff0c\u9ed8\u8ba4\u4f7f\u7528\u672c\u5730 Ollama...",
+  stopTask: "\u505c\u6b62\u4efb\u52a1",
+  send: "\u53d1\u9001"
+} as const;
+
 export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const hasActiveTask = state.tasks.activeTaskId !== null;
@@ -29,20 +39,20 @@ export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerPr
       <div className="composer-meta">
         <span>{normalizeWorkbenchText(state.model.label)}</span>
         <span>{normalizeWorkbenchText(state.model.activeModel)}</span>
-        <span aria-label="当前权限">
+        <span aria-label={TEXT.permission}>
           <Shield aria-hidden="true" size={14} />
           {normalizeWorkbenchText(state.permission.label)}
         </span>
         <span>{normalizeWorkbenchText(state.permission.summary)}</span>
-        <span>回退点 {state.rollback.activeLimit}/{state.rollback.maxLimit}</span>
+        <span>{TEXT.rollbackPoints} {state.rollback.activeLimit}/{state.rollback.maxLimit}</span>
       </div>
       <div className="composer">
-        <button className="icon-button" type="button" aria-label="添加附件">
+        <button className="icon-button" type="button" aria-label={TEXT.addAttachment}>
           <Paperclip aria-hidden="true" size={18} />
         </button>
         <textarea
-          aria-label="输入任务"
-          placeholder="输入任务，默认使用本地 Ollama..."
+          aria-label={TEXT.inputTask}
+          placeholder={TEXT.inputPlaceholder}
           value={draft}
           disabled={hasActiveTask}
           onChange={(event) => setDraft(event.target.value)}
@@ -54,11 +64,11 @@ export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerPr
           }}
         />
         {hasActiveTask ? (
-          <button className="send-button" type="button" aria-label="停止任务" onClick={onCancelActiveTask}>
+          <button className="send-button" type="button" aria-label={TEXT.stopTask} onClick={onCancelActiveTask}>
             <Square aria-hidden="true" size={18} />
           </button>
         ) : (
-          <button className="send-button" type="button" aria-label="发送" onClick={submitTask}>
+          <button className="send-button" type="button" aria-label={TEXT.send} onClick={submitTask}>
             <ArrowUp aria-hidden="true" size={18} />
           </button>
         )}

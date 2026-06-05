@@ -20,7 +20,84 @@ type InspectorProps = {
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string }) => void;
+  onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
 };
+
+const TEXT = {
+  panel: "\u53f3\u4fa7\u9762\u677f",
+  output: "\u8f93\u51fa",
+  sources: "\u6765\u6e90",
+  sourceProvider: "\u641c\u7d22\u63d0\u4f9b\u65b9",
+  sourceTitle: "\u6765\u6e90\u6807\u9898",
+  sourceUrl: "\u6765\u6e90\u5730\u5740",
+  permission: "\u6743\u9650",
+  permissionPending: "\u5f85\u5207\u6362\u6743\u9650",
+  permissionReason: "\u63d0\u6743\u539f\u56e0",
+  permissionRisk: "\u98ce\u9669\u8bf4\u660e",
+  approvePrivilege: "\u6279\u51c6\u63d0\u6743",
+  cancelPrivilege: "\u53d6\u6d88\u63d0\u6743",
+  noPermissionUpgrade: "\u5f53\u524d\u6ca1\u6709\u5f85\u786e\u8ba4\u7684\u6743\u9650\u5347\u7ea7",
+  commandPreview: "\u547d\u4ee4\u9884\u89c8",
+  impact: "\u5f71\u54cd\u8303\u56f4",
+  requiredPermission: "\u6240\u9700\u6743\u9650",
+  safety: "\u5b89\u5168\u4fdd\u62a4",
+  approveDanger: "\u6279\u51c6\u9ad8\u98ce\u9669\u64cd\u4f5c",
+  cancelDanger: "\u53d6\u6d88\u9ad8\u98ce\u9669\u64cd\u4f5c",
+  noDanger: "\u5f53\u524d\u6ca1\u6709\u5f85\u786e\u8ba4\u7684\u9ad8\u98ce\u9669\u64cd\u4f5c",
+  localTasks: "\u672c\u5730\u4efb\u52a1",
+  taskPending: "\u5f85\u5904\u7406",
+  taskUnit: "\u6761",
+  stopTask: "\u505c\u6b62\u4efb\u52a1",
+  retryTask: "\u91cd\u8bd5\u672c\u5730\u4efb\u52a1",
+  noLocalTasks: "\u6682\u65e0\u672c\u5730\u4efb\u52a1",
+  tools: "\u5de5\u5177",
+  modelsDetectedPrefix: "\u5df2\u68c0\u6d4b",
+  modelsDetectedSuffix: "\u4e2a\u672c\u5730\u6a21\u578b",
+  waitingModels: "\u7b49\u5f85\u672c\u5730\u6a21\u578b",
+  logs: "\u65e5\u5fd7",
+  module: "\u6a21\u5757",
+  source: "\u6765\u6e90",
+  time: "\u65f6\u95f4",
+  errors: "\u9519\u8bef",
+  suggestion: "\u5efa\u8bae",
+  noErrors: "\u5f53\u524d\u6ca1\u6709\u6d3b\u52a8\u9519\u8bef",
+  advanced: "\u9ad8\u7ea7\u8bbe\u7f6e",
+  remoteApiOn: "\u8fdc\u7a0b API \u5df2\u5f00\u542f",
+  remoteApiOff: "\u8fdc\u7a0b API \u9ed8\u8ba4\u5173\u95ed",
+  remoteApiCollapsed: "\u4fdd\u7559 baseUrl \u548c API \u63a5\u5165\u53e3\uff0c\u6309\u9700\u5c55\u5f00\u3002",
+  remoteApiExpanded: "\u8fdc\u7a0b API \u8bbe\u7f6e\u5df2\u5c55\u5f00\u3002",
+  searchOn: "\u8054\u7f51\u641c\u7d22\u5df2\u5f00\u542f",
+  searchOff: "\u8054\u7f51\u641c\u7d22\u9ed8\u8ba4\u5173\u95ed",
+  networkToggles: "\u7f51\u7edc\u5f00\u5173",
+  disableRemoteApi: "\u5173\u95ed\u8fdc\u7a0b API",
+  enableRemoteApi: "\u5f00\u542f\u8fdc\u7a0b API",
+  disableSearch: "\u5173\u95ed\u8054\u7f51\u641c\u7d22",
+  enableSearch: "\u5f00\u542f\u8054\u7f51\u641c\u7d22",
+  searchProviderLabel: "\u8054\u7f51\u641c\u7d22 Provider",
+  saveSearchProvider: "\u4fdd\u5b58\u8054\u7f51\u641c\u7d22\u914d\u7f6e",
+  remoteApiBaseUrl: "\u8fdc\u7a0b API Base URL",
+  remoteApiProvider: "\u8fdc\u7a0b API Provider",
+  saveRemoteApi: "\u4fdd\u5b58\u8fdc\u7a0b API \u914d\u7f6e",
+  rollbackLimit: "\u56de\u9000\u70b9\u4e0a\u9650",
+  rollbackHintPrefix: "\u5f53\u524d\u6700\u591a\u4fdd\u7559",
+  rollbackHintSuffix: "\u6bb5\u53ef\u56de\u9000\u70b9\u3002",
+  rollbackQuick: "\u56de\u9000\u70b9\u4e0a\u9650\u5feb\u6377\u8bbe\u7f6e",
+  session: "\u4f1a\u8bdd",
+  logCount: "\u65e5\u5fd7",
+  cacheCount: "\u7f13\u5b58\u6761\u76ee",
+  snapshotCount: "\u5feb\u7167",
+  knowledgeCount: "\u77e5\u8bc6\u5e93\u7d22\u5f15",
+  localCleanup: "\u672c\u5730\u6e05\u7406\u5165\u53e3",
+  clearConversation: "\u6e05\u7a7a\u4f1a\u8bdd",
+  clearLogs: "\u6e05\u7a7a\u65e5\u5fd7",
+  clearCache: "\u6e05\u7a7a\u7f13\u5b58",
+  clearSnapshots: "\u6e05\u7a7a\u5feb\u7167",
+  clearKnowledge: "\u6e05\u7a7a\u77e5\u8bc6\u5e93\u7d22\u5f15",
+  running: "\u6267\u884c\u4e2d",
+  completed: "\u5df2\u5b8c\u6210",
+  failed: "\u5df2\u5931\u8d25",
+  queued: "\u961f\u5217\u4e2d"
+} as const;
 
 export function Inspector({
   state,
@@ -37,20 +114,22 @@ export function Inspector({
   onCleanupStorage,
   onToggleRemoteApi,
   onToggleSearch,
-  onSaveRemoteApiConfig
+  onSaveRemoteApiConfig,
+  onSaveSearchProviderConfig
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
   const hasModels = state.model.availableModels.length > 0;
   const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
   const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
+  const [searchProviderLabel, setSearchProviderLabel] = useState(state.search.providerLabel || "Tavily");
 
   return (
-    <aside className="inspector" aria-label="右侧面板">
+    <aside className="inspector" aria-label={TEXT.panel}>
       <section>
         <h2>
           <FileText aria-hidden="true" size={16} />
-          输出
+          {TEXT.output}
         </h2>
         <p className="muted">{normalizeWorkbenchText(state.output.title)}</p>
         <p className="muted">{normalizeWorkbenchText(state.output.summary)}</p>
@@ -59,17 +138,17 @@ export function Inspector({
       <section>
         <h2>
           <Globe2 aria-hidden="true" size={16} />
-          来源
+          {TEXT.sources}
         </h2>
-        <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
-        {state.search.providerLabel ? <p className="muted">搜索提供方: {state.search.providerLabel}</p> : null}
+        <p className="muted">{state.search.enabled ? TEXT.searchOn : TEXT.searchOff}</p>
+        {state.search.providerLabel ? <p className="muted">{TEXT.sourceProvider}: {state.search.providerLabel}</p> : null}
         <p className="muted">Ollama: {normalizeWorkbenchText(state.model.status)}</p>
-        <p className="muted">权限: {normalizeWorkbenchText(state.permission.label)}</p>
+        <p className="muted">{TEXT.permission}: {normalizeWorkbenchText(state.permission.label)}</p>
         <p className="muted">{normalizeWorkbenchText(state.permission.summary)}</p>
         {visibleSources.map((item) => (
           <div key={`${item.provider}-${item.url}`}>
-            <p className="muted">来源标题: {normalizeWorkbenchText(item.title)}</p>
-            <p className="muted">来源地址: {item.url}</p>
+            <p className="muted">{TEXT.sourceTitle}: {normalizeWorkbenchText(item.title)}</p>
+            <p className="muted">{TEXT.sourceUrl}: {item.url}</p>
           </div>
         ))}
       </section>
@@ -79,52 +158,52 @@ export function Inspector({
         <p className="muted">{normalizeWorkbenchText(state.permission.confirmationSummary)}</p>
         {state.permission.pendingModeChange ? (
           <>
-            <p className="muted">待切换权限: {state.permission.pendingModeChange.targetMode}</p>
-            <p className="muted">提权原因: {normalizeWorkbenchText(state.permission.pendingModeChange.reason)}</p>
-            <p className="muted">风险说明: {normalizeWorkbenchText(state.permission.pendingModeChange.riskSummary)}</p>
+            <p className="muted">{TEXT.permissionPending}: {state.permission.pendingModeChange.targetMode}</p>
+            <p className="muted">{TEXT.permissionReason}: {normalizeWorkbenchText(state.permission.pendingModeChange.reason)}</p>
+            <p className="muted">{TEXT.permissionRisk}: {normalizeWorkbenchText(state.permission.pendingModeChange.riskSummary)}</p>
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
-                批准提权
+                {TEXT.approvePrivilege}
               </button>
               <button className="action-button" type="button" onClick={onCancelPermissionRequest}>
-                取消提权
+                {TEXT.cancelPrivilege}
               </button>
             </div>
           </>
         ) : (
-          <p className="muted">当前没有待确认的权限升级</p>
+          <p className="muted">{TEXT.noPermissionUpgrade}</p>
         )}
 
         {state.confirmation.pending ? (
           <>
             <p className="muted">{normalizeWorkbenchText(state.confirmation.pending.title)}</p>
             <p className="muted">{normalizeWorkbenchText(state.confirmation.pending.summary)}</p>
-            <p className="muted">命令预览: {normalizeWorkbenchText(state.confirmation.pending.commandPreview)}</p>
-            <p className="muted">影响范围: {normalizeWorkbenchText(state.confirmation.pending.impact)}</p>
-            <p className="muted">所需权限: {state.confirmation.pending.requiredMode}</p>
+            <p className="muted">{TEXT.commandPreview}: {normalizeWorkbenchText(state.confirmation.pending.commandPreview)}</p>
+            <p className="muted">{TEXT.impact}: {normalizeWorkbenchText(state.confirmation.pending.impact)}</p>
+            <p className="muted">{TEXT.requiredPermission}: {state.confirmation.pending.requiredMode}</p>
             {state.confirmation.pending.safetySummary ? (
-              <p className="muted">安全保护: {normalizeWorkbenchText(state.confirmation.pending.safetySummary)}</p>
+              <p className="muted">{TEXT.safety}: {normalizeWorkbenchText(state.confirmation.pending.safetySummary)}</p>
             ) : null}
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApproveDangerousAction}>
-                批准高风险操作
+                {TEXT.approveDanger}
               </button>
               <button className="action-button" type="button" onClick={onCancelDangerousAction}>
-                取消高风险操作
+                {TEXT.cancelDanger}
               </button>
             </div>
           </>
         ) : (
-          <p className="muted">当前没有待确认的高风险操作</p>
+          <p className="muted">{TEXT.noDanger}</p>
         )}
       </section>
 
       <section>
         <h2>
           <ListChecks aria-hidden="true" size={16} />
-          本地任务
+          {TEXT.localTasks}
         </h2>
-        <p className="muted">待处理 {state.tasks.pendingCount} 条</p>
+        <p className="muted">{TEXT.taskPending} {state.tasks.pendingCount} {TEXT.taskUnit}</p>
         {visibleTasks.length > 0 ? (
           <div className="task-queue-list">
             {visibleTasks.map((task) => (
@@ -133,20 +212,20 @@ export function Inspector({
                 <p className="task-queue-summary">{normalizeWorkbenchText(task.summary)}</p>
                 {task.status === "running" ? (
                   <div className="action-row">
-                    <button aria-label="停止任务" className="action-button" type="button" onClick={onCancelActiveTask}>
-                      停止任务
+                    <button aria-label={TEXT.stopTask} className="action-button" type="button" onClick={onCancelActiveTask}>
+                      {TEXT.stopTask}
                     </button>
                   </div>
                 ) : null}
                 {task.status === "failed" ? (
                   <div className="action-row">
                     <button
-                      aria-label="重试本地任务"
+                      aria-label={TEXT.retryTask}
                       className="action-button action-button-primary"
                       type="button"
                       onClick={onRetryLocalTask}
                     >
-                      重试本地任务
+                      {TEXT.retryTask}
                     </button>
                   </div>
                 ) : null}
@@ -154,85 +233,107 @@ export function Inspector({
             ))}
           </div>
         ) : (
-          <p className="muted">暂无本地任务</p>
+          <p className="muted">{TEXT.noLocalTasks}</p>
         )}
       </section>
 
       <section>
         <h2>
           <ListChecks aria-hidden="true" size={16} />
-          工具
+          {TEXT.tools}
         </h2>
         <p className="muted">
           {state.tools.lastResult
             ? `${normalizeWorkbenchText(state.tools.lastResult.toolLabel)}: ${normalizeWorkbenchText(state.tools.lastResult.summary)}`
             : hasModels
-              ? `已检测 ${state.model.availableModels.length} 个本地模型`
-              : "等待本地模型"}
+              ? `${TEXT.modelsDetectedPrefix} ${state.model.availableModels.length} ${TEXT.modelsDetectedSuffix}`
+              : TEXT.waitingModels}
         </p>
       </section>
 
       <section>
         <h2>
           <ScrollText aria-hidden="true" size={16} />
-          日志
+          {TEXT.logs}
         </h2>
         <p className="muted">{normalizeWorkbenchText(state.audit.summary)}</p>
-        <p className="muted">模块: {normalizeWorkbenchText(state.audit.lastEvent.module)}</p>
-        <p className="muted">来源: {normalizeWorkbenchText(state.audit.lastEvent.source)}</p>
-        <p className="muted">时间: {normalizeWorkbenchText(state.audit.lastEvent.timestamp)}</p>
+        <p className="muted">{TEXT.module}: {normalizeWorkbenchText(state.audit.lastEvent.module)}</p>
+        <p className="muted">{TEXT.source}: {normalizeWorkbenchText(state.audit.lastEvent.source)}</p>
+        <p className="muted">{TEXT.time}: {normalizeWorkbenchText(state.audit.lastEvent.timestamp)}</p>
         <p className="muted">{normalizeWorkbenchText(state.audit.lastEvent.detail)}</p>
       </section>
 
       <section>
-        <h2>错误</h2>
+        <h2>{TEXT.errors}</h2>
         {state.error ? (
           <>
             <p className="muted">{normalizeWorkbenchText(state.error.summary)}</p>
-            <p className="muted">模块: {normalizeWorkbenchText(state.error.module)}</p>
-            <p className="muted">来源: {normalizeWorkbenchText(state.error.source)}</p>
-            <p className="muted">时间: {normalizeWorkbenchText(state.error.timestamp)}</p>
+            <p className="muted">{TEXT.module}: {normalizeWorkbenchText(state.error.module)}</p>
+            <p className="muted">{TEXT.source}: {normalizeWorkbenchText(state.error.source)}</p>
+            <p className="muted">{TEXT.time}: {normalizeWorkbenchText(state.error.timestamp)}</p>
             <p className="muted">{normalizeWorkbenchText(state.error.detail)}</p>
-            <p className="muted">建议: {normalizeWorkbenchText(state.error.actionLabel)}</p>
+            <p className="muted">{TEXT.suggestion}: {normalizeWorkbenchText(state.error.actionLabel)}</p>
             {state.error.module === "tasks" ? (
               <div className="action-row">
                 <button className="action-button action-button-primary" type="button" onClick={onRetryLocalTask}>
-                  重试本地任务
+                  {TEXT.retryTask}
                 </button>
               </div>
             ) : null}
           </>
         ) : (
-          <p className="muted">当前没有活动错误</p>
+          <p className="muted">{TEXT.noErrors}</p>
         )}
       </section>
 
       <section>
-        <h2>高级设置</h2>
-        <p className="muted">{state.settings.remoteApi.enabled ? "远程 API 已开启" : "远程 API 默认关闭"}</p>
+        <h2>{TEXT.advanced}</h2>
+        <p className="muted">{state.settings.remoteApi.enabled ? TEXT.remoteApiOn : TEXT.remoteApiOff}</p>
         <p className="muted">
-          {state.settings.remoteApi.collapsed
-            ? "保留 baseUrl 和 API 接入口，按需展开。"
-            : "远程 API 设置已展开。"}
+          {state.settings.remoteApi.collapsed ? TEXT.remoteApiCollapsed : TEXT.remoteApiExpanded}
         </p>
-        <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
-        <div className="action-row" aria-label="网络开关">
+        <p className="muted">{state.search.enabled ? TEXT.searchOn : TEXT.searchOff}</p>
+        <div className="action-row" aria-label={TEXT.networkToggles}>
           <button
             className="action-button"
             type="button"
             onClick={() => onToggleRemoteApi(!state.settings.remoteApi.enabled)}
           >
-            {state.settings.remoteApi.enabled ? "关闭远程 API" : "开启远程 API"}
+            {state.settings.remoteApi.enabled ? TEXT.disableRemoteApi : TEXT.enableRemoteApi}
           </button>
           <button className="action-button" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
-            {state.search.enabled ? "关闭联网搜索" : "开启联网搜索"}
+            {state.search.enabled ? TEXT.disableSearch : TEXT.enableSearch}
           </button>
         </div>
         <div className="action-row">
           <label>
-            <span className="muted">远程 API Base URL</span>
+            <span className="muted">{TEXT.searchProviderLabel}</span>
             <input
-              aria-label="远程 API Base URL"
+              aria-label={TEXT.searchProviderLabel}
+              type="text"
+              value={searchProviderLabel}
+              onChange={(event) => setSearchProviderLabel(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="action-row">
+          <button
+            className="action-button"
+            type="button"
+            onClick={() =>
+              onSaveSearchProviderConfig({
+                providerLabel: searchProviderLabel
+              })
+            }
+          >
+            {TEXT.saveSearchProvider}
+          </button>
+        </div>
+        <div className="action-row">
+          <label>
+            <span className="muted">{TEXT.remoteApiBaseUrl}</span>
+            <input
+              aria-label={TEXT.remoteApiBaseUrl}
               type="text"
               value={remoteApiBaseUrl}
               onChange={(event) => setRemoteApiBaseUrl(event.target.value)}
@@ -241,9 +342,9 @@ export function Inspector({
         </div>
         <div className="action-row">
           <label>
-            <span className="muted">远程 API Provider</span>
+            <span className="muted">{TEXT.remoteApiProvider}</span>
             <input
-              aria-label="远程 API Provider"
+              aria-label={TEXT.remoteApiProvider}
               type="text"
               value={remoteApiProviderLabel}
               onChange={(event) => setRemoteApiProviderLabel(event.target.value)}
@@ -261,12 +362,12 @@ export function Inspector({
               })
             }
           >
-            保存远程 API 配置
+            {TEXT.saveRemoteApi}
           </button>
         </div>
-        <p className="muted">回退点上限 {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
-        <p className="muted">当前最多保留 {state.rollback.activeLimit} 段可回退点。</p>
-        <div className="action-row" aria-label="回退点上限快捷设置">
+        <p className="muted">{TEXT.rollbackLimit} {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
+        <p className="muted">{TEXT.rollbackHintPrefix} {state.rollback.activeLimit} {TEXT.rollbackHintSuffix}</p>
+        <div className="action-row" aria-label={TEXT.rollbackQuick}>
           <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(10)}>
             10 段
           </button>
@@ -277,30 +378,30 @@ export function Inspector({
             20 段
           </button>
         </div>
-        <p className="muted">会话 {state.storage.sessionCount}</p>
-        <p className="muted">日志 {state.storage.logCount}</p>
-        <p className="muted">缓存条目 {state.storage.cacheCount}</p>
-        <p className="muted">快照 {state.storage.snapshotCount}</p>
-        <p className="muted">知识库索引 {state.storage.knowledgeCount}</p>
-        <div className="action-row" aria-label="本地清理入口">
+        <p className="muted">{TEXT.session} {state.storage.sessionCount}</p>
+        <p className="muted">{TEXT.logCount} {state.storage.logCount}</p>
+        <p className="muted">{TEXT.cacheCount} {state.storage.cacheCount}</p>
+        <p className="muted">{TEXT.snapshotCount} {state.storage.snapshotCount}</p>
+        <p className="muted">{TEXT.knowledgeCount} {state.storage.knowledgeCount}</p>
+        <div className="action-row" aria-label={TEXT.localCleanup}>
           <button className="action-button" type="button" onClick={() => onCleanupStorage("conversation")}>
-            清空会话
+            {TEXT.clearConversation}
           </button>
           <button className="action-button" type="button" onClick={() => onCleanupStorage("logs")}>
-            清空日志
+            {TEXT.clearLogs}
           </button>
         </div>
         <div className="action-row">
           <button className="action-button" type="button" onClick={() => onCleanupStorage("cache")}>
-            清空缓存
+            {TEXT.clearCache}
           </button>
           <button className="action-button" type="button" onClick={() => onCleanupStorage("snapshots")}>
-            清空快照
+            {TEXT.clearSnapshots}
           </button>
         </div>
         <div className="action-row">
           <button className="action-button" type="button" onClick={() => onCleanupStorage("knowledge")}>
-            清空知识库索引
+            {TEXT.clearKnowledge}
           </button>
         </div>
       </section>
@@ -317,16 +418,16 @@ export function Inspector({
 
 function getTaskStatusLabel(status: WorkbenchState["tasks"]["items"][number]["status"]) {
   if (status === "running") {
-    return "执行中";
+    return TEXT.running;
   }
 
   if (status === "completed") {
-    return "已完成";
+    return TEXT.completed;
   }
 
   if (status === "failed") {
-    return "已失败";
+    return TEXT.failed;
   }
 
-  return "队列中";
+  return TEXT.queued;
 }

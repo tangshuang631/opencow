@@ -19,6 +19,7 @@ describe("workbenchState facade", () => {
     expect(workbenchState.createRemoteApiToggleState).toBeTypeOf("function");
     expect(workbenchState.createRemoteApiConfigState).toBeTypeOf("function");
     expect(workbenchState.createSearchToggleState).toBeTypeOf("function");
+    expect(workbenchState.createSearchProviderConfigState).toBeTypeOf("function");
     expect(workbenchState.createSearchEnabledState).toBeTypeOf("function");
     expect(workbenchState.createStorageCleanupState).toBeTypeOf("function");
     expect(workbenchState.createToolExecutionState).toBeTypeOf("function");

@@ -7,16 +7,36 @@ type MainConversationProps = {
   onPreviewRollback: (targetEntryId: string) => void;
 };
 
+const TEXT = {
+  conversation: "\u4f1a\u8bdd",
+  title: "\u672c\u5730\u52a9\u624b\u5de5\u4f5c\u53f0",
+  ollamaStatus: "Ollama \u72b6\u6001",
+  endpoint: "\u8fde\u63a5\u5730\u5740",
+  currentModel: "\u5f53\u524d\u6a21\u578b",
+  modelCount: "\u672c\u5730\u6a21\u578b\u6570",
+  safety: "\u5b89\u5168\u63d0\u793a",
+  dangerNeedsConfirm: "\u9ad8\u98ce\u9669\u64cd\u4f5c\u9700\u786e\u8ba4",
+  shellGuard: "Shell \u53d7\u6743\u9650\u3001\u8d85\u65f6\u4e0e\u5de5\u4f5c\u76ee\u5f55\u9650\u5236",
+  permissionPrefix: "\u5f53\u524d\u6743\u9650",
+  permissionConfirm: "\u654f\u611f\u64cd\u4f5c\u9700\u5f39\u7a97\u786e\u8ba4",
+  permissionNoConfirm: "\u5f53\u524d\u65e0\u9700\u989d\u5916\u786e\u8ba4",
+  recentOps: "\u6700\u8fd1\u64cd\u4f5c",
+  recentOpsTitle: "\u6700\u8fd1\u64cd\u4f5c\u4e0e\u53ef\u56de\u9000\u70b9",
+  recentOpsHint: "\u70b9\u51fb\u6bcf\u6761\u64cd\u4f5c\u53f3\u4fa7\u6309\u94ae\uff0c\u53ef\u76f4\u63a5\u4ece\u4f1a\u8bdd\u533a\u53d1\u8d77\u56de\u9000\u9884\u89c8\u3002",
+  previewFromConversation: "\u4ece\u4f1a\u8bdd\u533a",
+  previewRollbackTo: "\u4ece\u4f1a\u8bdd\u533a\u9884\u89c8\u56de\u9000\u5230 "
+} as const;
+
 export function MainConversation({ state, onPreviewRollback }: MainConversationProps) {
   const modelCount = state.model.availableModels.length;
   const recentEntries = state.conversation.entries.slice(0, 4);
 
   return (
-    <section className="conversation" aria-label="会话">
+    <section className="conversation" aria-label={TEXT.conversation}>
       <header className="conversation-header">
         <div>
           <p className="eyebrow">opencow v1.0</p>
-          <h1>本地助手工作台</h1>
+          <h1>{TEXT.title}</h1>
         </div>
         <div className="status-pill">
           <CircleDashed aria-hidden="true" size={16} />
@@ -43,26 +63,26 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
               ))}
               {index === 0 ? (
                 <>
-                  <dl className="model-summary" aria-label="Ollama 状态">
+                  <dl className="model-summary" aria-label={TEXT.ollamaStatus}>
                     <div>
-                      <dt>连接地址</dt>
+                      <dt>{TEXT.endpoint}</dt>
                       <dd>{normalizeWorkbenchText(state.model.endpoint)}</dd>
                     </div>
                     <div>
-                      <dt>当前模型</dt>
+                      <dt>{TEXT.currentModel}</dt>
                       <dd>{normalizeWorkbenchText(state.model.activeModel)}</dd>
                     </div>
                     <div>
-                      <dt>本地模型数</dt>
+                      <dt>{TEXT.modelCount}</dt>
                       <dd>{modelCount}</dd>
                     </div>
                   </dl>
-                  <div className="safety-summary" aria-label="安全提示">
-                    <p className="message-title">高风险操作需确认</p>
-                    <p className="message-note">Shell 受权限、超时与工作目录限制</p>
+                  <div className="safety-summary" aria-label={TEXT.safety}>
+                    <p className="message-title">{TEXT.dangerNeedsConfirm}</p>
+                    <p className="message-note">{TEXT.shellGuard}</p>
                     <p className="message-note">
-                      当前权限: {normalizeWorkbenchText(state.permission.label)} ·{" "}
-                      {state.permission.requiresConfirmation ? "敏感操作需弹窗确认" : "当前无需额外确认"}
+                      {TEXT.permissionPrefix}: {normalizeWorkbenchText(state.permission.label)} ·{" "}
+                      {state.permission.requiresConfirmation ? TEXT.permissionConfirm : TEXT.permissionNoConfirm}
                     </p>
                   </div>
                   {state.model.diagnostic ? (
@@ -76,7 +96,7 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
                   type="button"
                   onClick={() => onPreviewRollback(entry.rollbackTargetId as string)}
                 >
-                  从会话区{normalizeWorkbenchText(entry.actionLabel)}
+                  {TEXT.previewFromConversation}{normalizeWorkbenchText(entry.actionLabel)}
                 </button>
               ) : null}
             </div>
@@ -84,10 +104,10 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
         ))}
 
         {state.rollback.entries.length > 1 ? (
-          <section className="conversation-timeline" aria-label="最近操作">
+          <section className="conversation-timeline" aria-label={TEXT.recentOps}>
             <div className="conversation-timeline-header">
-              <p className="message-title">最近操作与可回退点</p>
-              <p className="message-note">点击每条操作右侧按钮，可直接从会话区发起回退预览。</p>
+              <p className="message-title">{TEXT.recentOpsTitle}</p>
+              <p className="message-note">{TEXT.recentOpsHint}</p>
             </div>
             {state.rollback.entries
               .filter((entry) => entry.id !== "startup-baseline")
@@ -103,7 +123,7 @@ export function MainConversation({ state, onPreviewRollback }: MainConversationP
                     type="button"
                     onClick={() => onPreviewRollback(entry.id)}
                   >
-                    从会话区预览回退到 {normalizeWorkbenchText(entry.label)}
+                    {TEXT.previewRollbackTo}{normalizeWorkbenchText(entry.label)}
                   </button>
                 </article>
               ))}

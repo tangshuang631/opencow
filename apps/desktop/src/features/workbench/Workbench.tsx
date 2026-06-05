@@ -1,5 +1,4 @@
-import type { WorkbenchState } from "./workbenchState";
-import type { StorageCleanupTarget } from "./workbenchState";
+import type { StorageCleanupTarget, WorkbenchState } from "./workbenchState";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { MainConversation } from "./components/MainConversation";
@@ -21,6 +20,7 @@ type WorkbenchProps = {
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string }) => void;
+  onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -46,6 +46,7 @@ export function Workbench({
   onToggleRemoteApi,
   onToggleSearch,
   onSaveRemoteApiConfig,
+  onSaveSearchProviderConfig,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -84,6 +85,7 @@ export function Workbench({
         onToggleRemoteApi={onToggleRemoteApi}
         onToggleSearch={onToggleSearch}
         onSaveRemoteApiConfig={onSaveRemoteApiConfig}
+        onSaveSearchProviderConfig={onSaveSearchProviderConfig}
       />
     </main>
   );

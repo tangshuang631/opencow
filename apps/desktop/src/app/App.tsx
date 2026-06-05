@@ -17,6 +17,7 @@ import {
   createRemoteApiToggleState,
   createRollbackLimitUpdatedState,
   createSearchEnabledState,
+  createSearchProviderConfigState,
   createSearchToggleState,
   createStorageCleanupState,
   createTaskExecutionCancelledState,
@@ -294,6 +295,12 @@ export function App() {
     });
   }
 
+  function handleSaveSearchProviderConfig(payload: { providerLabel: string }) {
+    startTransition(() => {
+      setState((current) => createSearchProviderConfigState(current, payload));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -317,6 +324,7 @@ export function App() {
       onToggleRemoteApi={handleToggleRemoteApi}
       onToggleSearch={handleToggleSearch}
       onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
+      onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}

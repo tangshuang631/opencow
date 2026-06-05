@@ -13,6 +13,7 @@ import {
   createRemoteApiConfigState,
   createRemoteApiToggleState,
   createSearchEnabledState,
+  createSearchProviderConfigState,
   createSearchToggleState,
   createUserTaskSubmittedState,
   createRollbackLimitUpdatedState,
@@ -539,6 +540,23 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.lastEvent.source).toBe("remote_api_config");
     expect(updated.conversation.entries[0]).toMatchObject({
       title: "已更新远程 API 配置"
+    });
+  });
+  it("updates search provider from advanced settings and keeps the state traceable", () => {
+    const enabled = createSearchToggleState(createInitialWorkbenchState(), {
+      enabled: true,
+      providerLabel: "Tavily"
+    });
+    const updated = createSearchProviderConfigState(enabled, {
+      providerLabel: "Bocha"
+    });
+
+    expect(updated.search.enabled).toBe(true);
+    expect(updated.search.providerLabel).toBe("Bocha");
+    expect(updated.audit.summary).toBe("已更新联网搜索提供方");
+    expect(updated.audit.lastEvent.source).toBe("search_provider_config");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "已更新联网搜索提供方"
     });
   });
 });

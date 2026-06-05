@@ -34,7 +34,8 @@ const inspectorActions = {
   onCleanupStorage: vi.fn(),
   onToggleRemoteApi: vi.fn(),
   onToggleSearch: vi.fn(),
-  onSaveRemoteApiConfig: vi.fn()
+  onSaveRemoteApiConfig: vi.fn(),
+  onSaveSearchProviderConfig: vi.fn()
 };
 
 describe("App", () => {
@@ -310,5 +311,15 @@ describe("App", () => {
     expect(within(settingsSection as HTMLElement).getByLabelText("远程 API Base URL")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByLabelText("远程 API Provider")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByRole("button", { name: "保存远程 API 配置" })).toBeInTheDocument();
+  });
+
+  it("shows search provider config inputs in advanced settings", () => {
+    render(<Inspector state={createInitialWorkbenchState()} {...inspectorActions} />);
+
+    const settingsSection = screen.getByText("高级设置").closest("section");
+
+    expect(settingsSection).not.toBeNull();
+    expect(within(settingsSection as HTMLElement).getByLabelText("联网搜索 Provider")).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByRole("button", { name: "保存联网搜索配置" })).toBeInTheDocument();
   });
 });

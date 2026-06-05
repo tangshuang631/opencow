@@ -70,12 +70,33 @@ Rules:
 - Encoding checks must be part of project health checks.
 - Any encoding conversion must be deliberate, documented, and tested.
 
+When a file already shows visible encoding inconsistency or mojibake symptoms, treat it as a higher-risk file.
+
+Extra rules for high-risk encoding files:
+
+- Prefer conservative incremental edits over broad rewrites.
+- Prefer adding or changing the smallest stable block possible.
+- Avoid large multi-hunk edits in one pass.
+- Re-read the exact target file content immediately before patching.
+- After each small edit, re-check the file before continuing.
+- If exact patch matching is unstable, stop expanding the edit scope and reduce to smaller local changes.
+- Do not "clean up" unrelated text in the same file while fixing a targeted issue.
+- If a file becomes too unstable to patch safely, pause edits to that file and move logic into safer adjacent modules when possible.
+- For risky files, prioritize adapter-style changes around the file over invasive in-place rewrites.
+- Any necessary rewrite of a high-risk encoding file must be explicitly justified in the work log or commit message.
+
 Preferred handling:
 
 - opencow new source/docs/config/scripts: `UTF-8`.
 - upstream `openclaw` source: preserve upstream encoding.
 - terminal logs and dev scripts: English is allowed when it avoids mojibake.
 - product UI: Chinese-first.
+
+Editing strategy requirement:
+
+- Default to a conservative incremental editing strategy whenever encoding uncertainty, patch mismatch, or garbled terminal rendering appears.
+- Development speed must not be improved by taking unsafe editing shortcuts on unstable files.
+- Protect file integrity first, then continue feature delivery in smaller verified steps.
 
 ## 5. Testing Discipline
 
