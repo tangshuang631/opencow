@@ -16,6 +16,8 @@ type InspectorProps = {
   onCancelActiveTask: () => void;
   onUpdateRollbackLimit: (limit: number) => void;
   onCleanupStorage: (target: StorageCleanupTarget) => void;
+  onToggleRemoteApi: (enabled: boolean) => void;
+  onToggleSearch: (enabled: boolean) => void;
 };
 
 export function Inspector({
@@ -30,7 +32,9 @@ export function Inspector({
   onRetryLocalTask,
   onCancelActiveTask,
   onUpdateRollbackLimit,
-  onCleanupStorage
+  onCleanupStorage,
+  onToggleRemoteApi,
+  onToggleSearch
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
@@ -200,12 +204,25 @@ export function Inspector({
 
       <section>
         <h2>高级设置</h2>
-        <p className="muted">远程 API 默认关闭</p>
+        <p className="muted">{state.settings.remoteApi.enabled ? "远程 API 已开启" : "远程 API 默认关闭"}</p>
         <p className="muted">
           {state.settings.remoteApi.collapsed
             ? "保留 baseUrl 和 API 接入口，按需展开。"
             : "远程 API 设置已展开。"}
         </p>
+        <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
+        <div className="action-row" aria-label="网络开关">
+          <button
+            className="action-button"
+            type="button"
+            onClick={() => onToggleRemoteApi(!state.settings.remoteApi.enabled)}
+          >
+            {state.settings.remoteApi.enabled ? "关闭远程 API" : "开启远程 API"}
+          </button>
+          <button className="action-button" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
+            {state.search.enabled ? "关闭联网搜索" : "开启联网搜索"}
+          </button>
+        </div>
         <p className="muted">回退点上限 {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
         <p className="muted">当前最多保留 {state.rollback.activeLimit} 段可回退点。</p>
         <div className="action-row" aria-label="回退点上限快捷设置">

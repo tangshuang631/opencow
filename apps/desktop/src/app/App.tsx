@@ -13,8 +13,10 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createOllamaLoadErrorState,
+  createRemoteApiToggleState,
   createRollbackLimitUpdatedState,
   createSearchEnabledState,
+  createSearchToggleState,
   createStorageCleanupState,
   createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
@@ -268,6 +270,23 @@ export function App() {
     });
   }
 
+  function handleToggleRemoteApi(enabled: boolean) {
+    startTransition(() => {
+      setState((current) => createRemoteApiToggleState(current, enabled));
+    });
+  }
+
+  function handleToggleSearch(enabled: boolean) {
+    startTransition(() => {
+      setState((current) =>
+        createSearchToggleState(current, {
+          enabled,
+          providerLabel: "Tavily"
+        })
+      );
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => createUserTaskSubmittedState(current, { message }));
@@ -288,6 +307,8 @@ export function App() {
       onCancelActiveTask={handleCancelActiveTask}
       onUpdateRollbackLimit={handleUpdateRollbackLimit}
       onCleanupStorage={handleCleanupStorage}
+      onToggleRemoteApi={handleToggleRemoteApi}
+      onToggleSearch={handleToggleSearch}
       onDemoDangerousAction={handleDemoDangerousAction}
       onDemoPermissionRequest={handleDemoPermissionRequest}
       onDemoSearch={handleDemoSearch}

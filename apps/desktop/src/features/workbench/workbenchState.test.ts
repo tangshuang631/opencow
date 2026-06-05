@@ -10,7 +10,9 @@ import {
   createInitialWorkbenchState,
   createHighRiskConfirmationState,
   createOllamaLoadErrorState,
+  createRemoteApiToggleState,
   createSearchEnabledState,
+  createSearchToggleState,
   createUserTaskSubmittedState,
   createRollbackLimitUpdatedState,
   createStorageCleanupState,
@@ -487,5 +489,39 @@ describe("createInitialWorkbenchState", () => {
     expect(logsCleared.storage.logCount).toBe(0);
     expect(snapshotsCleared.storage.snapshotCount).toBe(0);
     expect(knowledgeCleared.storage.knowledgeCount).toBe(0);
+  });
+
+  it("enables remote api from advanced settings and records an audit trail", () => {
+    const updated = createRemoteApiToggleState(createInitialWorkbenchState(), true);
+
+    expect(updated.settings.remoteApi.enabled).toBe(true);
+    expect(updated.model.remoteApiEnabled).toBe(true);
+    expect(updated.audit.summary).toBe("已开启远程 API");
+    expect(updated.audit.lastEvent.source).toBe("remote_api_toggle");
+    expect(updated.conversation.entries[0]).toMatchObject({
+      title: "已开启远程 API",
+      summary: "远程 API 已进入高级设置可用状态，默认仍优先本地 Ollama。"
+    });
+  });
+
+  it("toggles network search from advanced settings without injecting sources", () => {
+    const enabled = createSearchToggleState(createInitialWorkbenchState(), {
+      enabled: true,
+      providerLabel: "Tavily"
+    });
+
+    expect(enabled.search.enabled).toBe(true);
+    expect(enabled.search.providerLabel).toBe("Tavily");
+    expect(enabled.sources.items).toHaveLength(0);
+    expect(enabled.audit.summary).toBe("已开启联网搜索");
+    expect(enabled.audit.lastEvent.source).toBe("search_toggle");
+
+    const disabled = createSearchToggleState(enabled, {
+      enabled: false
+    });
+
+    expect(disabled.search.enabled).toBe(false);
+    expect(disabled.search.providerLabel).toBe("");
+    expect(disabled.audit.summary).toBe("已关闭联网搜索");
   });
 });

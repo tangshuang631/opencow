@@ -18,6 +18,8 @@ type WorkbenchProps = {
   onCancelActiveTask: () => void;
   onUpdateRollbackLimit: (limit: number) => void;
   onCleanupStorage: (target: StorageCleanupTarget) => void;
+  onToggleRemoteApi: (enabled: boolean) => void;
+  onToggleSearch: (enabled: boolean) => void;
   onDemoDangerousAction: () => void;
   onDemoPermissionRequest: () => void;
   onDemoSearch: () => void;
@@ -40,6 +42,8 @@ export function Workbench({
   onCancelActiveTask,
   onUpdateRollbackLimit,
   onCleanupStorage,
+  onToggleRemoteApi,
+  onToggleSearch,
   onDemoDangerousAction,
   onDemoPermissionRequest,
   onDemoSearch,
@@ -75,6 +79,8 @@ export function Workbench({
         onCancelActiveTask={onCancelActiveTask}
         onUpdateRollbackLimit={onUpdateRollbackLimit}
         onCleanupStorage={onCleanupStorage}
+        onToggleRemoteApi={onToggleRemoteApi}
+        onToggleSearch={onToggleSearch}
       />
     </main>
   );

@@ -31,7 +31,9 @@ const inspectorActions = {
   onRetryLocalTask: vi.fn(),
   onCancelActiveTask: vi.fn(),
   onUpdateRollbackLimit: vi.fn(),
-  onCleanupStorage: vi.fn()
+  onCleanupStorage: vi.fn(),
+  onToggleRemoteApi: vi.fn(),
+  onToggleSearch: vi.fn()
 };
 
 describe("App", () => {
@@ -286,5 +288,15 @@ describe("App", () => {
     expect(within(settingsSection as HTMLElement).getByText("清空快照")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByText("清空知识库索引")).toBeInTheDocument();
     expect(within(settingsSection as HTMLElement).getByText("缓存条目 0")).toBeInTheDocument();
+  });
+
+  it("shows remote api and network toggles in advanced settings", () => {
+    render(<Inspector state={createInitialWorkbenchState()} {...inspectorActions} />);
+
+    const settingsSection = screen.getByText("高级设置").closest("section");
+
+    expect(settingsSection).not.toBeNull();
+    expect(within(settingsSection as HTMLElement).getByRole("button", { name: "开启远程 API" })).toBeInTheDocument();
+    expect(within(settingsSection as HTMLElement).getByRole("button", { name: "开启联网搜索" })).toBeInTheDocument();
   });
 });
