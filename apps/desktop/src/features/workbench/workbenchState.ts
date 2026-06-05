@@ -22,6 +22,11 @@ export type WorkbenchState = {
   rollback: {
     defaultLimit: number;
     maxLimit: number;
+    entries: Array<{
+      id: string;
+      label: string;
+      summary: string;
+    }>;
   };
   search: {
     enabled: boolean;
@@ -70,7 +75,14 @@ export function createInitialWorkbenchState(): WorkbenchState {
     },
     rollback: {
       defaultLimit: 10,
-      maxLimit: 20
+      maxLimit: 20,
+      entries: [
+        {
+          id: "startup-baseline",
+          label: "启动基线",
+          summary: "应用启动后的本地安全初始状态。"
+        }
+      ]
     },
     search: {
       enabled: false
@@ -108,6 +120,17 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         diagnostic: overview.diagnostic,
         availableModels: overview.models
       },
+      rollback: {
+        ...state.rollback,
+        entries: [
+          state.rollback.entries[0],
+          {
+            id: "ollama-check-offline",
+            label: "Ollama 检查",
+            summary: "本地模型服务离线，保留最近一次可回退检查点。"
+          }
+        ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
+      },
       audit: {
         summary: "Ollama 离线，等待本地服务恢复",
         lastEvent: {
@@ -138,6 +161,17 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
       diagnostic: overview.diagnostic,
       availableModels: overview.models
     },
+    rollback: {
+      ...state.rollback,
+      entries: [
+        state.rollback.entries[0],
+        {
+          id: "ollama-check-ready",
+          label: "Ollama 检查",
+          summary: `已完成 ${overview.models.length} 个本地模型的读取检查。`
+        }
+      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
+    },
     audit: {
       summary: `已读取 ${overview.models.length} 个本地模型`,
       lastEvent: {
@@ -148,5 +182,44 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
       }
     },
     error: null
+  };
+}
+
+export function createOllamaLoadErrorState(state: WorkbenchState, detail: string): WorkbenchState {
+  return {
+    ...state,
+    model: {
+      ...state.model,
+      status: "等待 Ollama",
+      diagnostic: detail
+    },
+    rollback: {
+      ...state.rollback,
+      entries: [
+        state.rollback.entries[0],
+        {
+          id: "ollama-load-error",
+          label: "异常保护",
+          summary: "Ollama 状态读取异常，工作台保留在最近一次安全状态。"
+        }
+      ].filter(Boolean) as WorkbenchState["rollback"]["entries"]
+    },
+    audit: {
+      summary: "Ollama 状态读取失败，工作台保持可用",
+      lastEvent: {
+        module: "ollama",
+        detail,
+        timestamp: "本地最近一次检查",
+        source: "ollama_overview"
+      }
+    },
+    error: {
+      module: "ollama",
+      summary: "无法连接本地 Ollama",
+      detail,
+      actionLabel: "检查 Ollama 服务",
+      timestamp: "本地最近一次检查",
+      source: "ollama_overview"
+    }
   };
 }

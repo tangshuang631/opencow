@@ -1,7 +1,11 @@
 import { startTransition, useEffect, useState } from "react";
 import { loadOllamaOverview } from "../features/ollama/ollamaService";
 import { Workbench } from "../features/workbench/Workbench";
-import { createInitialWorkbenchState, mergeOllamaOverview } from "../features/workbench/workbenchState";
+import {
+  createInitialWorkbenchState,
+  createOllamaLoadErrorState,
+  mergeOllamaOverview
+} from "../features/workbench/workbenchState";
 
 export function App() {
   const [state, setState] = useState(createInitialWorkbenchState);
@@ -10,15 +14,27 @@ export function App() {
     let cancelled = false;
 
     async function syncOllamaState() {
-      const overview = await loadOllamaOverview();
+      try {
+        const overview = await loadOllamaOverview();
 
-      if (cancelled) {
-        return;
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setState((current) => mergeOllamaOverview(current, overview));
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        const detail = error instanceof Error ? error.message : "Unknown ollama load error";
+
+        startTransition(() => {
+          setState((current) => createOllamaLoadErrorState(current, detail));
+        });
       }
-
-      startTransition(() => {
-        setState((current) => mergeOllamaOverview(current, overview));
-      });
     }
 
     void syncOllamaState();

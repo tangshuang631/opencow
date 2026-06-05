@@ -69,6 +69,15 @@ export function Inspector({ state }: InspectorProps) {
             : "远程 API 设置已展开。"}
         </p>
       </section>
+      <section>
+        <h2>回退记录</h2>
+        {state.rollback.entries.map((entry) => (
+          <div key={entry.id}>
+            <p className="muted">{entry.label}</p>
+            <p className="muted">{entry.summary}</p>
+          </div>
+        ))}
+      </section>
     </aside>
   );
 }
