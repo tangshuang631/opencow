@@ -214,6 +214,7 @@ describe("App", () => {
     expect(screen.getByText("确认删除临时目录")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批准高风险操作" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消高风险操作" })).toBeInTheDocument();
+    expect(screen.getByText("安全保护: 执行前必须创建快照并展示预览。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "批准高风险操作" }));
 

@@ -65,6 +65,9 @@ export function Inspector({
             <p className="muted">命令预览: {state.confirmation.pending.commandPreview}</p>
             <p className="muted">影响范围: {state.confirmation.pending.impact}</p>
             <p className="muted">所需权限: {state.confirmation.pending.requiredMode}</p>
+            {state.confirmation.pending.safetySummary ? (
+              <p className="muted">安全保护: {state.confirmation.pending.safetySummary}</p>
+            ) : null}
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApproveDangerousAction}>
                 批准高风险操作

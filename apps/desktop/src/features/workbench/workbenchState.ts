@@ -7,6 +7,7 @@ export type PendingConfirmation = {
   commandPreview: string;
   impact: string;
   requiredMode: PermissionMode;
+  safetySummary?: string;
 };
 export type PendingPermissionModeChange = {
   targetMode: PermissionMode;

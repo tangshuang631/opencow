@@ -31,7 +31,8 @@ describe("evaluateDangerousCommandPolicy", () => {
     expect(result).toMatchObject({
       kind: "confirmation",
       title: "确认删除临时目录",
-      requiredMode: "controlled-full"
+      requiredMode: "controlled-full",
+      safetySummary: "执行前必须创建快照并展示预览。"
     });
   });
 });

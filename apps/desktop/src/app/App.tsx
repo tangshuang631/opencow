@@ -71,7 +71,8 @@ export function App() {
             summary: result.summary,
             commandPreview: result.commandPreview,
             impact: result.impact,
-            requiredMode: result.requiredMode
+            requiredMode: result.requiredMode,
+            safetySummary: result.safetySummary
           });
         }
 
