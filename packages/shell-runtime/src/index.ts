@@ -1,2 +1,2 @@
 export { planControlledCommand } from "./planCommand.js";
-export type { ShellAuditEvent, ShellCommandPlan, ShellCommandPlanRequest } from "./types.js";
+export type { ShellCommandPlan, ShellCommandPlanRequest } from "./types.js";

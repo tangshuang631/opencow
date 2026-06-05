@@ -2,13 +2,7 @@ import type {
   ControlledCommandAnalysis,
   ControlledPermissionMode
 } from "@opencow/openclaw-adapter/browser";
-
-export interface ShellAuditEvent {
-  readonly module: "shell-runtime";
-  readonly source: "command_policy";
-  readonly summary: string;
-  readonly detail: string;
-}
+import type { AuditEvent } from "@opencow/audit-core";
 
 export interface ShellCommandPlanRequest {
   readonly command: string;
@@ -25,5 +19,5 @@ export interface ShellCommandPlan {
   readonly timeoutMs: number;
   readonly command: string;
   readonly cwd: string;
-  readonly auditEvent: ShellAuditEvent;
+  readonly auditEvent: AuditEvent;
 }

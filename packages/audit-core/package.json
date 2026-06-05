@@ -1,5 +1,5 @@
 {
-  "name": "@opencow/shell-runtime",
+  "name": "@opencow/audit-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,6 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run src",
     "test:unit": "vitest run src"
-  },
-  "dependencies": {
-    "@opencow/audit-core": "^0.1.0",
-    "@opencow/openclaw-adapter": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

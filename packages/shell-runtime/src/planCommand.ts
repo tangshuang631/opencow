@@ -1,3 +1,4 @@
+import { createAuditEvent } from "@opencow/audit-core";
 import { analyzeControlledCommand } from "@opencow/openclaw-adapter/browser";
 import type { ShellCommandPlan, ShellCommandPlanRequest } from "./types.js";
 
@@ -18,12 +19,12 @@ export function planControlledCommand(request: ShellCommandPlanRequest): ShellCo
     timeoutMs: normalizeTimeout(request.timeoutMs),
     command: request.command,
     cwd: request.cwd,
-    auditEvent: {
+    auditEvent: createAuditEvent({
       module: "shell-runtime",
       source: "command_policy",
       summary: analysis.auditSummary,
       detail: analysis.auditDetail
-    }
+    })
   };
 }
 
