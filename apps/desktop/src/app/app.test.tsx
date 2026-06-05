@@ -50,6 +50,12 @@ describe("App", () => {
     expect(screen.getByText("远程 API 默认关闭")).toBeInTheDocument();
     expect(screen.getByText("已读取 1 个本地模型")).toBeInTheDocument();
     expect(screen.getAllByText("来源: ollama_overview").length).toBeGreaterThan(0);
+    expect(screen.getByText("高风险操作需确认")).toBeInTheDocument();
+    expect(screen.getByText("Shell 受权限、超时与工作目录限制")).toBeInTheDocument();
+    expect(screen.getAllByText("仅允许读取已授权目录与附件。").length).toBeGreaterThan(0);
+    expect(screen.getByText("当前权限: 只读 · 敏感操作需弹窗确认")).toBeInTheDocument();
+    expect(screen.getByText("权限确认")).toBeInTheDocument();
+    expect(screen.getByText("删除、覆盖、递归删除、进程结束前必须弹窗确认。")).toBeInTheDocument();
   });
 
   it("surfaces a traceable error when loading Ollama overview throws", async () => {

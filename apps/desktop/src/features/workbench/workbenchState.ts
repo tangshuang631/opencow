@@ -18,6 +18,10 @@ export type WorkbenchState = {
   permission: {
     mode: PermissionMode;
     label: string;
+    summary: string;
+    requiresConfirmation: boolean;
+    confirmationTitle: string;
+    confirmationSummary: string;
   };
   rollback: {
     defaultLimit: number;
@@ -71,7 +75,11 @@ export function createInitialWorkbenchState(): WorkbenchState {
     },
     permission: {
       mode: "readonly",
-      label: "只读"
+      label: "只读",
+      summary: "仅允许读取已授权目录与附件。",
+      requiresConfirmation: true,
+      confirmationTitle: "权限确认",
+      confirmationSummary: "删除、覆盖、递归删除、进程结束前必须弹窗确认。"
     },
     rollback: {
       defaultLimit: 10,

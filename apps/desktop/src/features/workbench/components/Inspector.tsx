@@ -22,6 +22,12 @@ export function Inspector({ state }: InspectorProps) {
         </h2>
         <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
         <p className="muted">Ollama: {state.model.status}</p>
+        <p className="muted">权限: {state.permission.label}</p>
+        <p className="muted">{state.permission.summary}</p>
+      </section>
+      <section>
+        <h2>{state.permission.confirmationTitle}</h2>
+        <p className="muted">{state.permission.confirmationSummary}</p>
       </section>
       <section>
         <h2>

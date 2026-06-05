@@ -75,6 +75,7 @@
 ```powershell
 npm run test
 npm run test:unit
+npm run verify:all
 npm run test:integration
 npm run test:e2e
 npm run check:encoding

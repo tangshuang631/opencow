@@ -13,6 +13,8 @@ describe("createInitialWorkbenchState", () => {
     expect(state.settings.remoteApi.baseUrl).toBe("");
     expect(state.settings.remoteApi.collapsed).toBe(true);
     expect(state.permission.mode).toBe("readonly");
+    expect(state.permission.summary).toBe("仅允许读取已授权目录与附件。");
+    expect(state.permission.requiresConfirmation).toBe(true);
     expect(state.rollback.defaultLimit).toBe(10);
     expect(state.rollback.maxLimit).toBe(20);
     expect(state.rollback.entries).toHaveLength(1);

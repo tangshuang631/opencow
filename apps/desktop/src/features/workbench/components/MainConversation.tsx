@@ -46,6 +46,13 @@ export function MainConversation({ state }: MainConversationProps) {
                 <dd>{modelCount}</dd>
               </div>
             </dl>
+            <div className="safety-summary" aria-label="安全提示">
+              <p className="message-title">高风险操作需确认</p>
+              <p className="message-note">Shell 受权限、超时与工作目录限制</p>
+              <p className="message-note">
+                当前权限: {state.permission.label} · {state.permission.requiresConfirmation ? "敏感操作需弹窗确认" : "当前无需额外确认"}
+              </p>
+            </div>
             {state.model.diagnostic ? <p className="message-note">{state.model.diagnostic}</p> : null}
           </div>
         </article>

@@ -15,6 +15,7 @@ export function Composer({ state }: ComposerProps) {
           <Shield aria-hidden="true" size={14} />
           {state.permission.label}
         </span>
+        <span>{state.permission.summary}</span>
         <span>回退点 {state.rollback.defaultLimit}/{state.rollback.maxLimit}</span>
       </div>
       <div className="composer">

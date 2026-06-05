@@ -9,6 +9,7 @@
     "build": "npm --workspaces --if-present run build",
     "test": "npm --workspaces --if-present run test",
     "test:unit": "npm --workspaces --if-present run test:unit",
+    "verify:all": "powershell -ExecutionPolicy Bypass -File scripts/verify-all.ps1",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:health": "node scripts/check-health.mjs"
   },
