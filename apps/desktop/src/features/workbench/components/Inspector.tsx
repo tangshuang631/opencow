@@ -44,6 +44,9 @@ const TEXT = {
   approveDanger: "\u6279\u51c6\u9ad8\u98ce\u9669\u64cd\u4f5c",
   cancelDanger: "\u53d6\u6d88\u9ad8\u98ce\u9669\u64cd\u4f5c",
   noDanger: "\u5f53\u524d\u6ca1\u6709\u5f85\u786e\u8ba4\u7684\u9ad8\u98ce\u9669\u64cd\u4f5c",
+  approveCapability: "\u6279\u51c6\u80fd\u529b\u53d8\u66f4",
+  cancelCapability: "\u53d6\u6d88\u80fd\u529b\u53d8\u66f4",
+  noCapability: "\u5f53\u524d\u6ca1\u6709\u5f85\u786e\u8ba4\u7684\u80fd\u529b\u53d8\u66f4",
   localTasks: "\u672c\u5730\u4efb\u52a1",
   taskPending: "\u5f85\u5904\u7406",
   taskUnit: "\u6761",
@@ -121,6 +124,14 @@ export function Inspector({
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items.slice(0, 3);
   const hasModels = state.model.availableModels.length > 0;
+  const pendingConfirmation = state.confirmation.pending;
+  const capabilityAuditSources = new Set([
+    "capability_toggle_request",
+    "capability_toggle_approved",
+    "capability_toggle_cancelled"
+  ]);
+  const isCapabilityConfirmationContext = Boolean(pendingConfirmation?.requestedFeature)
+    || capabilityAuditSources.has(state.audit.lastEvent.source);
   const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
   const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
   const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
@@ -176,27 +187,27 @@ export function Inspector({
           <p className="muted">{TEXT.noPermissionUpgrade}</p>
         )}
 
-        {state.confirmation.pending ? (
+        {pendingConfirmation ? (
           <>
-            <p className="muted">{normalizeWorkbenchText(state.confirmation.pending.title)}</p>
-            <p className="muted">{normalizeWorkbenchText(state.confirmation.pending.summary)}</p>
-            <p className="muted">{TEXT.commandPreview}: {normalizeWorkbenchText(state.confirmation.pending.commandPreview)}</p>
-            <p className="muted">{TEXT.impact}: {normalizeWorkbenchText(state.confirmation.pending.impact)}</p>
-            <p className="muted">{TEXT.requiredPermission}: {state.confirmation.pending.requiredMode}</p>
-            {state.confirmation.pending.safetySummary ? (
-              <p className="muted">{TEXT.safety}: {normalizeWorkbenchText(state.confirmation.pending.safetySummary)}</p>
+            <p className="muted">{normalizeWorkbenchText(pendingConfirmation.title)}</p>
+            <p className="muted">{normalizeWorkbenchText(pendingConfirmation.summary)}</p>
+            <p className="muted">{TEXT.commandPreview}: {normalizeWorkbenchText(pendingConfirmation.commandPreview)}</p>
+            <p className="muted">{TEXT.impact}: {normalizeWorkbenchText(pendingConfirmation.impact)}</p>
+            <p className="muted">{TEXT.requiredPermission}: {pendingConfirmation.requiredMode}</p>
+            {pendingConfirmation.safetySummary ? (
+              <p className="muted">{TEXT.safety}: {normalizeWorkbenchText(pendingConfirmation.safetySummary)}</p>
             ) : null}
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApproveDangerousAction}>
-                {TEXT.approveDanger}
+                {isCapabilityConfirmationContext ? TEXT.approveCapability : TEXT.approveDanger}
               </button>
               <button className="action-button" type="button" onClick={onCancelDangerousAction}>
-                {TEXT.cancelDanger}
+                {isCapabilityConfirmationContext ? TEXT.cancelCapability : TEXT.cancelDanger}
               </button>
             </div>
           </>
         ) : (
-          <p className="muted">{TEXT.noDanger}</p>
+          <p className="muted">{isCapabilityConfirmationContext ? TEXT.noCapability : TEXT.noDanger}</p>
         )}
       </section>
 

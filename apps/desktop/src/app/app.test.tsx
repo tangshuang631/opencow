@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { Inspector } from "../features/workbench/components/Inspector";
 import {
+  createCapabilityToggleRequestState,
   createInitialWorkbenchState,
   createRollbackLimitUpdatedState,
   createSearchEnabledState,
@@ -405,9 +406,118 @@ describe("capability toggle cancellation flow", () => {
     fireEvent.click(cancelButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(within(permissionSection as HTMLElement).getByText("当前没有待确认的高风险操作")).toBeInTheDocument();
+      expect(within(permissionSection as HTMLElement).getByText("当前没有待确认的能力变更")).toBeInTheDocument();
     });
     expect(screen.getAllByText(/capability_toggle_cancelled/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/联网搜索默认关闭/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("capability toggle confirmation coverage", () => {
+  it("requires confirmation before disabling network search from conversation", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    const { container } = render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "开启联网搜索" }));
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "关闭联网搜索" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    expect((await screen.findAllByText(/确认关闭联网搜索/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/等待用户确认能力变更/).length).toBeGreaterThan(0);
+  });
+
+  it("requires confirmation before disabling remote api from conversation", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    const { container } = render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "开启远程 API" }));
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "关闭远程 API" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    expect((await screen.findAllByText(/确认关闭远程 API/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/等待用户确认能力变更/).length).toBeGreaterThan(0);
+  });
+
+  it("shows capability-specific confirmation actions in the inspector", () => {
+    const state = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "search",
+      enabled: true,
+      source: "conversation_request",
+      reason: "用户要求开启联网搜索以补充最新来源。",
+      providerLabel: "Tavily"
+    });
+
+    render(<Inspector state={state} {...inspectorActions} />);
+
+    const permissionSection = screen.getByRole("heading", { name: "权限确认" }).closest("section");
+
+    expect(permissionSection).not.toBeNull();
+    expect(within(permissionSection as HTMLElement).getByRole("button", { name: "批准能力变更" })).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByRole("button", { name: "取消能力变更" })).toBeInTheDocument();
+  });
+
+  it("shows a capability-specific empty state after a capability toggle is cancelled", () => {
+    const requested = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
+      feature: "search",
+      enabled: true,
+      source: "conversation_request",
+      reason: "用户要求开启联网搜索以补充最新来源。",
+      providerLabel: "Tavily"
+    });
+    const state = {
+      ...requested,
+      confirmation: {
+        pending: null
+      },
+      audit: {
+        ...requested.audit,
+        summary: "用户已取消能力变更",
+        lastEvent: {
+          ...requested.audit.lastEvent,
+          source: "capability_toggle_cancelled"
+        }
+      }
+    };
+
+    render(<Inspector state={state} {...inspectorActions} />);
+
+    const permissionSection = screen.getByRole("heading", { name: "权限确认" }).closest("section");
+
+    expect(permissionSection).not.toBeNull();
+    expect(within(permissionSection as HTMLElement).getByText("当前没有待确认的能力变更")).toBeInTheDocument();
   });
 });
