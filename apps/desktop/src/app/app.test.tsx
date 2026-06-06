@@ -26,6 +26,7 @@ const inspectorActions = {
   onCancelDangerousAction: vi.fn(),
   onApprovePermissionRequest: vi.fn(),
   onCancelPermissionRequest: vi.fn(),
+  onRetryOllamaCheck: vi.fn(),
   onPreviewRollback: vi.fn(),
   onApplyRollback: vi.fn(),
   onCancelRollback: vi.fn(),
@@ -65,6 +66,34 @@ describe("App", () => {
     });
     expect(screen.getAllByText(/ollama_overview/).length).toBeGreaterThan(0);
     expect(screen.getByText(/无法连接本地 Ollama/)).toBeInTheDocument();
+  });
+
+  it("retries the Ollama health check from the error panel and recovers the workbench", async () => {
+    loadOllamaOverviewMock
+      .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:11434"))
+      .mockResolvedValueOnce({
+        reachable: true,
+        endpoint: "http://127.0.0.1:11434",
+        selectedModel: "qwen2.5-coder:7b",
+        diagnostic: "",
+        models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+      });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("connect ECONNREFUSED 127.0.0.1:11434").length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ollama/ }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("qwen2.5-coder:7b").length).toBeGreaterThan(0);
+    });
+    const errorSection = screen.getByRole("heading", { name: "错误" }).closest("section");
+
+    expect(errorSection).not.toBeNull();
+    expect(within(errorSection as HTMLElement).queryByText("connect ECONNREFUSED 127.0.0.1:11434")).not.toBeInTheDocument();
+    expect(within(errorSection as HTMLElement).queryByRole("button", { name: /Ollama/ })).not.toBeInTheDocument();
   });
 
   it("shows search sources and tool results after desktop demo actions", async () => {

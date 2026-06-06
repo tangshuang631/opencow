@@ -37,6 +37,22 @@ import {
 export function App() {
   const [state, setState] = useState(createInitialWorkbenchState);
 
+  function syncOllamaState() {
+    return loadOllamaOverview()
+      .then((overview) => {
+        startTransition(() => {
+          setState((current) => mergeOllamaOverview(current, overview));
+        });
+      })
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : "Unknown ollama load error";
+
+        startTransition(() => {
+          setState((current) => createOllamaLoadErrorState(current, detail));
+        });
+      });
+  }
+
   function parseCapabilityToggleIntent(message: string, currentState = state) {
     const normalized = message.trim();
 
@@ -82,11 +98,8 @@ export function App() {
 
   useEffect(() => {
     let cancelled = false;
-
-    async function syncOllamaState() {
-      try {
-        const overview = await loadOllamaOverview();
-
+    void loadOllamaOverview()
+      .then((overview) => {
         if (cancelled) {
           return;
         }
@@ -94,7 +107,8 @@ export function App() {
         startTransition(() => {
           setState((current) => mergeOllamaOverview(current, overview));
         });
-      } catch (error) {
+      })
+      .catch((error: unknown) => {
         if (cancelled) {
           return;
         }
@@ -104,10 +118,7 @@ export function App() {
         startTransition(() => {
           setState((current) => createOllamaLoadErrorState(current, detail));
         });
-      }
-    }
-
-    void syncOllamaState();
+      });
 
     return () => {
       cancelled = true;
@@ -316,6 +327,10 @@ export function App() {
     });
   }
 
+  function handleRetryOllamaCheck() {
+    void syncOllamaState();
+  }
+
   function handleToggleRemoteApi(enabled: boolean) {
     startTransition(() => {
       setState((current) => createRemoteApiToggleState(current, enabled));
@@ -366,6 +381,7 @@ export function App() {
       onCancelDangerousAction={handleCancelDangerousAction}
       onApprovePermissionRequest={handleApprovePermissionRequest}
       onCancelPermissionRequest={handleCancelPermissionRequest}
+      onRetryOllamaCheck={handleRetryOllamaCheck}
       onPreviewRollback={handlePreviewRollback}
       onApplyRollback={handleApplyRollback}
       onCancelRollback={handleCancelRollback}

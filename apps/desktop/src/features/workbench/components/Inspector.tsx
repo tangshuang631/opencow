@@ -10,6 +10,7 @@ type InspectorProps = {
   onCancelDangerousAction: () => void;
   onApprovePermissionRequest: () => void;
   onCancelPermissionRequest: () => void;
+  onRetryOllamaCheck: () => void;
   onPreviewRollback: (targetEntryId: string) => void;
   onApplyRollback: () => void;
   onCancelRollback: () => void;
@@ -109,6 +110,7 @@ export function Inspector({
   onCancelDangerousAction,
   onApprovePermissionRequest,
   onCancelPermissionRequest,
+  onRetryOllamaCheck,
   onPreviewRollback,
   onApplyRollback,
   onCancelRollback,
@@ -286,6 +288,13 @@ export function Inspector({
             <p className="muted">{TEXT.time}: {normalizeWorkbenchText(state.error.timestamp)}</p>
             <p className="muted">{normalizeWorkbenchText(state.error.detail)}</p>
             <p className="muted">{TEXT.suggestion}: {normalizeWorkbenchText(state.error.actionLabel)}</p>
+            {state.error.module === "ollama" ? (
+              <div className="action-row">
+                <button className="action-button action-button-primary" type="button" onClick={onRetryOllamaCheck}>
+                  {normalizeWorkbenchText(state.error.actionLabel)}
+                </button>
+              </div>
+            ) : null}
             {state.error.module === "tasks" ? (
               <div className="action-row">
                 <button className="action-button action-button-primary" type="button" onClick={onRetryLocalTask}>
