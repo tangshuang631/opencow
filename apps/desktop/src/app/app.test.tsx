@@ -148,6 +148,10 @@ describe("App", () => {
     expect(permissionSection).not.toBeNull();
     expect(within(permissionSection as HTMLElement).getByRole("button", { name: "批准能力变更" })).toBeInTheDocument();
     expect(screen.getAllByText(/联网搜索默认关闭/).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(within(errorSection as HTMLElement).queryByText("Skill 下载失败")).not.toBeInTheDocument();
+    });
+    expect(within(errorSection as HTMLElement).queryByRole("button", { name: /联网|search|provider/i })).not.toBeInTheDocument();
   });
 
   it("submits a local task from the composer into the workbench flow", async () => {

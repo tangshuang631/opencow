@@ -133,7 +133,8 @@ export function createCapabilityToggleRequestState(
         timestamp: "待用户确认",
         source: "capability_toggle_request"
       }
-    }
+    },
+    error: null
   };
 }
 
