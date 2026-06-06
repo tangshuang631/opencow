@@ -70,6 +70,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "opencow-self-repair-enabled-skills-registry";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "capability-rag-overview";
       readonly title: string;
       readonly summary: string;
@@ -356,6 +363,7 @@ export type LocalAssistantTaskPlan =
         | "packages-overview"
         | "workspace-config-overview"
         | "opencow-self-repair-preview"
+        | "opencow-self-repair-enabled-skills-registry"
         | "capability-rag-overview"
         | "capability-skills-overview"
         | "skills-local-scan"

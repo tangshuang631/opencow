@@ -72,6 +72,7 @@ export type LocalTaskExecutionKind =
   | "packages-overview"
   | "workspace-config-overview"
   | "opencow-self-repair-preview"
+  | "opencow-self-repair-enabled-skills-registry"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "skills-local-scan"

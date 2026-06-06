@@ -245,6 +245,16 @@ pub struct LocalSkillDisableResult {
 }
 
 #[derive(Serialize)]
+pub struct OpencowSelfRepairEnabledSkillsRegistryResult {
+    query: String,
+    repair_target: String,
+    repaired_path: String,
+    status: String,
+    preserved_entry_count: usize,
+    summary: String,
+}
+
+#[derive(Serialize)]
 pub struct EnabledLocalSkillsResult {
     summary: String,
     total_count: usize,
@@ -1270,6 +1280,40 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
             "Local skill disablement removed {} from the workspace skill registry.",
             matched_skill.name
         ),
+    })
+}
+
+#[tauri::command]
+pub fn opencow_self_repair_enabled_skills_registry(
+    query: String,
+) -> Result<OpencowSelfRepairEnabledSkillsRegistryResult, String> {
+    let root = resolve_workspace_root()?;
+    let registry_relative_path = ".opencow/skills/enabled-skills.json";
+    let registry_path = root.join(".opencow").join("skills").join("enabled-skills.json");
+    let registry_dir = registry_path
+        .parent()
+        .ok_or_else(|| "failed to resolve enabled skills registry directory".to_string())?;
+    fs::create_dir_all(registry_dir)
+        .map_err(|error| format!("failed to create {}: {error}", registry_dir.display()))?;
+
+    let preserved_entries = read_enabled_skill_registry(&registry_path).unwrap_or_default();
+    let preserved_entry_count = preserved_entries.len();
+    let pretty = serde_json::to_string_pretty(&serde_json::json!({
+        "version": 1,
+        "enabled_skills": preserved_entries
+    }))
+    .map_err(|error| format!("failed to serialize repaired enabled skills registry: {error}"))?;
+    fs::write(&registry_path, format!("{pretty}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))?;
+
+    Ok(OpencowSelfRepairEnabledSkillsRegistryResult {
+        query,
+        repair_target: "enabled-skills-registry".to_string(),
+        repaired_path: registry_relative_path.to_string(),
+        status: "repaired".to_string(),
+        preserved_entry_count,
+        summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
+            .to_string(),
     })
 }
 
@@ -2428,11 +2472,12 @@ mod tests {
         build_readonly_shell_command, build_workspace_write_shell_command, classify_mcp_plugin_source,
         extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file, local_mcp_plugin_inspect,
         local_mcp_plugin_scan, local_mcp_plugin_start_preview, local_skill_disable, local_skill_install,
-        looks_like_workspace_root, parse_skill_frontmatter_name, read_enabled_skill_registry, resolve_workspace_root,
-        score_mcp_plugin_match, score_skill_match, score_snippet, split_knowledge_segments, tokenize_query,
-        truncate_preview, workspace_project_run, workspace_project_run_preview,
+        looks_like_workspace_root, opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name,
+        read_enabled_skill_registry, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
+        score_snippet, split_knowledge_segments, tokenize_query, truncate_preview, workspace_project_run,
+        workspace_project_run_preview,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::{env, fs, path::Path, time::{SystemTime, UNIX_EPOCH}};
 
     #[test]
@@ -2916,6 +2961,41 @@ mod tests {
         assert_eq!(result.source_skill_path, "vendor/openclaw/skills/gpt-taste/SKILL.md".to_string());
         assert_eq!(result.status, "installed".to_string());
         assert!(installed_contents.contains("Elite UX/UI and motion skill"));
+    }
+
+    #[test]
+    fn opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json() {
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-self-repair-enabled-skills-{unique}"));
+        let registry_path = workspace_root.join(".opencow/skills/enabled-skills.json");
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("packages")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::create_dir_all(registry_path.parent().unwrap()).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(&registry_path, "{ invalid json").unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let result = opencow_self_repair_enabled_skills_registry(
+            "diagnose opencow and continue repairing its enabled skills registry".to_string(),
+        )
+        .unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+
+        let repaired = fs::read_to_string(&registry_path).unwrap();
+        let parsed: Value = serde_json::from_str(&repaired).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(result.repair_target, "enabled-skills-registry".to_string());
+        assert_eq!(result.repaired_path, ".opencow/skills/enabled-skills.json".to_string());
+        assert_eq!(result.status, "repaired".to_string());
+        assert_eq!(result.preserved_entry_count, 0);
+        assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
+        assert!(parsed.get("enabled_skills").and_then(Value::as_array).is_some());
     }
 
     #[test]

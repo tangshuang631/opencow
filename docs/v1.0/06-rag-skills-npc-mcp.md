@@ -962,3 +962,36 @@ Current result includes:
   inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility
 
 This slice gives opencow a safer first self-repair foothold while keeping the same permission, audit, and rollback discipline required for later writable repair actions.
+
+## 6.22a First permission-backed opencow self-repair mutation landing
+
+The next desktop-first self-repair slice is a narrow permission-backed mutation, not a broad autonomous fixer.
+
+Current task kind:
+
+- `opencow-self-repair-enabled-skills-registry`
+
+Current behavior:
+
+- after a readonly self-repair preview, an explicit continuation request can continue into the enabled-skills registry repair path
+- in `readonly`, the planner returns `workspace-write` permission instead of mutating immediately
+- after approval, desktop executes one fixed repair action against `.opencow/skills/enabled-skills.json`
+- Tauri recreates the registry with the verified default schema and preserves any readable enabled entries
+- the final assistant result stays audit-visible and rollback-visible in the same local task chain
+
+Current scope is intentionally limited:
+
+- no arbitrary file mutation
+- no config rewrite outside `.opencow/skills/enabled-skills.json`
+- no process restart
+- no broad guessed repair plan
+
+This slice is intentionally small, but it establishes the first real self-repair mutation mainline:
+
+- inspect
+- preview
+- explicit continue
+- permission
+- controlled fix
+- verify
+- audit / rollback visibility

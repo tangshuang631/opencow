@@ -24,7 +24,8 @@ import {
   runWorkspaceProject,
   runControlledFullShellCommand,
   runReadonlyShellCommand,
-  runWorkspaceWriteShellCommand
+  runWorkspaceWriteShellCommand,
+  repairOpencowEnabledSkillsRegistry
 } from "./localAssistantService";
 
 type ReadonlyAssistantTaskPlan =
@@ -58,6 +59,13 @@ type ReadonlyAssistantTaskPlan =
     }
   | {
       kind: "opencow-self-repair-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "opencow-self-repair-enabled-skills-registry";
       title: string;
       summary: string;
       auditSummary: string;
@@ -434,6 +442,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
     return executeOpencowSelfRepairPreviewPlan(plan.title, plan.summary);
   }
 
+  if (plan.kind === "opencow-self-repair-enabled-skills-registry") {
+    return executeOpencowEnabledSkillsRegistryRepairPlan(plan.title, plan.summary);
+  }
+
   if (plan.kind === "capability-rag-overview") {
     return executeCapabilityOverviewPlan("rag");
   }
@@ -638,6 +650,20 @@ async function executeOpencowSelfRepairPreviewPlan(
       `Readonly self-repair preview for ${workspaceOverview.root_name}. Key config files: ${topConfigs}. ` +
       `Root scripts: ${topScripts}. Relevant local docs: ${topPaths}. ` +
       `Next recommended flow: inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility.`
+  };
+}
+
+async function executeOpencowEnabledSkillsRegistryRepairPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await repairOpencowEnabledSkillsRegistry(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Repaired path: ${result.repaired_path}. Preserved entries: ${result.preserved_entry_count}. ` +
+      "Verification completed inside the controlled self-repair chain, and the result remains audit-visible and rollback-visible."
   };
 }
 

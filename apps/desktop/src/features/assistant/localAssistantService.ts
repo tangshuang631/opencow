@@ -136,6 +136,15 @@ export type LocalSkillDisableResult = {
   summary: string;
 };
 
+export type OpencowSelfRepairEnabledSkillsRegistryResult = {
+  query: string;
+  repair_target: "enabled-skills-registry";
+  repaired_path: string;
+  status: "repaired";
+  preserved_entry_count: number;
+  summary: string;
+};
+
 export type EnabledLocalSkillsResult = {
   summary: string;
   total_count: number;
@@ -308,6 +317,18 @@ export async function disableLocalSkill(query: string): Promise<LocalSkillDisabl
   }
 
   return invoke<LocalSkillDisableResult>("local_skill_disable", {
+    query
+  });
+}
+
+export async function repairOpencowEnabledSkillsRegistry(
+  query: string
+): Promise<OpencowSelfRepairEnabledSkillsRegistryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewOpencowEnabledSkillsRegistryRepair(query);
+  }
+
+  return invoke<OpencowSelfRepairEnabledSkillsRegistryResult>("opencow_self_repair_enabled_skills_registry", {
     query
   });
 }
@@ -753,6 +774,19 @@ function createBrowserPreviewLocalSkillDisable(query: string): LocalSkillDisable
     registry_path: ".opencow/skills/enabled-skills.json",
     status: "disabled",
     summary: "Browser preview mode removed coding-agent from the workspace skill registry."
+  };
+}
+
+function createBrowserPreviewOpencowEnabledSkillsRegistryRepair(
+  query: string
+): OpencowSelfRepairEnabledSkillsRegistryResult {
+  return {
+    query,
+    repair_target: "enabled-skills-registry",
+    repaired_path: ".opencow/skills/enabled-skills.json",
+    status: "repaired",
+    preserved_entry_count: 0,
+    summary: "Browser preview mode rewrote the workspace enabled skills registry to the default verified schema."
   };
 }
 

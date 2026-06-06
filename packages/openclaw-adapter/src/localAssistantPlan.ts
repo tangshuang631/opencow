@@ -21,6 +21,8 @@ const configOverviewPatterns = [
 ];
 const opencowSelfRepairPatterns = [/\bopencow\b/i, /自修复/, /修复自己/, /fix yourself/i, /repair yourself/i];
 const diagnosticPreviewPatterns = [/\bdiagnos/i, /\binspect\b/i, /\bpreview\b/i, /\brepair\b/i, /\bfix\b/i, /报错/, /错误/];
+const repairContinuationPatterns = [/\bcontinue\b/i, /\bproceed\b/i, /\bexecute\b/i, /继续/];
+const enabledSkillsRegistryPatterns = [/\benabled\b/i, /\bskills?\b/i, /\bregistry\b/i, /enabled-skills/i];
 const packagesOverviewPatterns = [/package/i, /packages/i, /script/i, /scripts/i, /workspace package/i];
 const ragCapabilityPatterns = [/\brag\b/i, /retrieval/i, /knowledge base/i, /embedding/i];
 const skillsCapabilityPatterns = [/\bskills?\b/i, /skill ecosystem/i];
@@ -46,6 +48,36 @@ const localRagSearchPatterns = [/\bsearch\b/i, /\bfind\b/i, /\blookup\b/i, /know
 export function planLocalAssistantTask(request: LocalAssistantTaskRequest): LocalAssistantTaskPlan {
   const message = request.message.trim();
   const normalizedLowerMessage = message.toLowerCase();
+
+  if (
+    opencowSelfRepairPatterns.some((pattern) => pattern.test(message))
+    && repairContinuationPatterns.some((pattern) => pattern.test(message))
+    && enabledSkillsRegistryPatterns.some((pattern) => pattern.test(message))
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason: "Workspace write permission is required before opencow can repair its workspace-local enabled skills registry.",
+        riskSummary: "This repair rewrites only .opencow/skills/enabled-skills.json through a narrow self-repair path and must remain audit-visible and rollback-visible.",
+        auditSummary: "Local assistant task requires workspace-write permission for opencow self-repair.",
+        auditDetail: `Opencow self-repair is waiting for workspace-write permission: ${message}`,
+        queuedExecutionKind: "opencow-self-repair-enabled-skills-registry",
+        queuedExecutionTitle: "Repair opencow enabled skills registry",
+        queuedExecutionAuditSummary: "Local assistant planned an opencow enabled skills registry self-repair.",
+        queuedExecutionAuditDetail: `Opencow self-repair task: enabled skills registry | request=${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "opencow-self-repair-enabled-skills-registry",
+      title: "Repair opencow enabled skills registry",
+      summary: "Repair the workspace-local enabled skills registry through the controlled self-repair chain.",
+      auditSummary: "Local assistant planned an opencow enabled skills registry self-repair.",
+      auditDetail: `Opencow self-repair task: enabled skills registry | request=${message}`
+    };
+  }
 
   if (
     opencowSelfRepairPatterns.some((pattern) => pattern.test(message))

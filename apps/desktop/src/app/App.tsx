@@ -33,6 +33,7 @@ import type { WorkbenchState } from "../features/workbench/workbenchState";
 import type { AssistantTaskPlanResult } from "../features/assistant/assistantTaskService";
 
 const CONTINUATION_PREVIEW_KINDS = new Set([
+  "opencow-self-repair-preview",
   "rag-local-shell-handoff-preview",
   "skills-local-enabled-rag-shell-handoff-preview",
   "npc-local-enabled-rag-shell-handoff-preview"

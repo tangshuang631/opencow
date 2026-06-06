@@ -20,6 +20,7 @@ pub fn run() {
             workspace::local_skill_disable,
             workspace::local_skill_enable,
             workspace::local_skill_install,
+            workspace::opencow_self_repair_enabled_skills_registry,
             workspace::local_skill_scan,
             workspace::local_skill_inspect,
             workspace::openclaw_capability_overview,

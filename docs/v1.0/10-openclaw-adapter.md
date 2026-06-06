@@ -975,6 +975,29 @@ Current known limitation:
 - the returned `pid` is currently derived from the PowerShell background job handle instead of a durable child-process lifecycle model
 - a later slice should replace this with a stronger launch-and-stop contract before long-running multi-step NPC workflows depend on it
 
+## 6.23a First permission-backed opencow self-repair mutation mapping
+
+The adapter now also exposes the first narrow writable opencow self-repair mapping:
+
+- `opencow-self-repair-enabled-skills-registry`
+
+This mapping is intentionally narrow:
+
+- it is selected only for explicit continuation or execute wording about repairing opencow's enabled-skills registry
+- in `readonly`, it returns a `permission-request` for `workspace-write`
+- after approval, it resolves to one fixed self-repair task kind instead of a free-form repair plan
+- it targets only `.opencow/skills/enabled-skills.json`
+- it does not restart processes, mutate unrelated config, or infer arbitrary write targets
+
+Verification for this slice:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.self-repair.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
+cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
+```
+
 Verification for this slice:
 
 ```bash

@@ -4,11 +4,13 @@ import { executeAssistantTask, planAssistantTask } from "./assistantTaskService"
 const {
   loadWorkspaceOverviewMock,
   loadWorkspaceConfigOverviewMock,
-  searchLocalKnowledgeMock
+  searchLocalKnowledgeMock,
+  repairOpencowEnabledSkillsRegistryMock
 } = vi.hoisted(() => ({
   loadWorkspaceOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
-  searchLocalKnowledgeMock: vi.fn()
+  searchLocalKnowledgeMock: vi.fn(),
+  repairOpencowEnabledSkillsRegistryMock: vi.fn()
 }));
 
 vi.mock("./localAssistantService", async () => {
@@ -18,7 +20,8 @@ vi.mock("./localAssistantService", async () => {
     ...actual,
     loadWorkspaceOverview: loadWorkspaceOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
-    searchLocalKnowledge: searchLocalKnowledgeMock
+    searchLocalKnowledge: searchLocalKnowledgeMock,
+    repairOpencowEnabledSkillsRegistry: repairOpencowEnabledSkillsRegistryMock
   };
 });
 
@@ -83,5 +86,40 @@ describe("assistantTaskService self-repair preview", () => {
     expect(result.resultSummary).toContain("desktop:dev");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("request permission for any mutation");
+  });
+
+  it("requests workspace-write permission before continuing the enabled skills registry repair", () => {
+    const plan = planAssistantTask("diagnose opencow and continue repairing its enabled skills registry", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "opencow-self-repair-enabled-skills-registry"
+    });
+  });
+
+  it("executes the enabled skills registry repair through the desktop service after approval", async () => {
+    repairOpencowEnabledSkillsRegistryMock.mockResolvedValueOnce({
+      query: "diagnose opencow and continue repairing its enabled skills registry",
+      repair_target: "enabled-skills-registry",
+      repaired_path: ".opencow/skills/enabled-skills.json",
+      status: "repaired",
+      preserved_entry_count: 0,
+      summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "opencow-self-repair-enabled-skills-registry",
+      title: "Repair opencow enabled skills registry",
+      summary: "Repair the workspace-local enabled skills registry through the controlled self-repair chain.",
+      auditSummary: "Local assistant planned an opencow enabled skills registry self-repair.",
+      auditDetail: "Opencow self-repair task: enabled skills registry"
+    } as const);
+
+    expect(result.resultTitle).toBe("Repair opencow enabled skills registry");
+    expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("verified default schema");
+    expect(result.resultSummary).toContain("audit");
+    expect(result.resultSummary).toContain("rollback");
   });
 });

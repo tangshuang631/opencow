@@ -457,6 +457,27 @@ Integration note:
 
 - because `@opencow/openclaw-adapter/browser` consumes built adapter output, desktop verification for this slice is not valid until the adapter build has been refreshed after planner changes
 
+## 6.15a Opencow self-repair mutation verification addition
+
+For the first permission-backed opencow self-repair mutation slice, acceptance should prove that the preview path can continue into one narrow verified repair action without bypassing the desktop safety chain.
+
+Required checks:
+
+- planner maps explicit continuation wording for enabled-skills registry repair into `permission-request` in `readonly`
+- approval continues into `opencow-self-repair-enabled-skills-registry` instead of re-running the readonly preview
+- desktop execution returns the repaired registry path and a verification-oriented summary
+- Tauri repair recreates `.opencow/skills/enabled-skills.json` with the default schema even if the prior file contains invalid JSON
+- the final assistant result keeps audit-visible and rollback-visible wording
+
+Minimum focused verification:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.self-repair.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
+cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
+```
+
 ## 6.16 Local task anti-stall verification addition
 
 For the homepage conversation and local assistant task chain, acceptance is not satisfied by successful task starts alone.

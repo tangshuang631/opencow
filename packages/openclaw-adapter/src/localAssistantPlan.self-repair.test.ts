@@ -13,4 +13,17 @@ describe("local assistant task planner self-repair preview", () => {
       title: "Opencow self-repair preview"
     });
   });
+
+  it("requests workspace-write permission before continuing the enabled skills registry repair", () => {
+    const plan = planLocalAssistantTask({
+      message: "diagnose opencow and continue repairing its enabled skills registry",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "opencow-self-repair-enabled-skills-registry"
+    });
+  });
 });
