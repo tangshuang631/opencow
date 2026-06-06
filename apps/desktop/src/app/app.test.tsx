@@ -27,6 +27,7 @@ const inspectorActions = {
   onApprovePermissionRequest: vi.fn(),
   onCancelPermissionRequest: vi.fn(),
   onRetryOllamaCheck: vi.fn(),
+  onRecoverToolError: vi.fn(),
   onPreviewRollback: vi.fn(),
   onApplyRollback: vi.fn(),
   onCancelRollback: vi.fn(),
@@ -114,6 +115,39 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "模拟工具结果" }));
     expect(screen.getAllByText(/skills_scan|Skill/).length).toBeGreaterThan(0);
+  });
+
+  it("routes tool error recovery through capability confirmation before enabling network search", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "模拟工具失败" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/skill_download|Skill/).length).toBeGreaterThan(0);
+    });
+
+    const errorSection = screen.getByRole("heading", { name: "错误" }).closest("section");
+
+    expect(errorSection).not.toBeNull();
+    fireEvent.click(within(errorSection as HTMLElement).getByRole("button", { name: /联网|search|provider/i }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/capability_toggle_request/).length).toBeGreaterThan(0);
+    });
+
+    const permissionSection = screen.getByRole("heading", { name: "权限确认" }).closest("section");
+
+    expect(permissionSection).not.toBeNull();
+    expect(within(permissionSection as HTMLElement).getByRole("button", { name: "批准能力变更" })).toBeInTheDocument();
+    expect(screen.getAllByText(/联网搜索默认关闭/).length).toBeGreaterThan(0);
   });
 
   it("submits a local task from the composer into the workbench flow", async () => {

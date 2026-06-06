@@ -331,6 +331,28 @@ export function App() {
     void syncOllamaState();
   }
 
+  function handleRecoverToolError() {
+    startTransition(() => {
+      setState((current) => {
+        if (current.error?.module !== "tools") {
+          return current;
+        }
+
+        if (current.error.source === "skill_download") {
+          return createCapabilityToggleRequestState(current, {
+            feature: "search",
+            enabled: true,
+            source: "tool_error_recovery",
+            reason: "工具恢复建议需要先开启联网搜索，并继续保持用户确认、审计与本地优先流程。",
+            providerLabel: current.search.providerLabel || "Tavily"
+          });
+        }
+
+        return current;
+      });
+    });
+  }
+
   function handleToggleRemoteApi(enabled: boolean) {
     startTransition(() => {
       setState((current) => createRemoteApiToggleState(current, enabled));
@@ -382,6 +404,7 @@ export function App() {
       onApprovePermissionRequest={handleApprovePermissionRequest}
       onCancelPermissionRequest={handleCancelPermissionRequest}
       onRetryOllamaCheck={handleRetryOllamaCheck}
+      onRecoverToolError={handleRecoverToolError}
       onPreviewRollback={handlePreviewRollback}
       onApplyRollback={handleApplyRollback}
       onCancelRollback={handleCancelRollback}

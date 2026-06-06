@@ -11,6 +11,7 @@ type WorkbenchProps = {
   onApprovePermissionRequest: () => void;
   onCancelPermissionRequest: () => void;
   onRetryOllamaCheck: () => void;
+  onRecoverToolError: () => void;
   onPreviewRollback: (targetEntryId: string) => void;
   onApplyRollback: () => void;
   onCancelRollback: () => void;
@@ -38,6 +39,7 @@ export function Workbench({
   onApprovePermissionRequest,
   onCancelPermissionRequest,
   onRetryOllamaCheck,
+  onRecoverToolError,
   onPreviewRollback,
   onApplyRollback,
   onCancelRollback,
@@ -78,6 +80,7 @@ export function Workbench({
         onApprovePermissionRequest={onApprovePermissionRequest}
         onCancelPermissionRequest={onCancelPermissionRequest}
         onRetryOllamaCheck={onRetryOllamaCheck}
+        onRecoverToolError={onRecoverToolError}
         onPreviewRollback={onPreviewRollback}
         onApplyRollback={onApplyRollback}
         onCancelRollback={onCancelRollback}

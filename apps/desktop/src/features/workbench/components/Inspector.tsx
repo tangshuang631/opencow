@@ -11,6 +11,7 @@ type InspectorProps = {
   onApprovePermissionRequest: () => void;
   onCancelPermissionRequest: () => void;
   onRetryOllamaCheck: () => void;
+  onRecoverToolError: () => void;
   onPreviewRollback: (targetEntryId: string) => void;
   onApplyRollback: () => void;
   onCancelRollback: () => void;
@@ -111,6 +112,7 @@ export function Inspector({
   onApprovePermissionRequest,
   onCancelPermissionRequest,
   onRetryOllamaCheck,
+  onRecoverToolError,
   onPreviewRollback,
   onApplyRollback,
   onCancelRollback,
@@ -291,6 +293,13 @@ export function Inspector({
             {state.error.module === "ollama" ? (
               <div className="action-row">
                 <button className="action-button action-button-primary" type="button" onClick={onRetryOllamaCheck}>
+                  {normalizeWorkbenchText(state.error.actionLabel)}
+                </button>
+              </div>
+            ) : null}
+            {state.error.module === "tools" ? (
+              <div className="action-row">
+                <button className="action-button action-button-primary" type="button" onClick={onRecoverToolError}>
                   {normalizeWorkbenchText(state.error.actionLabel)}
                 </button>
               </div>
