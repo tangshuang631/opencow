@@ -71,6 +71,7 @@ export type LocalTaskExecutionKind =
   | "workspace-overview"
   | "packages-overview"
   | "workspace-config-overview"
+  | "opencow-self-repair-preview"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "skills-local-scan"
@@ -108,6 +109,7 @@ export type LocalTaskExecutionKind =
   | "readonly-shell-workspace-root"
   | "readonly-shell-packages-dir"
   | "workspace-write-create-temp-output"
+  | "workspace-project-run"
   | "controlled-full-remove-temp-output";
 
 export type LocalTaskItem = {
@@ -115,6 +117,7 @@ export type LocalTaskItem = {
   source: "composer";
   status: "queued" | "running" | "completed" | "failed";
   summary: string;
+  attemptCount: number;
   executionKind?: LocalTaskExecutionKind;
   executionTitle?: string;
   executionAuditSummary?: string;

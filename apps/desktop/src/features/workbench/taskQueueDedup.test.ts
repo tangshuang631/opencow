@@ -14,6 +14,7 @@ describe("task queue deduplication", () => {
     expect(second.tasks.pendingCount).toBe(1);
     expect(second.tasks.items).toHaveLength(1);
     expect(second.tasks.items[0]).toMatchObject({
+      attemptCount: 0,
       status: "queued",
       summary: "scan local mcp plugins"
     });

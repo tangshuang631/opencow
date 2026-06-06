@@ -930,3 +930,35 @@ Current clean app-level acceptance path:
   - final controlled desktop result
 - this clean file is the current stable acceptance path for the MCP start chain
 - the historical broad app suite file `apps/desktop/src/app/app.test.tsx` remains a separate pollution-cleanup concern and should not be expanded for new MCP slices until it is repaired in a dedicated cleanup window
+
+## 6.22 Opencow self-repair preview landing
+
+The next desktop-first assistant slice is a readonly opencow self-repair preview, not direct mutation.
+
+Current task kind:
+
+- `opencow-self-repair-preview`
+
+Current behavior:
+
+- planner maps explicit opencow self-diagnose or self-fix-preview requests into a fixed readonly task
+- desktop execution combines workspace summary, config summary, and local rules or docs search into one response
+- the final assistant result explains the staged repair path before any mutation is approved
+
+Current scope is intentionally limited:
+
+- no file mutation
+- no config rewrite
+- no process restart
+- no permission escalation by default
+- no silent self-repair action
+
+Current result includes:
+
+- workspace root context
+- top config files and root scripts
+- relevant local rules or v1.0 docs
+- recommended staged repair flow:
+  inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility
+
+This slice gives opencow a safer first self-repair foothold while keeping the same permission, audit, and rollback discipline required for later writable repair actions.

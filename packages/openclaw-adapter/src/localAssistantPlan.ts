@@ -19,6 +19,8 @@ const configOverviewPatterns = [
   /root scripts?/i,
   /workspace config/i
 ];
+const opencowSelfRepairPatterns = [/\bopencow\b/i, /自修复/, /修复自己/, /fix yourself/i, /repair yourself/i];
+const diagnosticPreviewPatterns = [/\bdiagnos/i, /\binspect\b/i, /\bpreview\b/i, /\brepair\b/i, /\bfix\b/i, /报错/, /错误/];
 const packagesOverviewPatterns = [/package/i, /packages/i, /script/i, /scripts/i, /workspace package/i];
 const ragCapabilityPatterns = [/\brag\b/i, /retrieval/i, /knowledge base/i, /embedding/i];
 const skillsCapabilityPatterns = [/\bskills?\b/i, /skill ecosystem/i];
@@ -44,6 +46,19 @@ const localRagSearchPatterns = [/\bsearch\b/i, /\bfind\b/i, /\blookup\b/i, /know
 export function planLocalAssistantTask(request: LocalAssistantTaskRequest): LocalAssistantTaskPlan {
   const message = request.message.trim();
   const normalizedLowerMessage = message.toLowerCase();
+
+  if (
+    opencowSelfRepairPatterns.some((pattern) => pattern.test(message))
+    && diagnosticPreviewPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "opencow-self-repair-preview",
+      title: "Opencow self-repair preview",
+      summary: "Preview a readonly opencow self-repair workflow by inspecting local docs, config surfaces, and likely repair boundaries before any mutation is approved.",
+      auditSummary: "Local assistant planned a readonly opencow self-repair preview.",
+      auditDetail: `Readonly opencow self-repair preview task: ${message}`
+    };
+  }
 
   if (
     /你能(帮我)?做什么/.test(message)
@@ -169,6 +184,37 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Preview a readonly NPC-assisted local project showcase workflow before any run, screenshot, website generation, repository write, or git push action is approved.",
       auditSummary: "Local assistant planned a readonly NPC local project showcase preview.",
       auditDetail: `Readonly NPC local project showcase preview task: ${message}`
+    };
+  }
+
+  if (
+    !/\bnpc\b/i.test(message)
+    && /\brun\b/i.test(message)
+    && /\blocal(ly)?\b/i.test(message)
+    && (/\bdesktop\b/i.test(message) || /\bapp\b/i.test(message) || /\bproject\b/i.test(message))
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason: "Workspace write permission is required before launching a matched local project from the desktop assistant.",
+        riskSummary: "This task starts a local workspace project process through a fixed project-run path, keeps execution inside the approved workspace, and must remain audit-visible.",
+        auditSummary: "Local assistant task requires workspace-write permission for a matched local project run.",
+        auditDetail: `Workspace-backed local project run task is waiting for permission: ${message}`,
+        queuedExecutionKind: "workspace-project-run",
+        queuedExecutionTitle: "Run matched local project",
+        queuedExecutionAuditSummary: "Local assistant planned a workspace-backed local project run.",
+        queuedExecutionAuditDetail: `Workspace-backed local project run task: ${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "workspace-project-run",
+      title: "Run matched local project",
+      summary: message,
+      auditSummary: "Local assistant planned a workspace-backed local project run.",
+      auditDetail: `Workspace-backed local project run task: ${message}`
     };
   }
 

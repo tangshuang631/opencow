@@ -290,6 +290,23 @@ Rules:
 - When the desktop app is launched from `apps/desktop`, `apps/desktop/src-tauri`, or other nested paths, workspace discovery must walk upward until the real repo root markers are found before executing overview, RAG, Skills, NPC, MCP, or shell-adjacent local tasks.
 - opencow must optimize for a higher practical floor than upstream openclaw on local models: better defaults, narrower task routing, safer tool matching, clearer repair prompts, and stronger fallback behavior are required product goals, not optional polish.
 - Local-model-first behavior wins by default. Planner wording, task scopes, summaries, and repair flows should be designed to stay reliable even when the local model is weaker than a frontier remote model.
+- Current implementation priority inside this mainline is narrower than the long-term vision: homepage conversation, simple assistant task handling, permission-backed shell execution, self-repair preview and fix flow, and conversation-driven Skill use come before deeper NPC showcase automation.
+- Do not overfit development to one showcase NPC scenario while the homepage conversation, assistant task execution, and self-repair loop are still incomplete.
+- Prefer making more operations reachable through conversation first, with explicit permission and confirmation steps reused from the existing safety chain.
+
+## 18. Anti-Stall And Self-Repair Guardrails
+
+Assistant execution must fail safely instead of hanging, looping, or quietly degrading.
+
+Rules:
+
+- Any local assistant execution chain that can run longer than a trivial UI action must enforce duplicate-request detection, a max execution duration, and a max retry count.
+- Repeatedly re-running the same command, task, or repair attempt without new evidence is a bug, not persistence.
+- If the assistant cannot complete a task within the allowed retries or timeout, it must stop the current round, preserve the pre-task conversation state, and return a concrete failure analysis to the user.
+- Self-repair flows should prefer `inspect -> explain -> preview -> request permission if mutation is needed -> execute -> verify -> summarize`.
+- Conversation-driven install or enable flows for Skills, assistant-owned config changes, or assistant self-fixes must reuse the same permission, confirmation, audit, and rollback-visible chain as other controlled mutations.
+- When developer-facing Chinese text risks slowing matching or patch stability, internal guard messages may be recorded in English, while user-facing conversation and UI should remain understandable and traceable.
+- Loading and thinking states must visibly communicate that opencow is still working, so long-running local-model tasks do not look like a frozen desktop app.
 
 ## 12. Frontend Skill Boundary
 

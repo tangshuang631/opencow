@@ -219,6 +219,16 @@ export type LocalMcpPluginStartResult = {
 export type ReadonlyShellCommandId = "git-status" | "workspace-root-list" | "packages-dir-list";
 export type WorkspaceWriteShellCommandId = "create-temp-output-dir";
 export type ControlledFullShellCommandId = "remove-temp-output-dir";
+export type WorkspaceProjectRunResult = {
+  project_name: string;
+  project_path: string;
+  command_label: string;
+  working_directory: string;
+  expected_url: string | null;
+  pid: number;
+  stdout_preview: string;
+  summary: string;
+};
 
 export type ReadonlyShellCommandResult = {
   command_id: ReadonlyShellCommandId;
@@ -426,6 +436,16 @@ export async function runWorkspaceWriteShellCommand(
   });
 }
 
+export async function runWorkspaceProject(query: string): Promise<WorkspaceProjectRunResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewWorkspaceProjectRun(query);
+  }
+
+  return invoke<WorkspaceProjectRunResult>("workspace_project_run", {
+    query
+  });
+}
+
 export async function runControlledFullShellCommand(
   commandId: ControlledFullShellCommandId
 ): Promise<ControlledFullShellCommandResult> {
@@ -568,6 +588,21 @@ function createBrowserPreviewControlledFullCommand(
     stdout_preview: "temp-output removed",
     line_count: 1,
     summary: "Browser preview mode returned a mock controlled-full shell result."
+  };
+}
+
+function createBrowserPreviewWorkspaceProjectRun(query: string): WorkspaceProjectRunResult {
+  const prefersDesktop = /\bdesktop\b/i.test(query) || /\bapp\b/i.test(query);
+
+  return {
+    project_name: prefersDesktop ? "desktop" : "workspace-project",
+    project_path: prefersDesktop ? "apps/desktop" : "apps/example",
+    command_label: "npm run dev",
+    working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
+    expected_url: prefersDesktop ? "http://127.0.0.1:1420" : "http://127.0.0.1:3000",
+    pid: 4242,
+    stdout_preview: "browser preview mode started a mock workspace project process",
+    summary: "Browser preview mode returned a mock workspace project run result."
   };
 }
 

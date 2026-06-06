@@ -78,6 +78,7 @@ export function createUserTaskSubmittedState(
               source: "composer" as const,
               status: "queued" as const,
               summary: normalizedMessage,
+              attemptCount: 0,
               executionKind: payload.executionKind,
               executionTitle: payload.executionTitle,
               executionAuditSummary: payload.executionAuditSummary,
@@ -141,6 +142,7 @@ export function createTaskExecutionStartedState(state: WorkbenchState): Workbenc
           item.id === nextTask.id
             ? {
                 ...item,
+                attemptCount: item.attemptCount + 1,
                 status: "running" as const
               }
             : item

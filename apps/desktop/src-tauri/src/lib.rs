@@ -26,6 +26,7 @@ pub fn run() {
             ollama::ollama_overview,
             workspace::controlled_full_command,
             workspace::workspace_overview,
+            workspace::workspace_project_run,
             workspace::workspace_project_run_preview,
             workspace::workspace_write_command,
             workspace::workspace_packages_overview,

@@ -933,3 +933,54 @@ npm --workspace apps/desktop exec tsc --noEmit
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.npc-showcase.test.ts
 cargo test workspace_project_run_preview -- --nocapture
 ```
+
+## 6.23 First permission-backed local project run landing
+
+The next concrete desktop-first execution slice is now the first real local project run task:
+
+- `workspace-project-run`
+
+Current planner behavior:
+
+- explicit local run requests such as `run the desktop app locally` no longer fall back into generic help
+- in `readonly`, the planner returns `permission-request` for `workspace-write`
+- after approval, the planner continues into the fixed `workspace-project-run` task kind
+
+Current desktop execution behavior:
+
+- desktop execution keeps using the existing local project matching rules from the readonly run preview slice
+- only the best matched local project candidate is allowed into the launch path
+- the final assistant result returns:
+  `project_name`, `project_path`, `command_label`, `working_directory`, `expected_url`, `pid`, `stdout_preview`, and `summary`
+
+Current Tauri behavior:
+
+- resolve the workspace root
+- match a runnable local project from approved workspace candidates
+- choose a fixed launch command from `dev`, then `start`, then `build`
+- start the project through a narrow PowerShell job-based launch path
+- return a stable process-handle-like result to the desktop assistant chain
+
+Current safety boundary remains intentionally narrow:
+
+- no arbitrary shell text execution
+- no arbitrary working directory outside the workspace
+- no screenshot capture
+- no repository mutation
+- no git action
+- no bypass around permission, audit wording, or task visibility
+
+Current known limitation:
+
+- the returned `pid` is currently derived from the PowerShell background job handle instead of a durable child-process lifecycle model
+- a later slice should replace this with a stronger launch-and-stop contract before long-running multi-step NPC workflows depend on it
+
+Verification for this slice:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.project-run.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/app/app.project-run.test.tsx
+npm --workspace apps/desktop exec tsc --noEmit
+cargo test workspace_project_run -- --nocapture
+```

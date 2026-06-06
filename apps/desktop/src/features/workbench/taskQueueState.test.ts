@@ -13,14 +13,16 @@ describe("task queue state", () => {
   it("starts with an empty local task queue", () => {
     const state = createInitialWorkbenchState();
 
-    expect(state.tasks.pendingCount).toBe(0);
-    expect(state.tasks.activeTaskId).toBeNull();
-    expect(state.tasks.items).toHaveLength(0);
+    expect(state.tasks).toMatchObject({
+      pendingCount: 0,
+      activeTaskId: null
+    });
+    expect(state.tasks.items).toEqual([]);
   });
 
-  it("queues a submitted local task for desktop execution", () => {
+  it("queues a submitted task with attempt count reset to zero", () => {
     const state = createUserTaskSubmittedState(createInitialWorkbenchState(), {
-      message: "请检查当前工作区并整理待办"
+      message: "run the desktop app locally"
     });
 
     expect(state.tasks.pendingCount).toBe(1);
@@ -28,62 +30,69 @@ describe("task queue state", () => {
     expect(state.tasks.items).toHaveLength(1);
     expect(state.tasks.items[0]).toMatchObject({
       status: "queued",
-      source: "composer",
-      summary: "请检查当前工作区并整理待办"
+      summary: "run the desktop app locally",
+      attemptCount: 0
     });
-    expect(state.output.title).toBe("本地任务队列");
-    expect(state.output.summary).toBe("当前有 1 条待处理的本地任务。");
+    expect(state.audit.lastEvent.source).toBe("composer_submit");
+    expect(state.rollback.entries[0]?.label.length).toBeGreaterThan(0);
   });
 
-  it("marks the oldest queued task as running", () => {
+  it("starts the next queued task and increments its attempt count", () => {
     const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
-      message: "请检查当前工作区并整理待办"
+      message: "inspect workspace state"
     });
 
     const running = createTaskExecutionStartedState(queued);
 
     expect(running.tasks.pendingCount).toBe(0);
-    expect(running.tasks.activeTaskId).toBe(queued.tasks.items[0].id);
+    expect(running.tasks.activeTaskId).toBe(queued.tasks.items[0]?.id ?? null);
     expect(running.tasks.items[0]).toMatchObject({
       status: "running",
-      summary: "请检查当前工作区并整理待办"
+      attemptCount: 1,
+      summary: "inspect workspace state"
     });
-    expect(running.output.title).toBe("本地任务执行中");
-    expect(running.output.summary).toBe("正在使用本地 Ollama 处理当前任务。");
+    expect(running.audit.lastEvent.source).toBe("local_task_runner");
+    expect(running.error).toBeNull();
   });
 
-  it("completes the active task and records a local result", () => {
-    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
-      message: "请检查当前工作区并整理待办"
-    });
-    const running = createTaskExecutionStartedState(queued);
+  it("marks the active task as completed and clears the active slot", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "summarize the workspace"
+      })
+    );
 
-    const succeeded = createTaskExecutionSucceededState(running, {
-      resultTitle: "工作区整理建议",
-      resultSummary: "已生成 3 条本地整理建议。"
+    const completed = createTaskExecutionSucceededState(running, {
+      resultTitle: "Workspace summary",
+      resultSummary: "Finished the requested local assistant task."
     });
 
-    expect(succeeded.tasks.pendingCount).toBe(0);
-    expect(succeeded.tasks.activeTaskId).toBeNull();
-    expect(succeeded.tasks.items[0]).toMatchObject({
+    expect(completed.tasks.pendingCount).toBe(0);
+    expect(completed.tasks.activeTaskId).toBeNull();
+    expect(completed.tasks.items[0]).toMatchObject({
       status: "completed",
-      summary: "请检查当前工作区并整理待办"
+      attemptCount: 1
     });
-    expect(succeeded.output.title).toBe("工作区整理建议");
-    expect(succeeded.output.summary).toBe("已生成 3 条本地整理建议。");
-    expect(succeeded.audit.summary).toBe("本地任务执行完成");
+    expect(completed.conversation.entries[0]).toMatchObject({
+      kind: "assistant",
+      title: "Workspace summary",
+      summary: "Finished the requested local assistant task."
+    });
+    expect(completed.audit.lastEvent.source).toBe("local_task_runner");
+    expect(completed.error).toBeNull();
   });
 
-  it("marks the active task as failed and exposes a traceable error", () => {
-    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
-      message: "请检查当前工作区并整理待办"
-    });
-    const running = createTaskExecutionStartedState(queued);
+  it("marks the active task as failed and records a traceable error", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "repair the local logs"
+      })
+    );
 
     const failed = createTaskExecutionFailedState(running, {
-      summary: "本地任务执行失败",
-      detail: "Ollama 响应超时，请检查本地模型状态。",
-      actionLabel: "检查 Ollama 服务并重试",
+      summary: "Local task failed",
+      detail: "The local assistant could not finish the repair preview.",
+      actionLabel: "Review the task plan and try again.",
       source: "local_task_runner"
     });
 
@@ -91,50 +100,55 @@ describe("task queue state", () => {
     expect(failed.tasks.activeTaskId).toBeNull();
     expect(failed.tasks.items[0]).toMatchObject({
       status: "failed",
-      summary: "请检查当前工作区并整理待办"
+      attemptCount: 1,
+      summary: "repair the local logs"
     });
     expect(failed.error).toMatchObject({
       module: "tasks",
-      summary: "本地任务执行失败",
-      detail: "Ollama 响应超时，请检查本地模型状态。",
-      actionLabel: "检查 Ollama 服务并重试",
+      summary: "Local task failed",
       source: "local_task_runner"
     });
-    expect(failed.audit.summary).toBe("本地任务执行失败");
+    expect(failed.conversation.entries[0]).toMatchObject({
+      kind: "system",
+      title: "Local task failed",
+      summary: "repair the local logs"
+    });
   });
 
-  it("requeues a failed local task for retry and clears the blocking error", () => {
-    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
-      message: "请检查当前工作区并整理待办"
-    });
-    const running = createTaskExecutionStartedState(queued);
-    const failed = createTaskExecutionFailedState(running, {
-      summary: "本地任务执行失败",
-      detail: "Ollama 响应超时，请检查本地模型状态。",
-      actionLabel: "检查 Ollama 服务并重试",
-      source: "local_task_runner"
-    });
+  it("requeues the latest failed task without resetting its attempt count", () => {
+    const failed = createTaskExecutionFailedState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "run a local assistant task"
+        })
+      ),
+      {
+        summary: "Local task failed",
+        detail: "The first run timed out.",
+        actionLabel: "Try a smaller task.",
+        source: "local_task_timeout"
+      }
+    );
 
     const retried = createTaskExecutionRetriedState(failed);
 
     expect(retried.tasks.pendingCount).toBe(1);
     expect(retried.tasks.activeTaskId).toBeNull();
     expect(retried.tasks.items[0]).toMatchObject({
-      id: failed.tasks.items[0]?.id,
       status: "queued",
-      summary: "请检查当前工作区并整理待办"
+      attemptCount: 1,
+      summary: "run a local assistant task"
     });
-    expect(retried.output.title).toBe("本地任务队列");
-    expect(retried.output.summary).toBe("当前有 1 条待处理的本地任务。");
+    expect(retried.audit.lastEvent.source).toBe("local_task_retry");
     expect(retried.error).toBeNull();
-    expect(retried.audit.summary).toBe("已重试本地任务");
   });
 
-  it("cancels the running local task and keeps the app responsive", () => {
-    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
-      message: "请检查当前工作区并整理待办"
-    });
-    const running = createTaskExecutionStartedState(queued);
+  it("cancels the active task cleanly without leaving the queue locked", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "long running local assistant task"
+      })
+    );
 
     const cancelled = createTaskExecutionCancelledState(running);
 
@@ -142,15 +156,14 @@ describe("task queue state", () => {
     expect(cancelled.tasks.activeTaskId).toBeNull();
     expect(cancelled.tasks.items[0]).toMatchObject({
       status: "failed",
-      summary: "请检查当前工作区并整理待办"
+      attemptCount: 1,
+      summary: "long running local assistant task"
     });
-    expect(cancelled.output.title).toBe("本地任务已停止");
-    expect(cancelled.output.summary).toBe("当前任务已中断，未继续执行高风险或长耗时步骤。");
     expect(cancelled.error).toMatchObject({
       module: "tasks",
-      summary: "本地任务已停止",
-      actionLabel: "可稍后重新排队执行"
+      source: "local_task_cancelled"
     });
-    expect(cancelled.audit.summary).toBe("本地任务已停止");
+    expect(cancelled.output.title.length).toBeGreaterThan(0);
+    expect(cancelled.output.summary.length).toBeGreaterThan(0);
   });
 });

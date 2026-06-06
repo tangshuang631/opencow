@@ -52,6 +52,18 @@ pub struct WorkspaceProjectRunPreview {
 }
 
 #[derive(Serialize)]
+pub struct WorkspaceProjectRunResult {
+    project_name: String,
+    project_path: String,
+    command_label: String,
+    working_directory: String,
+    expected_url: Option<String>,
+    pid: u32,
+    stdout_preview: String,
+    summary: String,
+}
+
+#[derive(Serialize)]
 pub struct WorkspaceProjectRunCandidate {
     name: String,
     path: String,
@@ -471,6 +483,59 @@ pub fn workspace_project_run_preview(query: String) -> Result<WorkspaceProjectRu
         next_required_permission: "workspace-write".to_string(),
         risk_summary: "Readonly preview only. Actual local launch must still request permission, stay inside the approved workspace, and write an audit trail.".to_string(),
         candidate_projects,
+    })
+}
+
+#[tauri::command]
+pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult, String> {
+    let root = resolve_workspace_root()?;
+    let candidates = collect_workspace_project_run_candidates(&root)?;
+    let normalized_query = query.to_lowercase();
+    let matched = select_project_run_candidate(&normalized_query, &candidates)
+        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .ok_or_else(|| "no runnable local workspace project matched the request".to_string())?;
+    let command_label = build_project_run_command_label(matched)
+        .ok_or_else(|| format!("matched project {} does not expose a supported run script", matched.name))?;
+    let expected_url = infer_project_expected_url(Some(matched));
+    let working_directory = root.join(&matched.relative_path);
+    let powershell_command = format!(
+        "$job = Start-Job -ScriptBlock {{ Set-Location '{0}'; {1} }}; \"job:$($job.Id)\"",
+        escape_powershell_single_quote(&working_directory.display().to_string()),
+        command_label
+    );
+    let output = Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(powershell_command)
+        .current_dir(&root)
+        .output()
+        .map_err(|error| format!("failed to execute workspace project run command: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!(
+            "workspace project run failed with status {}: {}",
+            output.status,
+            stderr
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
+    let stdout_preview = truncate_preview(stdout.trim(), 20);
+    let pid = stdout_preview
+        .strip_prefix("job:")
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .unwrap_or(0);
+
+    Ok(WorkspaceProjectRunResult {
+        project_name: matched.name.clone(),
+        project_path: matched.relative_path.clone(),
+        command_label,
+        working_directory: path_relative_to_root(&root, &working_directory),
+        expected_url,
+        pid,
+        stdout_preview,
+        summary: "Workspace project run started successfully and returned a live local process handle.".to_string(),
     })
 }
 
@@ -1642,6 +1707,12 @@ fn select_project_run_candidate<'a>(
     best_match.map(|(_, candidate)| candidate)
 }
 
+fn build_project_run_command_label(candidate: &WorkspaceProjectRunCandidateInternal) -> Option<String> {
+    build_npm_script_command(&candidate.script_names, "dev")
+        .or_else(|| build_npm_script_command(&candidate.script_names, "start"))
+        .or_else(|| build_npm_script_command(&candidate.script_names, "build"))
+}
+
 fn build_npm_script_command(script_names: &[String], script_name: &str) -> Option<String> {
     script_names
         .iter()
@@ -2359,8 +2430,7 @@ mod tests {
         local_mcp_plugin_scan, local_mcp_plugin_start_preview, local_skill_disable, local_skill_install,
         looks_like_workspace_root, parse_skill_frontmatter_name, read_enabled_skill_registry, resolve_workspace_root,
         score_mcp_plugin_match, score_skill_match, score_snippet, split_knowledge_segments, tokenize_query,
-        truncate_preview,
-        workspace_project_run_preview,
+        truncate_preview, workspace_project_run, workspace_project_run_preview,
     };
     use serde_json::json;
     use std::{env, fs, path::Path, time::{SystemTime, UNIX_EPOCH}};
@@ -2914,5 +2984,59 @@ mod tests {
         assert_eq!(result.build_command, Some("npm run build".to_string()));
         assert_eq!(result.expected_url, Some("http://127.0.0.1:1420".to_string()));
         assert_eq!(result.next_required_permission, "workspace-write".to_string());
+    }
+
+    #[test]
+    fn workspace_project_run_starts_matched_app_and_returns_handle() {
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-{unique}"));
+        let app_dir = workspace_root.join("apps/desktop");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            app_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"desktop\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"node -e \\\"console.log('desktop-started')\\\"\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let result = workspace_project_run("run the desktop app locally".to_string()).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(result.project_name, "desktop".to_string());
+        assert_eq!(result.project_path, "apps/desktop".to_string());
+        assert_eq!(result.command_label, "npm run dev".to_string());
+        assert_eq!(result.working_directory, "apps/desktop".to_string());
+        assert_eq!(result.expected_url, Some("http://127.0.0.1:1420".to_string()));
+        assert!(result.pid > 0);
+        assert!(result.stdout_preview.contains("job:"));
     }
 }

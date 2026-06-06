@@ -63,6 +63,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "opencow-self-repair-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "capability-rag-overview";
       readonly title: string;
       readonly summary: string;
@@ -322,6 +329,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "workspace-project-run";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "controlled-full-remove-temp-output";
       readonly title: string;
       readonly summary: string;
@@ -341,6 +355,7 @@ export type LocalAssistantTaskPlan =
         | "workspace-overview"
         | "packages-overview"
         | "workspace-config-overview"
+        | "opencow-self-repair-preview"
         | "capability-rag-overview"
         | "capability-skills-overview"
         | "skills-local-scan"
@@ -378,6 +393,7 @@ export type LocalAssistantTaskPlan =
         | "readonly-shell-workspace-root"
         | "readonly-shell-packages-dir"
         | "workspace-write-create-temp-output"
+        | "workspace-project-run"
         | "controlled-full-remove-temp-output"
         | "mcp-local-plugin-start"
       >;

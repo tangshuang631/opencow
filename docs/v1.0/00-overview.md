@@ -99,3 +99,32 @@ v1.0 当前阶段以前端功能闭环、桌面稳定性和真实本地助手执
 - 里程碑测试后要做自检；发现问题就修复，再自检，再复测，直到结果稳定无误。
 - 推送不要求太频繁，但每次推送都应对应一个经过完整验证的清晰批次。
 - 相比“频繁推送”，更优先“在关键节点完成完整验证后再推送”。
+## 10. Current delivery priority
+
+For the current v1.0 desktop-deliverable path, implementation priority is intentionally narrower than the long-term vision:
+
+- homepage conversation and lightweight assistant replies come first
+- simple local task handling comes before broader automation breadth
+- conversation-driven assistant actions, permission-backed shell work, Skill use, and self-repair should share one controlled chain
+- `preview -> permission / confirmation -> execute -> verify -> audit / rollback` is the mainline shape to keep reinforcing
+- do not overfit current development to one NPC showcase example before the homepage conversation and assistant chain are stable
+
+## 11. Anti-stall and self-repair direction
+
+To keep opencow usable and reliable on local models, all real execution chains should default to these protections:
+
+- duplicate task detection for repeated user requests
+- maximum execution duration for long-running local assistant work
+- maximum retry count for repeated failures
+- visible loading / thinking / queued feedback so the desktop app does not look frozen
+- graceful stop with concrete failure analysis when opencow cannot finish a task by itself
+
+Conversation-driven self-repair, Skill install or enable flows, assistant-owned config repair, and log-guided recovery should all follow the same controlled path:
+
+- inspect
+- explain
+- preview
+- request permission if mutation is needed
+- execute
+- verify
+- summarize with audit and rollback visibility

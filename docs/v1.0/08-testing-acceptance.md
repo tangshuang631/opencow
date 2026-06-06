@@ -431,3 +431,47 @@ npm --workspace packages/openclaw-adapter run test:unit
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.npc-showcase.test.ts src/app/app.npc-showcase.test.tsx
 cargo test
 ```
+
+## 6.15 Opencow self-repair preview verification addition
+
+For the readonly opencow self-repair preview slice, acceptance should prove that opencow can inspect and explain a repair path before any mutation is approved.
+
+Required checks:
+
+- planner maps explicit opencow self-diagnose or self-fix-preview requests into `opencow-self-repair-preview`
+- desktop task execution returns workspace context, config context, and local rules or docs context in one result
+- the final assistant result includes the staged repair flow:
+  inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility
+- no mutation, config rewrite, process restart, or permission escalation occurs during this readonly slice
+
+Minimum focused verification:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.self-repair.test.ts src/localAssistantPlan.capabilities.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts
+npm --workspace apps/desktop exec tsc --noEmit
+```
+
+Integration note:
+
+- because `@opencow/openclaw-adapter/browser` consumes built adapter output, desktop verification for this slice is not valid until the adapter build has been refreshed after planner changes
+
+## 6.16 Local task anti-stall verification addition
+
+For the homepage conversation and local assistant task chain, acceptance is not satisfied by successful task starts alone.
+
+Required checks:
+
+- duplicate local tasks are not queued repeatedly while an identical queued or running task already exists
+- queued tasks start with `attemptCount: 0` and increment on execution start
+- failed tasks can be requeued without silently resetting guard metadata
+- long-running assistant executions fail through the timeout guard instead of leaving the UI stuck forever
+- timeout and retry-guard failures return traceable error metadata and a retry or simplification hint
+- the pending conversation state remains visibly animated while a task is still in progress
+
+Minimum focused verification:
+
+```bash
+npm --workspace apps/desktop exec vitest run src/features/workbench/taskQueueDedup.test.ts src/features/workbench/taskQueueMetadata.test.ts src/features/workbench/taskQueueState.test.ts src/app/app.task-guard.test.tsx
+```

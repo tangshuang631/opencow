@@ -37,6 +37,8 @@ const CONTINUATION_PREVIEW_KINDS = new Set([
   "skills-local-enabled-rag-shell-handoff-preview",
   "npc-local-enabled-rag-shell-handoff-preview"
 ]);
+const MAX_LOCAL_TASK_ATTEMPTS = 3;
+const LOCAL_TASK_TIMEOUT_MS = 45_000;
 
 export function createContinuationMessageFromPreview(kind: string, message: string): string {
   if (!CONTINUATION_PREVIEW_KINDS.has(kind)) {
@@ -137,6 +139,20 @@ export function App() {
       return;
     }
 
+    if (activeTask.attemptCount > MAX_LOCAL_TASK_ATTEMPTS) {
+      startTransition(() => {
+        setState((current) =>
+          createTaskExecutionFailedState(current, {
+            summary: "本地任务已中断",
+            detail: `Task exceeded the maximum retry limit of ${MAX_LOCAL_TASK_ATTEMPTS} attempts.`,
+            actionLabel: "请调整任务描述、权限范围或稍后再试",
+            source: "local_task_attempt_guard"
+          })
+        );
+      });
+      return;
+    }
+
     const finishTimer = window.setTimeout(() => {
       if (!activeTask.executionKind) {
         startTransition(() => {
@@ -158,7 +174,17 @@ export function App() {
         auditDetail: activeTask.executionAuditDetail ?? activeTask.summary
       } as AssistantTaskPlanResult;
 
-      void executeAssistantTask(executionPlan)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        window.setTimeout(() => {
+          reject(
+            new Error(
+              `Local task exceeded the maximum execution time of ${Math.floor(LOCAL_TASK_TIMEOUT_MS / 1000)} seconds.`
+            )
+          );
+        }, LOCAL_TASK_TIMEOUT_MS);
+      });
+
+      void Promise.race([executeAssistantTask(executionPlan), timeoutPromise])
         .then((result) => {
           startTransition(() => {
             setState((current) => createTaskExecutionSucceededState(current, result));
@@ -166,14 +192,18 @@ export function App() {
         })
         .catch((error: unknown) => {
           const detail = error instanceof Error ? error.message : "Unknown local assistant execution error";
-
+          const isTimeout = detail.includes("maximum execution time");
+          const failureSummary = isTimeout ? "Local task execution timed out" : "Local task execution failed";
+          const failureActionLabel = isTimeout
+            ? "Execution was stopped after the timeout limit. Try a smaller task or retry later."
+            : "Check the local execution chain and try again.";
           startTransition(() => {
             setState((current) =>
               createTaskExecutionFailedState(current, {
-                summary: "本地任务执行失败",
+                summary: failureSummary,
                 detail,
-                actionLabel: "检查本地执行链后重试",
-                source: "local_task_runner"
+                actionLabel: failureActionLabel,
+                source: isTimeout ? "local_task_timeout" : "local_task_runner"
               })
             );
           });

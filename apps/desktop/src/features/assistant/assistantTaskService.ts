@@ -21,6 +21,7 @@ import {
   loadWorkspaceOverview,
   loadWorkspacePackagesOverview,
   loadWorkspaceProjectRunPreview,
+  runWorkspaceProject,
   runControlledFullShellCommand,
   runReadonlyShellCommand,
   runWorkspaceWriteShellCommand
@@ -50,6 +51,13 @@ type ReadonlyAssistantTaskPlan =
     }
   | {
       kind: "workspace-config-overview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "opencow-self-repair-preview";
       title: string;
       summary: string;
       auditSummary: string;
@@ -315,6 +323,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "workspace-project-run";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "controlled-full-remove-temp-output";
       title: string;
       summary: string;
@@ -413,6 +428,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
       resultTitle: "Workspace config overview",
       resultSummary: `${overview.summary} Key config files: ${highlightedConfigs}. Root scripts: ${highlightedScripts}.`
     };
+  }
+
+  if (plan.kind === "opencow-self-repair-preview") {
+    return executeOpencowSelfRepairPreviewPlan(plan.title, plan.summary);
   }
 
   if (plan.kind === "capability-rag-overview") {
@@ -563,6 +582,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
     return executeWorkspaceWriteShellPlan(plan.title, "create-temp-output-dir");
   }
 
+  if (plan.kind === "workspace-project-run") {
+    return executeWorkspaceProjectRunPlan(plan.title, plan.summary);
+  }
+
   if (plan.kind === "controlled-full-remove-temp-output") {
     return executeControlledFullShellPlan(plan.title, "remove-temp-output-dir");
   }
@@ -593,6 +616,28 @@ async function executeCapabilityOverviewPlan(
   return {
     resultTitle: overview.title,
     resultSummary: `${overview.summary} Status: ${overview.status}. Available: ${availableLine}.${missingLine}`
+  };
+}
+
+async function executeOpencowSelfRepairPreviewPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const [workspaceOverview, configOverview, ragResult] = await Promise.all([
+    loadWorkspaceOverview(),
+    loadWorkspaceConfigOverview(),
+    searchLocalKnowledge(query)
+  ]);
+  const topPaths = ragResult.items.slice(0, 3).map((item) => item.title).join(", ") || "none";
+  const topConfigs = configOverview.config_files.slice(0, 3).join(", ") || "none";
+  const topScripts = configOverview.root_script_names.slice(0, 3).join(", ") || "none";
+
+  return {
+    resultTitle,
+    resultSummary:
+      `Readonly self-repair preview for ${workspaceOverview.root_name}. Key config files: ${topConfigs}. ` +
+      `Root scripts: ${topScripts}. Relevant local docs: ${topPaths}. ` +
+      `Next recommended flow: inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility.`
   };
 }
 
@@ -1213,6 +1258,21 @@ async function executeWorkspaceWriteShellPlan(
   return {
     resultTitle,
     resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+  };
+}
+
+async function executeWorkspaceProjectRunPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await runWorkspaceProject(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
+      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
+      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. Preview: ${result.stdout_preview}`
   };
 }
 
