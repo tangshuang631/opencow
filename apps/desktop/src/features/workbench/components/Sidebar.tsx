@@ -20,23 +20,7 @@ const navItems = [
   { label: "安全", icon: ShieldCheck }
 ];
 
-type SidebarProps = {
-  onDemoDangerousAction: () => void;
-  onDemoPermissionRequest: () => void;
-  onDemoSearch: () => void;
-  onDemoTaskFailure: () => void;
-  onDemoToolResult: () => void;
-  onDemoToolError: () => void;
-};
-
-export function Sidebar({
-  onDemoDangerousAction,
-  onDemoPermissionRequest,
-  onDemoSearch,
-  onDemoTaskFailure,
-  onDemoToolResult,
-  onDemoToolError
-}: SidebarProps) {
+export function Sidebar() {
   return (
     <aside className="sidebar" aria-label="主导航">
       <button className="sidebar-primary" type="button">
@@ -46,6 +30,7 @@ export function Sidebar({
       <nav className="sidebar-nav" aria-label="功能导航">
         {navItems.map((item) => {
           const Icon = item.icon;
+
           return (
             <button className="sidebar-nav-item" key={item.label} type="button">
               <Icon aria-hidden="true" size={17} />
@@ -54,27 +39,6 @@ export function Sidebar({
           );
         })}
       </nav>
-      <section className="sidebar-demo" aria-label="桌面演练入口">
-        <p className="sidebar-demo-title">桌面安全演练</p>
-        <button className="sidebar-demo-button" type="button" onClick={onDemoDangerousAction}>
-          模拟高风险操作
-        </button>
-        <button className="sidebar-demo-button" type="button" onClick={onDemoPermissionRequest}>
-          模拟提权请求
-        </button>
-        <button className="sidebar-demo-button" type="button" onClick={onDemoSearch}>
-          模拟联网搜索
-        </button>
-        <button className="sidebar-demo-button" type="button" onClick={onDemoTaskFailure}>
-          模拟本地任务失败
-        </button>
-        <button className="sidebar-demo-button" type="button" onClick={onDemoToolResult}>
-          模拟工具结果
-        </button>
-        <button className="sidebar-demo-button" type="button" onClick={onDemoToolError}>
-          模拟工具失败
-        </button>
-      </section>
       <button className="sidebar-settings" type="button">
         <Settings aria-hidden="true" size={17} />
         设置

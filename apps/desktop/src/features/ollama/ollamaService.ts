@@ -45,12 +45,16 @@ async function loadFromBrowserPreview(): Promise<OllamaOverview> {
 
     const payload = (await response.json()) as OllamaTagsResponse;
     const models = normalizeModels(payload);
+    const diagnostic =
+      models.length === 0
+        ? "No local Ollama models were found. Pull a model before starting chat."
+        : "";
 
     return {
       reachable: true,
       endpoint: ollamaEndpoint,
       selectedModel: models[0]?.name ?? "",
-      diagnostic: "",
+      diagnostic,
       models
     };
   } catch {

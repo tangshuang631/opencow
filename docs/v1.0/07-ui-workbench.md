@@ -140,3 +140,88 @@ apps/desktop/src/features/workbench/
 - 新增工作台状态逻辑时，优先扩展对应子模块，不要直接堆到门面文件。
 - 文件接近 `300-500` 行且职责开始混杂时，继续拆分。
 - 新增目录或状态入口后，必须同步更新本节文档。
+## 9. Figma 驱动改版落地方法
+
+当前结论：
+- 前端布局设计暂时不用改。
+- 后续如需优化工作台视觉和交互，优先走 Figma 驱动路线。
+- Codex 当前环境已具备 Figma 相关能力，可用于读取设计上下文、截图、变量和资源。
+
+可落实方法：
+1. 先在 Figma 中确定精确的 frame 或 node 链接，不使用模糊页面范围作为输入。
+2. 在 Codex 中先读取目标节点的设计上下文，再读取对应截图；必要时再读取变量、资源和组件结构。
+3. 先做“设计映射表”，再改代码。
+设计映射表至少包含：Figma 节点名、对应 React 组件名、颜色/token、间距/token、字体/token、交互状态、是否桌面端特有。
+4. 实现时优先改展示层和样式层，尽量不碰任务流、权限流、回退流和审计流。
+5. 如必须调整结构，优先按区域分批落地：`Sidebar -> MainConversation -> Composer -> Inspector`，不要一次性整体重写。
+6. 每次 Figma 改版都必须在桌面端验收。
+至少检查：窗口宽窄变化、右侧 Inspector 密度、Composer 输入体验、待确认状态、长日志和长来源列表、回退面板可用性。
+
+实施约束：
+- Figma 输出不直接当成最终代码，必须翻译为 opencow 当前项目结构和命名。
+- 新增视觉 token 时，优先收敛到共享样式入口，不把视觉常量散落到多个组件。
+- 如果 Figma 设计与桌面安全交互冲突，以桌面安全交互优先，再做视觉贴合。
+- 如需后续真正开始 Figma 改版，先冻结一版可运行工作台状态流，避免视觉重构和行为重构同时发生。
+## 10. Conversation and assistant lightweighting
+
+Current desktop-first conversation and assistant work should stay light, responsive, and low-noise.
+
+Rules:
+
+- do not queue the same local assistant task repeatedly while an identical task is already queued or running
+- prefer deduplication at the state transition layer instead of stacking UI-only guards
+- when a duplicate submit is skipped, keep the response short and explicit instead of silently dropping the action
+- avoid multiplying repetitive queue entries, repeated audit spam, or repeated conversation boilerplate when adding new assistant capability slices
+- when long desktop conversations exceed the bounded local history window, compress older context into one system summary entry instead of letting raw history grow without limit
+- compression should stay lightweight and local-first: preserve recent working context, keep one cumulative compressed summary, and avoid introducing a heavy memory subsystem in the v1.0 mainline
+
+Current focused verification:
+
+```bash
+npm --workspace apps/desktop exec vitest run src/features/workbench/taskQueueDedup.test.ts
+npm --workspace apps/desktop exec vitest run src/features/workbench/conversationCompression.test.ts
+```
+
+## 11. Core chat reliability notes
+
+The desktop app must treat ordinary user chat as a first-class local assistant path instead of letting it fail because of runtime directory assumptions.
+
+- The default ordinary-chat fallback currently lands on the readonly `workspace-overview` assistant task.
+- This fallback must stay usable in the real desktop runtime, not only in browser preview or mocked tests.
+- Tauri workspace discovery must resolve the real repo root even when the app process starts from nested directories such as `apps/desktop` or `apps/desktop/src-tauri`.
+- Workspace-root detection should walk upward until it finds the repo markers required by the desktop assistant chain, instead of assuming `current_dir` is already the repo root.
+- Any future local assistant slice that reads docs, packages, config, skills, plugins, or shell command specs must reuse the same resolved workspace root.
+
+Recommended regression coverage:
+
+```bash
+cargo test recognizes_workspace_root_markers -- --nocapture
+cargo test resolves_workspace_root_from_nested_tauri_directory -- --nocapture
+npm --workspace apps/desktop exec vitest run src/app/app.chat.test.tsx
+```
+
+## 12. Figma and gpt-taste follow-up path
+
+Frontend redesign is intentionally deferred behind core desktop chat stability.
+
+- `gpt-taste` is installed locally as a later-stage frontend refinement skill for higher-variance layout and stronger motion direction.
+- Local install path: `C:\Users\31272\.codex\skills\gpt-tasteskill`
+- Skill runtime name: `gpt-taste`
+- For now it is reserved for dedicated frontend optimization windows and should not be used to reshape the core assistant, permissions, rollback, audit, or task-execution chain while those paths are still stabilizing.
+- When the project enters a UI refinement window, prefer `Figma -> Codex -> opencow` first for structure and mapping, then optionally use `gpt-taste` to raise visual polish and motion quality inside the already-approved component boundaries.
+- Any `gpt-taste`-driven changes must still be validated in the desktop runtime, not only in web preview.
+
+## 13. Frontend design priority with gpt-taste
+
+Once the project enters a dedicated frontend optimization window, `gpt-taste` becomes the preferred design skill for desktop UI refresh work.
+
+- Default priority for future frontend visual redesign: `gpt-taste` first, then Figma mapping, then code landing inside the existing desktop component boundaries.
+- `gpt-taste` is especially suitable for:
+- stronger layout variance
+- cleaner premium composition
+- stricter typography control
+- more deliberate motion direction
+- reduced generic LLM layout repetition
+- Use it mainly for `Workbench`, `Sidebar`, `MainConversation`, `Composer`, and `Inspector` presentation-layer refinement.
+- Do not let `gpt-taste` directly rewrite permission flow, rollback flow, audit flow, assistant task routing, or shell safety UX behavior without a separate explicit implementation review.
+- Before using `gpt-taste` in a real frontend task, restart Codex so the newly installed skill is available in the active session.

@@ -1,0 +1,119 @@
+import { describe, expect, it, vi } from "vitest";
+import { executeAssistantTask, planAssistantTask } from "./assistantTaskService";
+
+const {
+  loadOpenClawCapabilityOverviewMock,
+  listEnabledLocalSkillsMock,
+  loadWorkspaceOverviewMock,
+  loadWorkspaceProjectRunPreviewMock
+} = vi.hoisted(() => ({
+  loadOpenClawCapabilityOverviewMock: vi.fn(),
+  listEnabledLocalSkillsMock: vi.fn(),
+  loadWorkspaceOverviewMock: vi.fn(),
+  loadWorkspaceProjectRunPreviewMock: vi.fn()
+}));
+
+vi.mock("./localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("./localAssistantService")>("./localAssistantService");
+
+  return {
+    ...actual,
+    loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
+    listEnabledLocalSkills: listEnabledLocalSkillsMock,
+    loadWorkspaceOverview: loadWorkspaceOverviewMock,
+    loadWorkspaceProjectRunPreview: loadWorkspaceProjectRunPreviewMock
+  };
+});
+
+describe("assistantTaskService npc project showcase preview", () => {
+  it("plans a readonly npc showcase preview without a permission upgrade", () => {
+    const plan = planAssistantTask(
+      "use npc collaboration to inspect and run the local cattle project, capture screenshots, and generate a resume-ready showcase website in my git repo",
+      "readonly"
+    );
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-showcase-preview",
+      title: "NPC local project showcase preview"
+    });
+  });
+
+  it("returns a staged showcase workflow preview that keeps privileged steps explicit", async () => {
+    loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
+      capability_id: "npc",
+      title: "OpenClaw NPC capability overview",
+      status: "ready-foundation",
+      required_package_count: 3,
+      available_package_count: 3,
+      available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/tool-call-repair"],
+      missing_packages: [],
+      summary: "NPC capability foundation is available locally."
+    });
+    listEnabledLocalSkillsMock.mockResolvedValueOnce({
+      summary: "Found enabled local skills.",
+      total_count: 2,
+      registry_path: ".opencow/skills/enabled-skills.json",
+      items: [
+        {
+          name: "coding-agent",
+          path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+          source: "vendor-openclaw-skill",
+          description: "OpenClaw coding agent workflow"
+        }
+      ]
+    });
+    loadWorkspaceOverviewMock.mockResolvedValueOnce({
+      root_name: "opencow",
+      entry_count: 7,
+      package_count: 3,
+      package_names: ["openclaw-adapter", "permission-engine", "shell-runtime"],
+      summary: "Workspace opencow currently contains 7 root entries and 3 local packages."
+    });
+    loadWorkspaceProjectRunPreviewMock.mockResolvedValueOnce({
+      query:
+        "use npc collaboration to inspect and run the local cattle project, capture screenshots, and generate a resume-ready showcase website in my git repo",
+      summary: "Workspace run preview matched cattle and prepared a readonly launch suggestion.",
+      inspected_project_count: 4,
+      matched_project_name: "cattle",
+      matched_project_path: "projects/cattle",
+      matched_project_source: "unknown",
+      dev_command: "npm run dev",
+      start_command: "npm run start",
+      build_command: "npm run build",
+      preferred_command: "npm run dev",
+      expected_url: "http://127.0.0.1:3000",
+      next_required_permission: "workspace-write",
+      risk_summary:
+        "Readonly preview only. Actual local launch must still request permission, stay inside the approved workspace, and write an audit trail.",
+      candidate_projects: [
+        {
+          name: "cattle",
+          path: "projects/cattle",
+          source: "unknown",
+          script_names: ["dev", "start", "build"]
+        }
+      ]
+    });
+
+    const result = await executeAssistantTask({
+      kind: "npc-local-project-showcase-preview",
+      title: "NPC local project showcase preview",
+      summary:
+        "use npc collaboration to inspect and run the local cattle project, capture screenshots, and generate a resume-ready showcase website in my git repo",
+      auditSummary: "Local assistant planned a readonly NPC local project showcase preview.",
+      auditDetail: "Readonly NPC local project showcase preview task"
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC local project showcase preview");
+    expect(result.resultSummary).toContain("cattle");
+    expect(result.resultSummary).toContain("project inspection");
+    expect(result.resultSummary).toContain("run preview");
+    expect(result.resultSummary).toContain("screenshot capture");
+    expect(result.resultSummary).toContain("showcase site generation");
+    expect(result.resultSummary).toContain("git push");
+    expect(result.resultSummary).toContain("permission");
+    expect(result.resultSummary).toContain("npm run dev");
+    expect(result.resultSummary).toContain("http://127.0.0.1:3000");
+    expect(result.resultSummary).toContain("workspace-write");
+  });
+});

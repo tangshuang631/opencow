@@ -194,6 +194,9 @@ Rules:
 - High-risk operations must show confirmation dialogs.
 - Dangerous operations not explicitly requested by the user must not run.
 - Rollback changes must verify rollback records and audit records.
+- Self-repair or self-upgrade actions must stay inside the same permission, confirmation, audit, and rollback-visible chain as ordinary assistant actions.
+- Installing skills, creating NPC definitions, editing assistant config, or repairing opencow-owned files counts as a controlled assistant mutation and must not happen silently.
+- Unless the user has already granted the required default high permission mode, any self-repair that could delete files, change runtime startup behavior, replace configs, or launch external processes must pause for the correct approval step.
 
 ## 12. Error Handling
 
@@ -207,6 +210,7 @@ Rules:
 - Provide user-readable repair suggestions.
 - A failed task must not freeze the app.
 - Long tasks must be interruptible.
+- When opencow itself fails, the assistant should prefer a staged self-repair flow: inspect -> explain -> preview fix -> request approval if mutation is needed -> repair -> verify -> summarize rollback and audit visibility.
 
 ## 13. Pre-Push Checklist
 
@@ -221,3 +225,77 @@ Minimum requirements before push:
 - Directory docs are updated.
 
 If a check cannot run, record the reason, risk, and substitute verification.
+
+## 14. Deferred Cleanup List
+
+When development reveals code that is truly unnecessary for opencow and also harms runtime efficiency, responsiveness, build weight, or maintenance clarity, do not remove it casually in the middle of unrelated feature work.
+
+Rules:
+
+- Record it immediately in `E:\2026\opencow\后期考虑删除的清单.md`.
+- Each entry must include the path, current function, why it is unnecessary, and when cleanup should happen.
+- Only record items that are genuinely unnecessary, not items that are merely unfinished or temporarily unused.
+- If removing the code could disturb the current verified mainline, defer deletion and keep the record instead.
+- Later cleanup work must follow the list path-by-path rather than relying on memory.
+
+## 15. Noise And Pollution Control
+
+Recurring development friction such as terminal display noise, unstable text matching, high-risk text blocks, and historically polluted files must be handled with a fixed discipline rather than ad hoc workarounds.
+
+Rules:
+
+- If terminal output renders Chinese unreliably, switch developer-facing logs, grep patterns, and verification notes to English first.
+- If a file shows mojibake, mixed encodings, unstable line endings, or patch mismatch behavior, treat it as a high-risk file immediately.
+- Do not keep retrying large patches on unstable files. Reduce the change scope, re-read the file, and patch only the smallest stable block.
+- When exact text matching is unreliable, prefer structural anchors, adjacent safe modules, or additive wrapper files over invasive in-place rewrites.
+- In tests, prefer stable accessible-role queries, structural anchors, and regex matching against intended UI text instead of copying polluted literal labels from noisy files or terminals.
+- If a file or path repeatedly causes noise, matching failures, or historical contamination, record it in `E:\2026\opencow\后期考虑删除的清单.md` or in the same list as a cleanup candidate with its path and problem type.
+- Temporary dev noise, compatibility shims, demo logic, and abandoned branches of code should be registered for later cleanup instead of silently accumulating.
+- When a polluted file cannot be cleaned safely during the current feature window, isolate it, route around it, document it, and continue delivery through cleaner boundaries.
+- Cleanup of polluted paths should happen in dedicated cleanup windows, with the list entry removed only after the path is actually cleaned or deleted.
+
+## 16. Testing And Push Cadence
+
+Testing and push frequency should match development risk, not habit.
+
+Rules:
+
+- After finishing a small module or a contained local change, run that module's tests even if you do not push yet.
+- Small module work does not need to be pushed immediately once local verification is complete.
+- After finishing a milestone-sized batch of development, run full end-to-end verification instead of stopping at smoke checks.
+- Milestone verification must include self-check, fixes for discovered issues, and another verification pass until the result is clean.
+- Push only after the milestone batch is verified and self-repair is complete, unless the user explicitly wants a different rhythm.
+- Testing and pushing do not need to be overly frequent, but they must be complete at meaningful checkpoints.
+- Before every push, prefer a fully verified coherent batch over partially tested incremental noise.
+
+## 17. Current Mainline Priority
+
+The current highest-priority desktop-first development mainline is:
+
+- `openclaw-adapter`
+- local assistant task planning
+- local RAG retrieval
+- preview-to-continue continuity
+- permission escalation or dangerous confirmation
+- controlled shell execution
+- audit and rollback-visible completion
+
+Rules:
+
+- Prefer shipping narrow, verified slices on this mainline over broad speculative subsystem expansion.
+- Reuse the existing controlled shell path for create or cleanup actions instead of creating parallel executors.
+- Pure local RAG, Skill-assisted RAG, and NPC-assisted RAG handoff routes must stay intentionally separated in planner matching.
+- New assistant action routing must not depend on frontend redesign work.
+- Desktop local assistant commands that inspect workspace state must resolve the real repo root from nested runtime directories instead of assuming the current process directory is already the workspace root.
+- When the desktop app is launched from `apps/desktop`, `apps/desktop/src-tauri`, or other nested paths, workspace discovery must walk upward until the real repo root markers are found before executing overview, RAG, Skills, NPC, MCP, or shell-adjacent local tasks.
+- opencow must optimize for a higher practical floor than upstream openclaw on local models: better defaults, narrower task routing, safer tool matching, clearer repair prompts, and stronger fallback behavior are required product goals, not optional polish.
+- Local-model-first behavior wins by default. Planner wording, task scopes, summaries, and repair flows should be designed to stay reliable even when the local model is weaker than a frontier remote model.
+
+## 12. Frontend Skill Boundary
+
+Frontend taste or animation skills are optional accelerators, not part of the core assistant execution chain.
+
+- `gpt-taste` can be used later for dedicated frontend refinement windows after the core desktop conversation and assistant chain is stable.
+- `gpt-taste` must not drive changes to permissions, audit, rollback, local assistant routing, task queue behavior, or other safety-critical product flows.
+- Before using `gpt-taste` for real UI work, freeze a runnable desktop milestone first, then run a separate desktop verification pass after the visual changes land.
+- If desktop tests depend on `@opencow/openclaw-adapter/browser`, refresh the adapter build before trusting desktop verification results.

@@ -63,6 +63,25 @@ describe("ollamaService", () => {
     expect(overview.models[0]).toMatchObject({ name: "qwen2.5-coder:7b" });
   });
 
+  it("returns a repair-friendly diagnostic when Ollama is reachable but no models are installed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: []
+        })
+      })
+    );
+
+    const overview = await loadOllamaOverview();
+
+    expect(overview.reachable).toBe(true);
+    expect(overview.models).toHaveLength(0);
+    expect(overview.selectedModel).toBe("");
+    expect(overview.diagnostic).toContain("No local Ollama models");
+  });
+
   it("returns a repair-friendly offline state when Ollama is unavailable", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")));
 

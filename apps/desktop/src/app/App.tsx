@@ -1,15 +1,14 @@
 import { startTransition, useEffect, useState } from "react";
+import { executeAssistantTask, planAssistantTask } from "../features/assistant/assistantTaskService";
 import { loadOllamaOverview } from "../features/ollama/ollamaService";
 import { Workbench } from "../features/workbench/Workbench";
-import { evaluateDangerousCommandPolicy } from "../features/workbench/commandPolicyService";
 import {
   applyPendingRollbackState,
   approvePendingConfirmationState,
   approvePermissionModeChangeState,
-  cancelPendingRollbackState,
   cancelPendingConfirmationState,
+  cancelPendingRollbackState,
   cancelPermissionModeChangeState,
-  createCommandPolicyBlockedState,
   createCapabilityToggleRequestState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
@@ -17,7 +16,6 @@ import {
   createRemoteApiConfigState,
   createRemoteApiToggleState,
   createRollbackLimitUpdatedState,
-  createSearchEnabledState,
   createSearchProviderConfigState,
   createSearchToggleState,
   createStorageCleanupState,
@@ -27,77 +25,64 @@ import {
   createTaskExecutionStartedState,
   createTaskExecutionSucceededState,
   createUserTaskSubmittedState,
-  createToolExecutionErrorState,
-  createToolExecutionState,
   mergeOllamaOverview,
-  requestRollbackPreviewState,
-  requestPermissionModeChangeState
+  requestPermissionModeChangeState,
+  requestRollbackPreviewState
 } from "../features/workbench/workbenchState";
+import type { WorkbenchState } from "../features/workbench/workbenchState";
+import type { AssistantTaskPlanResult } from "../features/assistant/assistantTaskService";
+
+const CONTINUATION_PREVIEW_KINDS = new Set([
+  "rag-local-shell-handoff-preview",
+  "skills-local-enabled-rag-shell-handoff-preview",
+  "npc-local-enabled-rag-shell-handoff-preview"
+]);
+
+export function createContinuationMessageFromPreview(kind: string, message: string): string {
+  if (!CONTINUATION_PREVIEW_KINDS.has(kind)) {
+    return message.trim();
+  }
+
+  const normalized = message
+    .replace(/\bpreview\b/gi, "continue")
+    .replace(/\bplan\b/gi, "continue")
+    .replace(/\bworkflow\b/gi, "continue")
+    .replace(/\band continue the next safe shell step to\b/gi, "and continue to")
+    .replace(/\band continue the next shell step to\b/gi, "and continue to");
+
+  if (/continue to .* with shell automation/i.test(normalized)) {
+    return normalized.trim();
+  }
+
+  if (/continue to /i.test(normalized)) {
+    return `${normalized.trim()} with shell automation`;
+  }
+
+  return normalized.trim();
+}
+
+export function resolveContinuationMessage(message: string, state: WorkbenchState): string {
+  if (message.trim().toLowerCase() !== "continue") {
+    return message;
+  }
+
+  const latestPreviewTask = state.tasks.items.find((item) =>
+    item.executionKind ? CONTINUATION_PREVIEW_KINDS.has(item.executionKind) : false
+  );
+
+  if (!latestPreviewTask?.executionKind) {
+    return message;
+  }
+
+  return createContinuationMessageFromPreview(latestPreviewTask.executionKind, latestPreviewTask.summary);
+}
 
 export function App() {
   const [state, setState] = useState(createInitialWorkbenchState);
 
-  function syncOllamaState() {
-    return loadOllamaOverview()
-      .then((overview) => {
-        startTransition(() => {
-          setState((current) => mergeOllamaOverview(current, overview));
-        });
-      })
-      .catch((error: unknown) => {
-        const detail = error instanceof Error ? error.message : "Unknown ollama load error";
-
-        startTransition(() => {
-          setState((current) => createOllamaLoadErrorState(current, detail));
-        });
-      });
-  }
-
-  function parseCapabilityToggleIntent(message: string, currentState = state) {
-    const normalized = message.trim();
-
-    if (normalized.includes("开启联网搜索") || normalized.includes("打开联网搜索")) {
-      return {
-        feature: "search" as const,
-        enabled: true,
-        source: "conversation_request",
-        reason: "用户要求开启联网搜索以补充最新来源。",
-        providerLabel: currentState.search.providerLabel || "Tavily"
-      };
-    }
-
-    if (normalized.includes("关闭联网搜索")) {
-      return {
-        feature: "search" as const,
-        enabled: false,
-        source: "conversation_request",
-        reason: "用户要求关闭联网搜索并回到本地优先模式。"
-      };
-    }
-
-    if (normalized.includes("开启远程 API") || normalized.includes("打开远程 API")) {
-      return {
-        feature: "remote-api" as const,
-        enabled: true,
-        source: "conversation_request",
-        reason: "用户要求开启远程 API 作为高级设置兼容入口。"
-      };
-    }
-
-    if (normalized.includes("关闭远程 API")) {
-      return {
-        feature: "remote-api" as const,
-        enabled: false,
-        source: "conversation_request",
-        reason: "用户要求关闭远程 API 并保持本地 Ollama 优先。"
-      };
-    }
-
-    return null;
-  }
-
   useEffect(() => {
     let cancelled = false;
+
     void loadOllamaOverview()
       .then((overview) => {
         if (cancelled) {
@@ -136,72 +121,131 @@ export function App() {
       });
     }, 80);
 
-    const finishTimer = window.setTimeout(() => {
-      startTransition(() => {
-        setState((current) =>
-          createTaskExecutionSucceededState(current, {
-            resultTitle: "本地任务结果",
-            resultSummary: "已基于本地 Ollama 生成首轮处理结果。"
-          })
-        );
-      });
-    }, 180);
-
     return () => {
       window.clearTimeout(startTimer);
-      window.clearTimeout(finishTimer);
     };
   }, [state.tasks.activeTaskId, state.tasks.pendingCount]);
 
-  function handleDemoDangerousAction() {
-    startTransition(() => {
-      setState((current) => {
-        const result = evaluateDangerousCommandPolicy(current);
+  useEffect(() => {
+    if (!state.tasks.activeTaskId) {
+      return;
+    }
 
-        if (result.kind === "permission-request") {
-          return requestPermissionModeChangeState(current, {
-            targetMode: result.targetMode,
-            reason: result.reason,
-            riskSummary: result.riskSummary
-          });
-        }
+    const activeTask = state.tasks.items.find((item) => item.id === state.tasks.activeTaskId);
 
-        if (result.kind === "confirmation") {
-          return createHighRiskConfirmationState(current, {
-            title: result.title,
-            summary: result.summary,
-            commandPreview: result.commandPreview,
-            impact: result.impact,
-            requiredMode: result.requiredMode,
-            safetySummary: result.safetySummary
-          });
-        }
+    if (!activeTask) {
+      return;
+    }
 
-        return createCommandPolicyBlockedState(current, {
-          summary: result.summary,
-          detail: result.detail,
-          actionLabel: result.actionLabel,
-          source: result.source
+    const finishTimer = window.setTimeout(() => {
+      if (!activeTask.executionKind) {
+        startTransition(() => {
+          setState((current) =>
+            createTaskExecutionSucceededState(current, {
+              resultTitle: "本地助手答复",
+              resultSummary: "已基于本地 Ollama 完成当前输入的初步处理。"
+            })
+          );
         });
-      });
-    });
-  }
+        return;
+      }
 
-  function handleDemoPermissionRequest() {
-    startTransition(() => {
-      setState((current) =>
-        requestPermissionModeChangeState(current, {
-          targetMode: "workspace-write",
-          reason: "需要在工作区内写入修复文件。",
-          riskSummary: "允许在授权工作区内创建和修改文件，但仍禁止高风险删除。"
+      const executionPlan = {
+        kind: activeTask.executionKind,
+        title: activeTask.executionTitle ?? "本地助手任务",
+        summary: activeTask.summary,
+        auditSummary: activeTask.executionAuditSummary ?? "Local assistant planned a task.",
+        auditDetail: activeTask.executionAuditDetail ?? activeTask.summary
+      } as AssistantTaskPlanResult;
+
+      void executeAssistantTask(executionPlan)
+        .then((result) => {
+          startTransition(() => {
+            setState((current) => createTaskExecutionSucceededState(current, result));
+          });
         })
-      );
-    });
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : "Unknown local assistant execution error";
+
+          startTransition(() => {
+            setState((current) =>
+              createTaskExecutionFailedState(current, {
+                summary: "本地任务执行失败",
+                detail,
+                actionLabel: "检查本地执行链后重试",
+                source: "local_task_runner"
+              })
+            );
+          });
+        });
+    }, 120);
+
+    return () => {
+      window.clearTimeout(finishTimer);
+    };
+  }, [state.tasks.activeTaskId, state.tasks.items]);
+
+  function parseCapabilityToggleIntent(message: string, currentState: WorkbenchState) {
+    const normalized = message.trim();
+
+    if (normalized.includes("开启联网搜索") || normalized.includes("打开联网搜索")) {
+      return {
+        feature: "search" as const,
+        enabled: true,
+        source: "conversation_request",
+        reason: "用户请求开启联网搜索以补充最新来源。",
+        providerLabel: currentState.search.providerLabel || "Tavily"
+      };
+    }
+
+    if (normalized.includes("关闭联网搜索")) {
+      return {
+        feature: "search" as const,
+        enabled: false,
+        source: "conversation_request",
+        reason: "用户请求关闭联网搜索并保持本地优先。"
+      };
+    }
+
+    if (normalized.includes("开启远程API") || normalized.includes("开启远程 API") || normalized.includes("打开远程 API")) {
+      return {
+        feature: "remote-api" as const,
+        enabled: true,
+        source: "conversation_request",
+        reason: "用户请求开启远程 API 作为高级配置入口。"
+      };
+    }
+
+    if (normalized.includes("关闭远程API") || normalized.includes("关闭远程 API")) {
+      return {
+        feature: "remote-api" as const,
+        enabled: false,
+        source: "conversation_request",
+        reason: "用户请求关闭远程 API 并保持本地 Ollama 优先。"
+      };
+    }
+
+    return null;
   }
 
   function handleApproveDangerousAction() {
     startTransition(() => {
-      setState((current) => approvePendingConfirmationState(current));
+      setState((current) => {
+        const pendingConfirmation = current.confirmation.pending;
+        const approvedState = approvePendingConfirmationState(current);
+
+        if (!pendingConfirmation?.queuedExecutionKind || !pendingConfirmation.queuedMessage) {
+          return approvedState;
+        }
+
+        return createUserTaskSubmittedState(approvedState, {
+          message: pendingConfirmation.queuedMessage,
+          executionKind: pendingConfirmation.queuedExecutionKind,
+          executionTitle: pendingConfirmation.queuedExecutionTitle,
+          executionAuditSummary: pendingConfirmation.queuedExecutionAuditSummary,
+          executionAuditDetail: pendingConfirmation.queuedExecutionAuditDetail
+        });
+      });
     });
   }
 
@@ -213,13 +257,81 @@ export function App() {
 
   function handleApprovePermissionRequest() {
     startTransition(() => {
-      setState((current) => approvePermissionModeChangeState(current));
+      setState((current) => {
+        const pendingModeChange = current.permission.pendingModeChange;
+        const approvedState = approvePermissionModeChangeState(current);
+
+        if (!pendingModeChange?.queuedMessage) {
+          return approvedState;
+        }
+
+        const continuedPlan = planAssistantTask(pendingModeChange.queuedMessage, approvedState.permission.mode);
+
+        if (continuedPlan.kind === "permission-request") {
+          return requestPermissionModeChangeState(approvedState, {
+            targetMode: continuedPlan.targetMode,
+            reason: continuedPlan.reason,
+            riskSummary: continuedPlan.riskSummary,
+            queuedExecutionKind: continuedPlan.queuedExecutionKind,
+            queuedExecutionTitle: continuedPlan.queuedExecutionTitle,
+            queuedExecutionAuditSummary: continuedPlan.queuedExecutionAuditSummary,
+            queuedExecutionAuditDetail: continuedPlan.queuedExecutionAuditDetail,
+            queuedMessage: continuedPlan.queuedMessage
+          });
+        }
+
+        if (continuedPlan.kind === "confirmation") {
+          return createHighRiskConfirmationState(approvedState, {
+            title: continuedPlan.title,
+            summary: continuedPlan.summary,
+            commandPreview: continuedPlan.commandPreview,
+            impact: continuedPlan.impact,
+            requiredMode: continuedPlan.requiredMode,
+            safetySummary: continuedPlan.safetySummary,
+            queuedExecutionKind: continuedPlan.queuedExecutionKind,
+            queuedExecutionTitle: continuedPlan.queuedExecutionTitle,
+            queuedExecutionAuditSummary: continuedPlan.queuedExecutionAuditSummary,
+            queuedExecutionAuditDetail: continuedPlan.queuedExecutionAuditDetail,
+            queuedMessage: continuedPlan.queuedMessage
+          });
+        }
+
+        return createUserTaskSubmittedState(approvedState, {
+          message: pendingModeChange.queuedMessage,
+          executionKind: continuedPlan.kind,
+          executionTitle: continuedPlan.title,
+          executionAuditSummary: continuedPlan.auditSummary,
+          executionAuditDetail: continuedPlan.auditDetail
+        });
+      });
     });
   }
 
   function handleCancelPermissionRequest() {
     startTransition(() => {
       setState((current) => cancelPermissionModeChangeState(current));
+    });
+  }
+
+  function handleRetryOllamaCheck() {
+    void loadOllamaOverview()
+      .then((overview) => {
+        startTransition(() => {
+          setState((current) => mergeOllamaOverview(current, overview));
+        });
+      })
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : "Unknown ollama load error";
+
+        startTransition(() => {
+          setState((current) => createOllamaLoadErrorState(current, detail));
+        });
+      });
+  }
+
+  function handleRecoverToolError() {
+    startTransition(() => {
+      setState((current) => current);
     });
   }
 
@@ -238,68 +350,6 @@ export function App() {
   function handleCancelRollback() {
     startTransition(() => {
       setState((current) => cancelPendingRollbackState(current));
-    });
-  }
-
-  function handleDemoSearch() {
-    startTransition(() => {
-      setState((current) =>
-        createSearchEnabledState(current, {
-          provider: "Tavily",
-          query: "OpenClaw Windows 本地助手",
-          sourceTitle: "OpenClaw GitHub",
-          sourceUrl: "https://github.com/example/openclaw",
-          summary: "已启用联网搜索，并注入 1 条来源摘要。"
-        })
-      );
-    });
-  }
-
-  function handleDemoToolResult() {
-    startTransition(() => {
-      setState((current) =>
-        createToolExecutionState(current, {
-          toolLabel: "Skill 扫描",
-          summary: "已扫描 6 个本地 Skills，发现 1 个需要用户确认启用。",
-          outputTitle: "本地 Skill 清单",
-          outputSummary: "生成了最新的本地 Skill 扫描结果，可用于后续启用与审计。",
-          source: "skills_scan"
-        })
-      );
-    });
-  }
-
-  function handleDemoToolError() {
-    startTransition(() => {
-      setState((current) =>
-        createToolExecutionErrorState(current, {
-          toolLabel: "Skill 下载",
-          summary: "Skill 下载失败",
-          detail: "下载源返回 403，当前未获得联网下载授权。",
-          actionLabel: "检查联网开关并重新授权后重试",
-          source: "skill_download"
-        })
-      );
-    });
-  }
-
-  function handleDemoTaskFailure() {
-    startTransition(() => {
-      setState((current) =>
-        createTaskExecutionFailedState(
-          createTaskExecutionStartedState(
-            createUserTaskSubmittedState(current, {
-              message: "请检查本地模型状态并重试当前任务"
-            })
-          ),
-          {
-            summary: "本地任务执行失败",
-            detail: "Ollama 响应超时，请检查本地模型状态。",
-            actionLabel: "检查 Ollama 服务并重试",
-            source: "local_task_runner"
-          }
-        )
-      );
     });
   }
 
@@ -327,32 +377,6 @@ export function App() {
     });
   }
 
-  function handleRetryOllamaCheck() {
-    void syncOllamaState();
-  }
-
-  function handleRecoverToolError() {
-    startTransition(() => {
-      setState((current) => {
-        if (current.error?.module !== "tools") {
-          return current;
-        }
-
-        if (current.error.source === "skill_download") {
-          return createCapabilityToggleRequestState(current, {
-            feature: "search",
-            enabled: true,
-            source: "tool_error_recovery",
-            reason: "工具恢复建议需要先开启联网搜索，并继续保持用户确认、审计与本地优先流程。",
-            providerLabel: current.search.providerLabel || "Tavily"
-          });
-        }
-
-        return current;
-      });
-    });
-  }
-
   function handleToggleRemoteApi(enabled: boolean) {
     startTransition(() => {
       setState((current) => createRemoteApiToggleState(current, enabled));
@@ -364,7 +388,7 @@ export function App() {
       setState((current) =>
         createSearchToggleState(current, {
           enabled,
-          providerLabel: "Tavily"
+          providerLabel: current.search.providerLabel || "Tavily"
         })
       );
     });
@@ -385,13 +409,51 @@ export function App() {
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => {
-        const capabilityIntent = parseCapabilityToggleIntent(message, current);
+        const resolvedMessage = resolveContinuationMessage(message, current);
+        const capabilityIntent = parseCapabilityToggleIntent(resolvedMessage, current);
 
         if (capabilityIntent) {
           return createCapabilityToggleRequestState(current, capabilityIntent);
         }
 
-        return createUserTaskSubmittedState(current, { message });
+        const assistantPlan = planAssistantTask(resolvedMessage, current.permission.mode);
+
+        if (assistantPlan.kind === "permission-request") {
+          return requestPermissionModeChangeState(current, {
+            targetMode: assistantPlan.targetMode,
+            reason: assistantPlan.reason,
+            riskSummary: assistantPlan.riskSummary,
+            queuedExecutionKind: assistantPlan.queuedExecutionKind,
+            queuedExecutionTitle: assistantPlan.queuedExecutionTitle,
+            queuedExecutionAuditSummary: assistantPlan.queuedExecutionAuditSummary,
+            queuedExecutionAuditDetail: assistantPlan.queuedExecutionAuditDetail,
+            queuedMessage: assistantPlan.queuedMessage
+          });
+        }
+
+        if (assistantPlan.kind === "confirmation") {
+          return createHighRiskConfirmationState(current, {
+            title: assistantPlan.title,
+            summary: assistantPlan.summary,
+            commandPreview: assistantPlan.commandPreview,
+            impact: assistantPlan.impact,
+            requiredMode: assistantPlan.requiredMode,
+            safetySummary: assistantPlan.safetySummary,
+            queuedExecutionKind: assistantPlan.queuedExecutionKind,
+            queuedExecutionTitle: assistantPlan.queuedExecutionTitle,
+            queuedExecutionAuditSummary: assistantPlan.queuedExecutionAuditSummary,
+            queuedExecutionAuditDetail: assistantPlan.queuedExecutionAuditDetail,
+            queuedMessage: assistantPlan.queuedMessage
+          });
+        }
+
+        return createUserTaskSubmittedState(current, {
+          message: resolvedMessage,
+          executionKind: assistantPlan.kind,
+          executionTitle: assistantPlan.title,
+          executionAuditSummary: assistantPlan.auditSummary,
+          executionAuditDetail: assistantPlan.auditDetail
+        });
       });
     });
   }
@@ -416,12 +478,6 @@ export function App() {
       onToggleSearch={handleToggleSearch}
       onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
       onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
-      onDemoDangerousAction={handleDemoDangerousAction}
-      onDemoPermissionRequest={handleDemoPermissionRequest}
-      onDemoSearch={handleDemoSearch}
-      onDemoTaskFailure={handleDemoTaskFailure}
-      onDemoToolResult={handleDemoToolResult}
-      onDemoToolError={handleDemoToolError}
       onSubmitTask={handleSubmitTask}
     />
   );

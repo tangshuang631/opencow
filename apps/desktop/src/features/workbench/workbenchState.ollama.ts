@@ -3,6 +3,18 @@ import { recordRollbackEntry } from "./workbenchState.rollback";
 import { prependConversationEntry } from "./workbenchState.shared";
 import type { WorkbenchState } from "./workbenchState.types";
 
+function getReachableOllamaDiagnostic(overview: OllamaOverview): string {
+  if (overview.diagnostic) {
+    return overview.diagnostic;
+  }
+
+  if (overview.models.length === 0) {
+    return "No local Ollama models were found. Pull a model before starting chat.";
+  }
+
+  return "";
+}
+
 export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverview): WorkbenchState {
   if (!overview.reachable) {
     return recordRollbackEntry(
@@ -59,7 +71,7 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         status: "Ollama 已连接",
         endpoint: overview.endpoint,
         activeModel: overview.selectedModel || "未选择模型",
-        diagnostic: overview.diagnostic,
+        diagnostic: getReachableOllamaDiagnostic(overview),
         availableModels: overview.models
       },
       conversation: {

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "npm --workspace apps/desktop run dev",
     "desktop:dev": "npm --workspace apps/desktop run tauri:dev",
+    "desktop:test:start": "start-opencow-test.bat",
+    "desktop:test:check": "start-opencow-test.bat check",
     "build": "npm --workspaces --if-present run build",
     "test": "npm --workspaces --if-present run test",
     "test:unit": "npm --workspaces --if-present run test:unit",

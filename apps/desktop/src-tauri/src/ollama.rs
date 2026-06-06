@@ -52,6 +52,11 @@ async fn load_ollama_overview() -> Result<OllamaOverview, reqwest::Error> {
         .into_iter()
         .filter_map(normalize_model)
         .collect::<Vec<_>>();
+    let diagnostic = if models.is_empty() {
+        "No local Ollama models were found. Pull a model before starting chat.".to_string()
+    } else {
+        String::new()
+    };
 
     Ok(OllamaOverview {
         reachable: true,
@@ -60,7 +65,7 @@ async fn load_ollama_overview() -> Result<OllamaOverview, reqwest::Error> {
             .first()
             .map(|model| model.name.clone())
             .unwrap_or_default(),
-        diagnostic: String::new(),
+        diagnostic,
         models,
     })
 }
@@ -99,7 +104,7 @@ fn offline_overview() -> OllamaOverview {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_model_size, normalize_model, OllamaModelPayload};
+    use super::{format_model_size, normalize_model, OllamaModelPayload, OllamaOverview, OLLAMA_ENDPOINT};
 
     #[test]
     fn formats_zero_size_as_unknown() {
@@ -130,5 +135,20 @@ mod tests {
 
         assert_eq!(model.name, "qwen2.5-coder:7b");
         assert_eq!(model.size_label, "4.0 GB");
+    }
+
+    #[test]
+    fn reachable_overview_without_models_uses_repair_friendly_diagnostic() {
+        let overview = OllamaOverview {
+            reachable: true,
+            endpoint: OLLAMA_ENDPOINT.to_string(),
+            selected_model: String::new(),
+            diagnostic: "No local Ollama models were found. Pull a model before starting chat.".to_string(),
+            models: Vec::new(),
+        };
+
+        assert!(overview.reachable);
+        assert!(overview.selected_model.is_empty());
+        assert!(overview.diagnostic.contains("No local Ollama models"));
     }
 }

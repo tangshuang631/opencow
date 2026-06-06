@@ -23,12 +23,6 @@ type WorkbenchProps = {
   onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
-  onDemoDangerousAction: () => void;
-  onDemoPermissionRequest: () => void;
-  onDemoSearch: () => void;
-  onDemoTaskFailure: () => void;
-  onDemoToolResult: () => void;
-  onDemoToolError: () => void;
   onSubmitTask: (message: string) => void;
 };
 
@@ -51,24 +45,11 @@ export function Workbench({
   onToggleSearch,
   onSaveRemoteApiConfig,
   onSaveSearchProviderConfig,
-  onDemoDangerousAction,
-  onDemoPermissionRequest,
-  onDemoSearch,
-  onDemoTaskFailure,
-  onDemoToolResult,
-  onDemoToolError,
   onSubmitTask
 }: WorkbenchProps) {
   return (
     <main className="workbench" aria-label="opencow 工作台">
-      <Sidebar
-        onDemoDangerousAction={onDemoDangerousAction}
-        onDemoPermissionRequest={onDemoPermissionRequest}
-        onDemoSearch={onDemoSearch}
-        onDemoTaskFailure={onDemoTaskFailure}
-        onDemoToolResult={onDemoToolResult}
-        onDemoToolError={onDemoToolError}
-      />
+      <Sidebar />
       <section className="workbench-main">
         <MainConversation state={state} onPreviewRollback={onPreviewRollback} />
         <Composer state={state} onSubmitTask={onSubmitTask} onCancelActiveTask={onCancelActiveTask} />

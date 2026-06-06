@@ -1,5 +1,6 @@
 export type {
   ConversationEntry,
+  LocalTaskExecutionKind,
   LocalTaskItem,
   PendingConfirmation,
   PendingPermissionModeChange,

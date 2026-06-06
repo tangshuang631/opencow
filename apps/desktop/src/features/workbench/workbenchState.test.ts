@@ -234,6 +234,30 @@ describe("createInitialWorkbenchState", () => {
     });
   });
 
+  it("preserves queued execution metadata on a pending permission mode change", () => {
+    const state = createInitialWorkbenchState();
+
+    const updated = requestPermissionModeChangeState(state, {
+      targetMode: "workspace-write",
+      reason: "Need workspace write access before creating temp-output.",
+      riskSummary: "Allow write actions inside the approved workspace only.",
+      queuedExecutionKind: "workspace-write-create-temp-output",
+      queuedExecutionTitle: "Create temp-output directory",
+      queuedExecutionAuditSummary: "Local assistant planned a workspace-write temp-output directory task.",
+      queuedExecutionAuditDetail: "Workspace-write shell command task: create temp-output directory",
+      queuedMessage: "create a temp-output folder for this workspace"
+    });
+
+    expect(updated.permission.pendingModeChange).toMatchObject({
+      targetMode: "workspace-write",
+      queuedExecutionKind: "workspace-write-create-temp-output",
+      queuedExecutionTitle: "Create temp-output directory",
+      queuedExecutionAuditSummary: "Local assistant planned a workspace-write temp-output directory task.",
+      queuedExecutionAuditDetail: "Workspace-write shell command task: create temp-output directory",
+      queuedMessage: "create a temp-output folder for this workspace"
+    });
+  });
+
   it("clears the active error when a permission upgrade request begins", () => {
     const state = createOllamaLoadErrorState(createInitialWorkbenchState(), "connect ECONNREFUSED 127.0.0.1:11434");
 
