@@ -81,7 +81,8 @@ export function createHighRiskConfirmationState(
         timestamp: "待用户确认",
         source: "permission_confirmation"
       }
-    }
+    },
+    error: null
   };
 }
 
@@ -358,7 +359,8 @@ export function requestPermissionModeChangeState(
         timestamp: "待用户确认",
         source: "permission_mode_change"
       }
-    }
+    },
+    error: null
   };
 }
 

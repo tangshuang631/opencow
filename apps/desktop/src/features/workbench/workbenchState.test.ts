@@ -85,6 +85,21 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation");
   });
 
+  it("clears the active error when a high-risk confirmation flow begins", () => {
+    const state = createOllamaLoadErrorState(createInitialWorkbenchState(), "connect ECONNREFUSED 127.0.0.1:11434");
+
+    const updated = createHighRiskConfirmationState(state, {
+      title: "Confirm temp cleanup",
+      summary: "Remove temp-output inside workspace.",
+      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      impact: "Delete 12 files after snapshot is recorded.",
+      requiredMode: "controlled-full"
+    });
+
+    expect(updated.confirmation.pending?.title).toBe("Confirm temp cleanup");
+    expect(updated.error).toBeNull();
+  });
+
   it("records an approved high-risk confirmation and clears the pending request", () => {
     const pending = createHighRiskConfirmationState(createInitialWorkbenchState(), {
       title: "确认删除临时目录",
@@ -217,6 +232,19 @@ describe("createInitialWorkbenchState", () => {
       title: "等待权限升级",
       actionLabel: "预览回退到 启动基线"
     });
+  });
+
+  it("clears the active error when a permission upgrade request begins", () => {
+    const state = createOllamaLoadErrorState(createInitialWorkbenchState(), "connect ECONNREFUSED 127.0.0.1:11434");
+
+    const updated = requestPermissionModeChangeState(state, {
+      targetMode: "workspace-write",
+      reason: "need workspace write access",
+      riskSummary: "allow edits inside approved workspace only"
+    });
+
+    expect(updated.permission.pendingModeChange?.targetMode).toBe("workspace-write");
+    expect(updated.error).toBeNull();
   });
 
   it("applies an approved permission mode change", () => {
