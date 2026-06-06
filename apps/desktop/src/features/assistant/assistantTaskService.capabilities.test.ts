@@ -1,0 +1,224 @@
+import { describe, expect, it, vi } from "vitest";
+import { executeAssistantTask, planAssistantTask } from "./assistantTaskService";
+
+const {
+  loadOpenClawCapabilityOverviewMock,
+  scanLocalMcpPluginsMock,
+  inspectLocalMcpPluginMock,
+  previewLocalMcpPluginStartMock,
+  startLocalMcpPluginMock
+} = vi.hoisted(() => ({
+  loadOpenClawCapabilityOverviewMock: vi.fn(),
+  scanLocalMcpPluginsMock: vi.fn(),
+  inspectLocalMcpPluginMock: vi.fn(),
+  previewLocalMcpPluginStartMock: vi.fn(),
+  startLocalMcpPluginMock: vi.fn()
+}));
+
+vi.mock("./localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("./localAssistantService")>("./localAssistantService");
+
+  return {
+    ...actual,
+    loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
+    scanLocalMcpPlugins: scanLocalMcpPluginsMock,
+    inspectLocalMcpPlugin: inspectLocalMcpPluginMock,
+    previewLocalMcpPluginStart: previewLocalMcpPluginStartMock,
+    startLocalMcpPlugin: startLocalMcpPluginMock
+  };
+});
+
+describe("assistantTaskService capability catalogs", () => {
+  it("plans a capability catalog task for local RAG readiness requests", () => {
+    const plan = planAssistantTask("inspect the local rag capability wiring", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "capability-rag-overview",
+      title: "OpenClaw RAG capability overview"
+    });
+  });
+
+  it("executes a capability catalog overview through the desktop service", async () => {
+    loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
+      capability_id: "rag",
+      title: "OpenClaw RAG capability overview",
+      status: "ready-foundation",
+      required_package_count: 3,
+      available_package_count: 3,
+      available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/model-catalog-core"],
+      missing_packages: [],
+      summary: "OpenClaw RAG foundation check found 3 of 3 required packages."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "capability-rag-overview",
+      title: "OpenClaw RAG capability overview",
+      summary: "Inspect local OpenClaw RAG package foundations before deeper execution wiring.",
+      auditSummary: "Local assistant planned an OpenClaw RAG capability overview.",
+      auditDetail: "Readonly capability catalog task: rag"
+    } as const);
+
+    expect(result.resultTitle).toBe("OpenClaw RAG capability overview");
+    expect(result.resultSummary).toContain("3 of 3 required packages");
+    expect(result.resultSummary).toContain("@openclaw/llm-runtime");
+    expect(result.resultSummary).toContain("ready-foundation");
+  });
+
+  it("plans and executes a readonly local MCP plugin scan through the desktop service", async () => {
+    const plan = planAssistantTask("scan local mcp plugins and list available model context protocol entries", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "mcp-local-plugin-scan",
+      title: "Local MCP plugin scan"
+    });
+
+    scanLocalMcpPluginsMock.mockResolvedValueOnce({
+      summary: "Local MCP plugin scan found 2 plugin entries across 2 scanned roots.",
+      total_count: 2,
+      scanned_root_count: 2,
+      items: [
+        {
+          id: "browser",
+          path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "startup",
+          tool_count: 1,
+          skill_count: 1
+        },
+        {
+          id: "codex-supervisor",
+          path: "vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "manual",
+          tool_count: 5,
+          skill_count: 0
+        }
+      ]
+    });
+
+    const result = await executeAssistantTask({
+      kind: "mcp-local-plugin-scan",
+      title: "Local MCP plugin scan",
+      summary: "Scan approved local OpenClaw plugin manifests and summarize MCP-adjacent plugin entries.",
+      auditSummary: "Local assistant planned a readonly local MCP plugin scan.",
+      auditDetail: "Readonly local MCP plugin scan task"
+    } as const);
+
+    expect(result.resultTitle).toBe("Local MCP plugin scan");
+    expect(result.resultSummary).toContain("2 plugin entries");
+    expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("codex-supervisor");
+  });
+
+  it("plans and executes a readonly local MCP plugin detail lookup through the desktop service", async () => {
+    const plan = planAssistantTask("show details for the browser mcp plugin", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "mcp-local-plugin-inspect",
+      title: "Local MCP plugin detail"
+    });
+
+    inspectLocalMcpPluginMock.mockResolvedValueOnce({
+      query: "show details for the browser mcp plugin",
+      summary: "Local MCP plugin detail lookup found 1 matching plugin across 2 scanned roots.",
+      match_count: 1,
+      scanned_root_count: 2,
+      items: [
+        {
+          id: "browser",
+          path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "startup",
+          tool_count: 1,
+          skill_count: 1,
+          description: "Browser automation plugin entry.",
+          tool_names: ["browser"],
+          skill_paths: ["./skills"]
+        }
+      ]
+    });
+
+    const result = await executeAssistantTask({
+      kind: "mcp-local-plugin-inspect",
+      title: "Local MCP plugin detail",
+      summary: "show details for the browser mcp plugin",
+      auditSummary: "Local assistant planned a readonly local MCP plugin detail lookup.",
+      auditDetail: "Readonly local MCP plugin detail task"
+    } as const);
+
+    expect(result.resultTitle).toBe("Local MCP plugin detail");
+    expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("startup");
+    expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("./skills");
+  });
+
+  it("plans and executes a readonly local MCP plugin startup preview through the desktop service", async () => {
+    const plan = planAssistantTask("preview starting the browser mcp plugin locally", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "mcp-local-plugin-start-preview",
+      title: "Local MCP plugin start preview"
+    });
+
+    previewLocalMcpPluginStartMock.mockResolvedValueOnce({
+      query: "preview starting the browser mcp plugin locally",
+      summary: "Local MCP plugin start preview found 1 matching plugin across 2 scanned roots.",
+      match_count: 1,
+      scanned_root_count: 2,
+      items: [
+        {
+          id: "browser",
+          path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "startup",
+          startup_allowed: true,
+          command_preview: "npx openclaw-extension-browser",
+          working_directory: "vendor/openclaw/extensions/browser",
+          risk_summary: "Preview only. Actual MCP plugin launch is not enabled in this slice.",
+          requires_config: false,
+          config_hint: "No required config schema fields were detected."
+        }
+      ]
+    });
+
+    const result = await executeAssistantTask({
+      kind: "mcp-local-plugin-start-preview",
+      title: "Local MCP plugin start preview",
+      summary: "preview starting the browser mcp plugin locally",
+      auditSummary: "Local assistant planned a readonly local MCP plugin start preview.",
+      auditDetail: "Readonly local MCP plugin start preview task"
+    } as const);
+
+    expect(result.resultTitle).toBe("Local MCP plugin start preview");
+    expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("npx openclaw-extension-browser");
+    expect(result.resultSummary).toContain("startup");
+    expect(result.resultSummary).toContain("Preview only");
+    expect(result.resultSummary).toContain("No required config schema fields were detected");
+  });
+
+  it("executes a real local MCP plugin start task through the desktop service", async () => {
+    startLocalMcpPluginMock.mockResolvedValueOnce({
+      plugin_id: "browser",
+      command_label: "npx openclaw-extension-browser",
+      working_directory: "vendor/openclaw/extensions/browser",
+      stdout_preview: "browser plugin start simulated",
+      line_count: 1,
+      summary: "Local MCP plugin start executed through the controlled desktop runner."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "mcp-local-plugin-start",
+      title: "Local MCP plugin start",
+      summary: "start the browser mcp plugin locally",
+      auditSummary: "Local assistant planned a controlled local MCP plugin start task.",
+      auditDetail: "Controlled local MCP plugin start task"
+    } as const);
+
+    expect(result.resultTitle).toBe("Local MCP plugin start");
+    expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("npx openclaw-extension-browser");
+    expect(result.resultSummary).toContain("browser plugin start simulated");
+  });
+});

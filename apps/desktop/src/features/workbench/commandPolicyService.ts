@@ -1,0 +1,78 @@
+import { createPermissionEscalationRequest } from "@opencow/permission-engine";
+import { guardExecutionPlan } from "@opencow/safety-engine";
+import { planControlledCommand } from "@opencow/shell-runtime";
+import type { WorkbenchState } from "./workbenchState";
+
+const desktopWorkspaceRoot = "E:\\2026\\opencow";
+
+export type DangerousCommandPolicyResult =
+  | {
+      kind: "permission-request";
+      targetMode: "controlled-full";
+      reason: string;
+      riskSummary: string;
+    }
+  | {
+      kind: "confirmation";
+      title: string;
+      summary: string;
+      commandPreview: string;
+      impact: string;
+      requiredMode: "controlled-full";
+      safetySummary: string;
+    }
+  | {
+      kind: "blocked";
+      summary: string;
+      detail: string;
+      actionLabel: string;
+      source: string;
+    };
+
+export function evaluateDangerousCommandPolicy(state: WorkbenchState): DangerousCommandPolicyResult {
+  const command = "Remove-Item .\\temp-output -Recurse";
+
+  const plan = planControlledCommand({
+    command,
+    cwd: desktopWorkspaceRoot,
+    allowedRoots: [desktopWorkspaceRoot],
+    permissionMode: state.permission.mode,
+    timeoutMs: 20_000
+  });
+
+  const escalation = createPermissionEscalationRequest(plan);
+
+  if (escalation) {
+    return {
+      kind: "permission-request",
+      targetMode: "controlled-full",
+      reason: escalation.reason,
+      riskSummary: escalation.riskSummary
+    };
+  }
+
+  if (plan.status === "needs-confirmation") {
+    const safety = guardExecutionPlan(plan, { snapshotAvailable: true });
+
+    return {
+      kind: "confirmation",
+      title: "确认删除临时目录",
+      summary: "模型计划删除工作区内的 temp-output 目录。",
+      commandPreview: command,
+      impact: "将删除 12 个文件，写入回退快照后才可执行。",
+      requiredMode: "controlled-full",
+      safetySummary:
+        safety.status === "requires-snapshot"
+          ? "执行前必须创建快照并展示预览。"
+          : "当前无需额外快照。"
+    };
+  }
+
+  return {
+    kind: "blocked",
+    summary: plan.auditEvent.summary,
+    detail: plan.auditEvent.detail,
+    actionLabel: "检查工作目录与权限范围",
+    source: plan.auditEvent.source
+  };
+}
