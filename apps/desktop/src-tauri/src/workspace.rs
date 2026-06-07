@@ -112,6 +112,12 @@ struct WorkspaceProjectRuntimeRecord {
     pid: u32,
 }
 
+#[derive(Serialize, Deserialize)]
+struct WorkspaceProjectRuntimeRegistry {
+    version: usize,
+    runs: Vec<WorkspaceProjectRuntimeRecord>,
+}
+
 #[derive(Serialize)]
 pub struct OpenClawCapabilityOverview {
     capability_id: String,
@@ -1981,6 +1987,13 @@ fn workspace_project_runtime_registry_path(root: &Path) -> PathBuf {
     root.join(".opencow").join("runtime").join("workspace-project-runs.json")
 }
 
+fn default_workspace_project_runtime_registry() -> WorkspaceProjectRuntimeRegistry {
+    WorkspaceProjectRuntimeRegistry {
+        version: 1,
+        runs: Vec::new(),
+    }
+}
+
 fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspaceProjectRuntimeRecord>, String> {
     let registry_path = workspace_project_runtime_registry_path(root);
 
@@ -1991,13 +2004,19 @@ fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspacePr
     let raw = fs::read_to_string(&registry_path)
         .map_err(|error| format!("failed to read {}: {error}", registry_path.display()))?;
 
-    serde_json::from_str::<Vec<WorkspaceProjectRuntimeRecord>>(&raw)
-        .map_err(|error| format!("failed to parse {}: {error}", registry_path.display()))
+    match serde_json::from_str::<WorkspaceProjectRuntimeRegistry>(&raw) {
+        Ok(parsed) => Ok(parsed.runs),
+        Err(_) => {
+            let repaired = default_workspace_project_runtime_registry();
+            write_workspace_project_runtime_registry(root, &repaired)?;
+            Ok(repaired.runs)
+        }
+    }
 }
 
-fn write_workspace_project_runtime_records(
+fn write_workspace_project_runtime_registry(
     root: &Path,
-    records: &[WorkspaceProjectRuntimeRecord],
+    registry: &WorkspaceProjectRuntimeRegistry,
 ) -> Result<(), String> {
     let registry_path = workspace_project_runtime_registry_path(root);
     let parent = registry_path
@@ -2005,7 +2024,7 @@ fn write_workspace_project_runtime_records(
         .ok_or_else(|| format!("failed to resolve runtime registry parent for {}", registry_path.display()))?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
-    let serialized = serde_json::to_string_pretty(records)
+    let serialized = serde_json::to_string_pretty(registry)
         .map_err(|error| format!("failed to serialize workspace project runtime registry: {error}"))?;
     fs::write(&registry_path, format!("{serialized}\n"))
         .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))
@@ -2018,7 +2037,13 @@ fn upsert_workspace_project_runtime_record(
     let mut records = read_workspace_project_runtime_records(root)?;
     records.retain(|entry| entry.project_path != record.project_path);
     records.push(record);
-    write_workspace_project_runtime_records(root, &records)
+    write_workspace_project_runtime_registry(
+        root,
+        &WorkspaceProjectRuntimeRegistry {
+            version: 1,
+            runs: records,
+        },
+    )
 }
 
 fn find_workspace_project_runtime_record(
@@ -2032,7 +2057,13 @@ fn find_workspace_project_runtime_record(
 fn remove_workspace_project_runtime_record(root: &Path, project_path: &str) -> Result<(), String> {
     let mut records = read_workspace_project_runtime_records(root)?;
     records.retain(|entry| entry.project_path != project_path);
-    write_workspace_project_runtime_records(root, &records)
+    write_workspace_project_runtime_registry(
+        root,
+        &WorkspaceProjectRuntimeRegistry {
+            version: 1,
+            runs: records,
+        },
+    )
 }
 
 fn sanitize_skill_directory_name(skill_name: &str) -> String {
@@ -3447,6 +3478,68 @@ mod tests {
         assert_eq!(status_result.pid, Some(run_result.pid));
         assert_eq!(status_result.status, "running".to_string());
         assert!(status_result.stdout_preview.contains("running:"));
+    }
+
+    #[test]
+    fn workspace_project_status_recovers_runtime_registry_from_invalid_json() {
+        let _guard = workspace_test_lock().lock().unwrap();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-repair-{unique}"));
+        let app_dir = workspace_root.join("apps/desktop");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+        let runtime_registry_path = workspace_root
+            .join(".opencow")
+            .join("runtime")
+            .join("workspace-project-runs.json");
+
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::create_dir_all(runtime_registry_path.parent().unwrap()).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            app_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"desktop\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"node -e \\\"console.log('desktop-started')\\\"\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(&runtime_registry_path, "{ invalid json").unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+
+        let repaired = fs::read_to_string(&runtime_registry_path).unwrap();
+        let parsed: Value = serde_json::from_str(&repaired).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(status_result.project_name, "desktop".to_string());
+        assert_eq!(status_result.project_path, "apps/desktop".to_string());
+        assert_eq!(status_result.status, "stopped".to_string());
+        assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
+        assert!(parsed.get("runs").and_then(Value::as_array).is_some());
     }
 
     #[test]
