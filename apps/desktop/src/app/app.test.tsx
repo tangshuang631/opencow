@@ -7,6 +7,7 @@ const {
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
   searchLocalKnowledgeMock,
+  inspectLocalSkillMock,
   enableLocalSkillMock,
   installLocalSkillMock,
   listEnabledLocalSkillsMock,
@@ -19,6 +20,7 @@ const {
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
   searchLocalKnowledgeMock: vi.fn(),
+  inspectLocalSkillMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
     searchLocalKnowledge: searchLocalKnowledgeMock,
+    inspectLocalSkill: inspectLocalSkillMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
@@ -445,6 +448,47 @@ describe("App", () => {
     });
   });
 
+  it("shows the final local skill detail result for an explicit readonly skill inspection request", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    inspectLocalSkillMock.mockResolvedValueOnce({
+      query: "show details for the coding-agent skill",
+      summary: "Local skill detail lookup found 1 matching skill across 2 scanned roots.",
+      match_count: 1,
+      scanned_root_count: 2,
+      items: [
+        {
+          name: "coding-agent",
+          path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+          source: "vendor-openclaw-skill",
+          description: "OpenClaw coding agent workflow",
+          content_preview: "Use this skill when implementing focused coding tasks with tight repo context.",
+          enabled: true
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show details for the coding-agent skill" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Local Skill detail|coding-agent|OpenClaw coding agent workflow|Enabled: yes/i).length
+      ).toBeGreaterThan(0);
+    });
+  });
+
   it("shows the final skill-assisted readonly RAG result for an explicit enabled docs skill request", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -503,6 +547,51 @@ describe("App", () => {
       expect(
         screen.getAllByText(/Skill-assisted local RAG document search|docs-helper|enabled-skills\.json|04-permission-safety-shell\.md/i)
           .length
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows the final readonly local RAG result for an explicit local knowledge request", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: "search local knowledge for shell permission rules",
+      summary: "Local knowledge search found 2 matching passages across 7 indexed documents.",
+      match_count: 2,
+      indexed_document_count: 7,
+      items: [
+        {
+          path: "docs/v1.0/04-permission-safety-shell.md",
+          title: "04-permission-safety-shell.md",
+          snippet: "Shell execution must include permission checks, confirmation, audit logs, timeout, and working-directory limits.",
+          score: 42
+        },
+        {
+          path: "OPENCOW_CORE_RULES.md",
+          title: "OPENCOW_CORE_RULES.md",
+          snippet: "Permissions, shell, safety, logs, and rollback are core safety paths.",
+          score: 27
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search local knowledge for shell permission rules" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Local RAG document search|04-permission-safety-shell\.md|OPENCOW_CORE_RULES\.md/i).length
       ).toBeGreaterThan(0);
     });
   });
