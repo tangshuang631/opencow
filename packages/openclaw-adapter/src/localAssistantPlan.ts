@@ -95,6 +95,55 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
+    /\bnpc\b/i.test(message)
+    && /collaboration/i.test(message)
+    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseActionPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "npc-local-project-showcase-preview",
+      title: "NPC local project showcase preview",
+      summary: "Preview a readonly NPC-assisted local project showcase workflow before any run, screenshot, website generation, repository write, or git push action is approved.",
+      auditSummary: "Local assistant planned a readonly NPC local project showcase preview.",
+      auditDetail: `Readonly NPC local project showcase preview task: ${message}`
+    };
+  }
+
+  if (
+    /\bnpc\b/i.test(message)
+    && /collaboration/i.test(message)
+    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
+    && (/\brun\b/i.test(message) || /\bstart\b/i.test(message) || /\blaunch\b/i.test(message))
+    && !npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason: "Workspace write permission is required before NPC collaboration can launch the matched local project.",
+        riskSummary:
+          "This task launches only the matched local workspace project through the existing project-run path, keeps execution inside the approved workspace, and must remain audit-visible.",
+        auditSummary: "Local assistant task requires workspace-write permission for an NPC local project run.",
+        auditDetail: `NPC local project run task is waiting for permission: ${message}`,
+        queuedExecutionKind: "npc-local-project-run",
+        queuedExecutionTitle: "NPC local project run",
+        queuedExecutionAuditSummary: "Local assistant planned an NPC local project run.",
+        queuedExecutionAuditDetail: `NPC local project run task: ${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "npc-local-project-run",
+      title: "NPC local project run",
+      summary: message,
+      auditSummary: "Local assistant planned an NPC local project run.",
+      auditDetail: `NPC local project run task: ${message}`
+    };
+  }
+
+  if (
     workspaceOverviewPatterns.some((pattern) => pattern.test(message))
     && workspaceOverviewIntentPatterns.some((pattern) => pattern.test(message))
     && !configOverviewPatterns.some((pattern) => pattern.test(message))
@@ -217,22 +266,6 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Preview a readonly local docs-to-shell handoff by combining local rules retrieval and the next shell safety step.",
       auditSummary: "Local assistant planned a readonly local RAG shell handoff preview.",
       auditDetail: `Readonly local RAG shell handoff preview task: ${message}`
-    };
-  }
-
-  if (
-    /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
-    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
-    && npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
-    && npcShowcaseActionPatterns.some((pattern) => pattern.test(message))
-  ) {
-    return {
-      kind: "npc-local-project-showcase-preview",
-      title: "NPC local project showcase preview",
-      summary: "Preview a readonly NPC-assisted local project showcase workflow before any run, screenshot, website generation, repository write, or git push action is approved.",
-      auditSummary: "Local assistant planned a readonly NPC local project showcase preview.",
-      auditDetail: `Readonly NPC local project showcase preview task: ${message}`
     };
   }
 

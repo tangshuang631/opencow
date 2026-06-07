@@ -14,4 +14,30 @@ describe("local assistant task planner npc showcase workflow", () => {
       title: "NPC local project showcase preview"
     });
   });
+
+  it("requests workspace-write before running a matched npc showcase project", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to run the matched cattle project now",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-local-project-run",
+      queuedExecutionTitle: "NPC local project run"
+    });
+  });
+
+  it("plans the npc local project run after workspace-write is approved", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to run the matched cattle project now",
+      permissionMode: "workspace-write"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-run",
+      title: "NPC local project run"
+    });
+  });
 });

@@ -5,12 +5,14 @@ const {
   loadOpenClawCapabilityOverviewMock,
   listEnabledLocalSkillsMock,
   loadWorkspaceOverviewMock,
-  loadWorkspaceProjectRunPreviewMock
+  loadWorkspaceProjectRunPreviewMock,
+  runWorkspaceProjectMock
 } = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
   loadWorkspaceOverviewMock: vi.fn(),
-  loadWorkspaceProjectRunPreviewMock: vi.fn()
+  loadWorkspaceProjectRunPreviewMock: vi.fn(),
+  runWorkspaceProjectMock: vi.fn()
 }));
 
 vi.mock("./localAssistantService", async () => {
@@ -21,7 +23,8 @@ vi.mock("./localAssistantService", async () => {
     loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
     loadWorkspaceOverview: loadWorkspaceOverviewMock,
-    loadWorkspaceProjectRunPreview: loadWorkspaceProjectRunPreviewMock
+    loadWorkspaceProjectRunPreview: loadWorkspaceProjectRunPreviewMock,
+    runWorkspaceProject: runWorkspaceProjectMock
   };
 });
 
@@ -115,5 +118,44 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("npm run dev");
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
     expect(result.resultSummary).toContain("workspace-write");
+  });
+
+  it("requests workspace-write before running the matched npc showcase project", () => {
+    const plan = planAssistantTask("use npc collaboration to run the matched cattle project now", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-local-project-run"
+    });
+  });
+
+  it("runs the matched local project through the existing desktop lifecycle with npc-specific identity", async () => {
+    runWorkspaceProjectMock.mockResolvedValueOnce({
+      project_name: "cattle",
+      project_path: "projects/cattle",
+      command_label: "npm run dev",
+      working_directory: "projects/cattle",
+      expected_url: "http://127.0.0.1:3000",
+      pid: 5252,
+      stdout_preview: "cattle dev server started",
+      summary: "Workspace project run started successfully and returned a live local process handle."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "npc-local-project-run",
+      title: "NPC local project run",
+      summary: "use npc collaboration to run the matched cattle project now",
+      auditSummary: "Local assistant planned an NPC local project run.",
+      auditDetail: "NPC local project run task."
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC local project run");
+    expect(result.resultSummary).toContain("cattle");
+    expect(result.resultSummary).toContain("projects/cattle");
+    expect(result.resultSummary).toContain("npm run dev");
+    expect(result.resultSummary).toContain("http://127.0.0.1:3000");
+    expect(result.resultSummary).toContain("5252");
+    expect(result.resultSummary).toContain("first executed stage inside the NPC showcase chain");
   });
 });

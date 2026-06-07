@@ -98,6 +98,7 @@ export type LocalTaskExecutionKind =
   | "skills-local-enabled-rag-shell-remove-temp-output"
   | "npc-local-collaboration-preview"
   | "npc-local-project-showcase-preview"
+  | "npc-local-project-run"
   | "npc-local-shell-plan-preview"
   | "capability-npc-overview"
   | "capability-mcp-overview"

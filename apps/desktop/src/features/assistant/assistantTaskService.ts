@@ -249,6 +249,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "npc-local-project-run";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "npc-local-shell-plan-preview";
       title: string;
       summary: string;
@@ -560,6 +567,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
 
   if (plan.kind === "npc-local-project-showcase-preview") {
     return executeNpcProjectShowcasePreviewPlan(plan.title, plan.summary);
+  }
+
+  if (plan.kind === "npc-local-project-run") {
+    return executeNpcLocalProjectRunPlan(plan.title, plan.summary);
   }
 
   if (plan.kind === "npc-local-shell-plan-preview") {
@@ -1236,6 +1247,22 @@ async function executeNpcProjectShowcasePreviewPlan(
       `Planned stages for ${likelyProject}: project inspection -> run preview -> permission-backed local launch -> ` +
       `permission-backed screenshot capture -> permission-backed showcase site generation -> changed-files preview -> separately confirmable git push. ` +
       `This preview stays readonly and keeps every privileged step explicit before execution.`
+  };
+}
+
+async function executeNpcLocalProjectRunPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await runWorkspaceProject(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
+      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
+      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. ` +
+      `Preview: ${result.stdout_preview}. This is the first executed stage inside the NPC showcase chain.`
   };
 }
 
