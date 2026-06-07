@@ -7,14 +7,16 @@ const {
   loadWorkspaceOverviewMock,
   loadWorkspaceProjectRunPreviewMock,
   runWorkspaceProjectMock,
-  captureNpcLocalProjectScreenshotMock
+  captureNpcLocalProjectScreenshotMock,
+  writeNpcLocalProjectShowcaseSiteMock
 } = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
   loadWorkspaceOverviewMock: vi.fn(),
   loadWorkspaceProjectRunPreviewMock: vi.fn(),
   runWorkspaceProjectMock: vi.fn(),
-  captureNpcLocalProjectScreenshotMock: vi.fn()
+  captureNpcLocalProjectScreenshotMock: vi.fn(),
+  writeNpcLocalProjectShowcaseSiteMock: vi.fn()
 }));
 
 vi.mock("./localAssistantService", async () => {
@@ -27,7 +29,8 @@ vi.mock("./localAssistantService", async () => {
     loadWorkspaceOverview: loadWorkspaceOverviewMock,
     loadWorkspaceProjectRunPreview: loadWorkspaceProjectRunPreviewMock,
     runWorkspaceProject: runWorkspaceProjectMock,
-    captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock
+    captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock,
+    writeNpcLocalProjectShowcaseSite: writeNpcLocalProjectShowcaseSiteMock
   };
 });
 
@@ -200,5 +203,46 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase");
     expect(result.resultSummary).toContain("screenshot stage inside the NPC showcase chain");
+  });
+
+  it("requests workspace-write before generating a matched npc showcase site", () => {
+    const plan = planAssistantTask(
+      "use npc collaboration to generate the showcase site for the matched cattle project now",
+      "readonly"
+    );
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-local-project-showcase-site-write"
+    });
+  });
+
+  it("writes the matched local project showcase site with npc-specific identity", async () => {
+    writeNpcLocalProjectShowcaseSiteMock.mockResolvedValueOnce({
+      project_name: "cattle",
+      project_path: "apps/cattle",
+      site_root: ".opencow/artifacts/npc-showcase/sites/cattle",
+      entry_file: ".opencow/artifacts/npc-showcase/sites/cattle/index.html",
+      changed_paths: [".opencow/artifacts/npc-showcase/sites/cattle/index.html"],
+      source_screenshot_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
+      summary: "NPC local project showcase-site write completed successfully and returned a changed-file summary."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "npc-local-project-showcase-site-write",
+      title: "NPC local project showcase-site write",
+      summary: "use npc collaboration to generate the showcase site for the matched cattle project now",
+      auditSummary: "Local assistant planned NPC local project showcase-site write.",
+      auditDetail: "NPC local project showcase-site write task."
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC local project showcase-site write");
+    expect(result.resultSummary).toContain("cattle");
+    expect(result.resultSummary).toContain("apps/cattle");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/sites/cattle");
+    expect(result.resultSummary).toContain("index.html");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
+    expect(result.resultSummary).toContain("showcase-site write stage inside the NPC showcase chain");
   });
 });
