@@ -6,6 +6,7 @@ const {
   loadOllamaOverviewMock,
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
+  searchLocalKnowledgeMock,
   enableLocalSkillMock,
   installLocalSkillMock,
   listEnabledLocalSkillsMock,
@@ -17,6 +18,7 @@ const {
   loadOllamaOverviewMock: vi.fn(),
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
+  searchLocalKnowledgeMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     ...actual,
     loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
+    searchLocalKnowledge: searchLocalKnowledgeMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
@@ -438,6 +441,68 @@ describe("App", () => {
     await waitFor(() => {
       expect(
         screen.getAllByText(/Match enabled local skills|shell-automation|enabled-skills\.json/i).length
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows the final skill-assisted readonly RAG result for an explicit enabled docs skill request", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "use the enabled docs skill to search local rules for shell permission guidance",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "docs-helper",
+          path: "skills/docs-helper/SKILL.md",
+          source: "workspace-skill",
+          description: "Help search local docs, rules, and knowledge files.",
+          content_preview: "Use this skill when the task needs local document lookup and rule retrieval."
+        }
+      ]
+    });
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: "use the enabled docs skill to search local rules for shell permission guidance",
+      summary: "Local knowledge search returned 2 matching passages across 7 indexed documents.",
+      match_count: 2,
+      indexed_document_count: 7,
+      items: [
+        {
+          path: "docs/v1.0/04-permission-safety-shell.md",
+          title: "04-permission-safety-shell.md",
+          snippet: "Shell execution must include permission checks and confirmation.",
+          score: 42
+        },
+        {
+          path: "OPENCOW_CORE_RULES.md",
+          title: "OPENCOW_CORE_RULES.md",
+          snippet: "Permissions, shell, safety, logs, and rollback are core safety paths.",
+          score: 27
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "use the enabled docs skill to search local rules for shell permission guidance" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Skill-assisted local RAG document search|docs-helper|enabled-skills\.json|04-permission-safety-shell\.md/i)
+          .length
       ).toBeGreaterThan(0);
     });
   });
