@@ -241,6 +241,17 @@ export type WorkspaceProjectRunResult = {
   summary: string;
 };
 
+export type WorkspaceProjectStopResult = {
+  project_name: string;
+  project_path: string;
+  command_label: string;
+  working_directory: string;
+  pid: number;
+  status: "stopped";
+  stdout_preview: string;
+  summary: string;
+};
+
 export type ReadonlyShellCommandResult = {
   command_id: ReadonlyShellCommandId;
   command_label: string;
@@ -469,6 +480,16 @@ export async function runWorkspaceProject(query: string): Promise<WorkspaceProje
   });
 }
 
+export async function stopWorkspaceProject(query: string): Promise<WorkspaceProjectStopResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewWorkspaceProjectStop(query);
+  }
+
+  return invoke<WorkspaceProjectStopResult>("workspace_project_stop", {
+    query
+  });
+}
+
 export async function runControlledFullShellCommand(
   commandId: ControlledFullShellCommandId
 ): Promise<ControlledFullShellCommandResult> {
@@ -626,6 +647,21 @@ function createBrowserPreviewWorkspaceProjectRun(query: string): WorkspaceProjec
     pid: 4242,
     stdout_preview: "browser preview mode started a mock workspace project process",
     summary: "Browser preview mode returned a mock workspace project run result."
+  };
+}
+
+function createBrowserPreviewWorkspaceProjectStop(query: string): WorkspaceProjectStopResult {
+  const prefersDesktop = /\bdesktop\b/i.test(query) || /\bapp\b/i.test(query);
+
+  return {
+    project_name: prefersDesktop ? "desktop" : "workspace-project",
+    project_path: prefersDesktop ? "apps/desktop" : "apps/example",
+    command_label: "npm run dev",
+    working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
+    pid: 4242,
+    status: "stopped",
+    stdout_preview: "browser preview mode stopped a mock workspace project process",
+    summary: "Browser preview mode returned a mock workspace project stop result."
   };
 }
 

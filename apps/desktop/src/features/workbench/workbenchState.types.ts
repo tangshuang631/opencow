@@ -111,6 +111,7 @@ export type LocalTaskExecutionKind =
   | "readonly-shell-packages-dir"
   | "workspace-write-create-temp-output"
   | "workspace-project-run"
+  | "workspace-project-stop"
   | "controlled-full-remove-temp-output";
 
 export type LocalTaskItem = {

@@ -343,6 +343,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "workspace-project-stop";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "controlled-full-remove-temp-output";
       readonly title: string;
       readonly summary: string;
@@ -402,6 +409,7 @@ export type LocalAssistantTaskPlan =
         | "readonly-shell-packages-dir"
         | "workspace-write-create-temp-output"
         | "workspace-project-run"
+        | "workspace-project-stop"
         | "controlled-full-remove-temp-output"
         | "mcp-local-plugin-start"
       >;

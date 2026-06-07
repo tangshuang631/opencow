@@ -220,6 +220,36 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
+    /\b(stop|terminate|kill)\b/i.test(message)
+    && /\blocal(ly)?\b/i.test(message)
+    && (/\bdesktop\b/i.test(message) || /\bapp\b/i.test(message) || /\bproject\b/i.test(message) || /\brun\b/i.test(message))
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason: "Workspace write permission is required before stopping a matched local project from the desktop assistant.",
+        riskSummary: "This task stops only a previously launched local workspace project through a fixed project-stop path, keeps execution inside the approved workspace, and must remain audit-visible.",
+        auditSummary: "Local assistant task requires workspace-write permission for a matched local project stop.",
+        auditDetail: `Workspace-backed local project stop task is waiting for permission: ${message}`,
+        queuedExecutionKind: "workspace-project-stop",
+        queuedExecutionTitle: "Stop matched local project",
+        queuedExecutionAuditSummary: "Local assistant planned a workspace-backed local project stop.",
+        queuedExecutionAuditDetail: `Workspace-backed local project stop task: ${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "workspace-project-stop",
+      title: "Stop matched local project",
+      summary: message,
+      auditSummary: "Local assistant planned a workspace-backed local project stop.",
+      auditDetail: `Workspace-backed local project stop task: ${message}`
+    };
+  }
+
+  if (
     !/\bnpc\b/i.test(message)
     && /\brun\b/i.test(message)
     && /\blocal(ly)?\b/i.test(message)

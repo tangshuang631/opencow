@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -64,6 +64,18 @@ pub struct WorkspaceProjectRunResult {
 }
 
 #[derive(Serialize)]
+pub struct WorkspaceProjectStopResult {
+    project_name: String,
+    project_path: String,
+    command_label: String,
+    working_directory: String,
+    pid: u32,
+    status: String,
+    stdout_preview: String,
+    summary: String,
+}
+
+#[derive(Serialize)]
 pub struct WorkspaceProjectRunCandidate {
     name: String,
     path: String,
@@ -76,6 +88,15 @@ struct WorkspaceProjectRunCandidateInternal {
     relative_path: String,
     source: String,
     script_names: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct WorkspaceProjectRuntimeRecord {
+    project_name: String,
+    project_path: String,
+    command_label: String,
+    working_directory: String,
+    pid: u32,
 }
 
 #[derive(Serialize)]
@@ -510,10 +531,12 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
         .ok_or_else(|| format!("matched project {} does not expose a supported run script", matched.name))?;
     let expected_url = infer_project_expected_url(Some(matched));
     let working_directory = root.join(&matched.relative_path);
+    let escaped_working_directory = escape_powershell_single_quote(&working_directory.display().to_string());
+    let escaped_command_label = escape_powershell_single_quote(&command_label);
     let powershell_command = format!(
-        "$job = Start-Job -ScriptBlock {{ Set-Location '{0}'; {1} }}; \"job:$($job.Id)\"",
-        escape_powershell_single_quote(&working_directory.display().to_string()),
-        command_label
+        "$process = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', '{0}' -WorkingDirectory '{1}' -WindowStyle Hidden -PassThru; \"pid:$($process.Id)\"",
+        escaped_command_label,
+        escaped_working_directory
     );
     let output = Command::new("powershell")
         .arg("-NoProfile")
@@ -535,19 +558,79 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
     let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
     let stdout_preview = truncate_preview(stdout.trim(), 20);
     let pid = stdout_preview
-        .strip_prefix("job:")
+        .strip_prefix("pid:")
         .and_then(|value| value.trim().parse::<u32>().ok())
         .unwrap_or(0);
+    let working_directory_relative = path_relative_to_root(&root, &working_directory);
+
+    upsert_workspace_project_runtime_record(
+        &root,
+        WorkspaceProjectRuntimeRecord {
+            project_name: matched.name.clone(),
+            project_path: matched.relative_path.clone(),
+            command_label: command_label.clone(),
+            working_directory: working_directory_relative.clone(),
+            pid,
+        },
+    )?;
 
     Ok(WorkspaceProjectRunResult {
         project_name: matched.name.clone(),
         project_path: matched.relative_path.clone(),
         command_label,
-        working_directory: path_relative_to_root(&root, &working_directory),
+        working_directory: working_directory_relative,
         expected_url,
         pid,
         stdout_preview,
         summary: "Workspace project run started successfully and returned a live local process handle.".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResult, String> {
+    let root = resolve_workspace_root()?;
+    let candidates = collect_workspace_project_run_candidates(&root)?;
+    let normalized_query = query.to_lowercase();
+    let matched = select_project_run_candidate(&normalized_query, &candidates)
+        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .ok_or_else(|| "no runnable local workspace project matched the request".to_string())?;
+    let record = find_workspace_project_runtime_record(&root, &matched.relative_path)?
+        .ok_or_else(|| format!("no running workspace project handle was recorded for {}", matched.relative_path))?;
+    let powershell_command = format!(
+        "if (Get-Process -Id {0} -ErrorAction SilentlyContinue) {{ Stop-Process -Id {0} -Force; \"stopped:{0}\" }} else {{ \"stopped:{0}\" }}",
+        record.pid
+    );
+    let output = Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-Command")
+        .arg(powershell_command)
+        .current_dir(&root)
+        .output()
+        .map_err(|error| format!("failed to execute workspace project stop command: {error}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(format!(
+            "workspace project stop failed with status {}: {}",
+            output.status,
+            stderr
+        ));
+    }
+
+    remove_workspace_project_runtime_record(&root, &matched.relative_path)?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
+    let stdout_preview = truncate_preview(stdout.trim(), 20);
+
+    Ok(WorkspaceProjectStopResult {
+        project_name: record.project_name,
+        project_path: record.project_path,
+        command_label: record.command_label,
+        working_directory: record.working_directory,
+        pid: record.pid,
+        status: "stopped".to_string(),
+        stdout_preview,
+        summary: "Workspace project stop completed successfully and released the local process handle.".to_string(),
     })
 }
 
@@ -1799,6 +1882,64 @@ fn infer_project_expected_url(candidate: Option<&WorkspaceProjectRunCandidateInt
     None
 }
 
+fn workspace_project_runtime_registry_path(root: &Path) -> PathBuf {
+    root.join(".opencow").join("runtime").join("workspace-project-runs.json")
+}
+
+fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspaceProjectRuntimeRecord>, String> {
+    let registry_path = workspace_project_runtime_registry_path(root);
+
+    if !registry_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let raw = fs::read_to_string(&registry_path)
+        .map_err(|error| format!("failed to read {}: {error}", registry_path.display()))?;
+
+    serde_json::from_str::<Vec<WorkspaceProjectRuntimeRecord>>(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", registry_path.display()))
+}
+
+fn write_workspace_project_runtime_records(
+    root: &Path,
+    records: &[WorkspaceProjectRuntimeRecord],
+) -> Result<(), String> {
+    let registry_path = workspace_project_runtime_registry_path(root);
+    let parent = registry_path
+        .parent()
+        .ok_or_else(|| format!("failed to resolve runtime registry parent for {}", registry_path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let serialized = serde_json::to_string_pretty(records)
+        .map_err(|error| format!("failed to serialize workspace project runtime registry: {error}"))?;
+    fs::write(&registry_path, format!("{serialized}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))
+}
+
+fn upsert_workspace_project_runtime_record(
+    root: &Path,
+    record: WorkspaceProjectRuntimeRecord,
+) -> Result<(), String> {
+    let mut records = read_workspace_project_runtime_records(root)?;
+    records.retain(|entry| entry.project_path != record.project_path);
+    records.push(record);
+    write_workspace_project_runtime_records(root, &records)
+}
+
+fn find_workspace_project_runtime_record(
+    root: &Path,
+    project_path: &str,
+) -> Result<Option<WorkspaceProjectRuntimeRecord>, String> {
+    let records = read_workspace_project_runtime_records(root)?;
+    Ok(records.into_iter().find(|entry| entry.project_path == project_path))
+}
+
+fn remove_workspace_project_runtime_record(root: &Path, project_path: &str) -> Result<(), String> {
+    let mut records = read_workspace_project_runtime_records(root)?;
+    records.retain(|entry| entry.project_path != project_path);
+    write_workspace_project_runtime_records(root, &records)
+}
+
 fn sanitize_skill_directory_name(skill_name: &str) -> String {
     let mut sanitized = String::new();
 
@@ -2494,10 +2635,20 @@ mod tests {
         looks_like_workspace_root, opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name,
         read_enabled_skill_registry, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
         score_snippet, split_knowledge_segments, tokenize_query, truncate_preview, workspace_project_run,
-        workspace_project_run_preview,
+        workspace_project_run_preview, workspace_project_stop, read_workspace_project_runtime_records,
     };
     use serde_json::{Value, json};
-    use std::{env, fs, path::Path, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        env, fs,
+        path::Path,
+        sync::{Mutex, OnceLock},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn workspace_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
 
     #[test]
     fn builds_git_status_readonly_command() {
@@ -2949,6 +3100,7 @@ mod tests {
 
     #[test]
     fn local_skill_install_copies_vendor_skill_into_workspace_skills_directory() {
+        let _guard = workspace_test_lock().lock().unwrap();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-local-skill-install-{unique}"));
@@ -2984,6 +3136,7 @@ mod tests {
 
     #[test]
     fn opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json() {
+        let _guard = workspace_test_lock().lock().unwrap();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-self-repair-enabled-skills-{unique}"));
@@ -3021,6 +3174,7 @@ mod tests {
 
     #[test]
     fn workspace_project_run_preview_matches_app_with_dev_script_and_expected_url() {
+        let _guard = workspace_test_lock().lock().unwrap();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-preview-{unique}"));
@@ -3089,6 +3243,7 @@ mod tests {
 
     #[test]
     fn workspace_project_run_starts_matched_app_and_returns_handle() {
+        let _guard = workspace_test_lock().lock().unwrap();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-{unique}"));
@@ -3138,6 +3293,64 @@ mod tests {
         assert_eq!(result.working_directory, "apps/desktop".to_string());
         assert_eq!(result.expected_url, Some("http://127.0.0.1:1420".to_string()));
         assert!(result.pid > 0);
-        assert!(result.stdout_preview.contains("job:"));
+        assert!(result.stdout_preview.contains("pid:"));
+    }
+
+    #[test]
+    fn workspace_project_stop_stops_matched_app_and_clears_runtime_handle() {
+        let _guard = workspace_test_lock().lock().unwrap();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-stop-{unique}"));
+        let app_dir = workspace_root.join("apps/desktop");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            app_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"desktop\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"node -e \\\"setTimeout(() => {}, 60000)\\\"\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let run_result = workspace_project_run("run the desktop app locally".to_string()).unwrap();
+        let stop_result = workspace_project_stop("stop the desktop app local run".to_string()).unwrap();
+        let registry_records = read_workspace_project_runtime_records(&workspace_root).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(stop_result.project_name, "desktop".to_string());
+        assert_eq!(stop_result.project_path, "apps/desktop".to_string());
+        assert_eq!(stop_result.command_label, "npm run dev".to_string());
+        assert_eq!(stop_result.working_directory, "apps/desktop".to_string());
+        assert_eq!(stop_result.pid, run_result.pid);
+        assert_eq!(stop_result.status, "stopped".to_string());
+        assert!(stop_result.stdout_preview.contains("stopped:"));
+        assert!(registry_records.is_empty());
     }
 }
