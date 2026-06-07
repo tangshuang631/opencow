@@ -663,6 +663,7 @@ async function executeOpencowEnabledSkillsRegistryRepairPlan(
     resultTitle,
     resultSummary:
       `${result.summary} Repaired path: ${result.repaired_path}. Preserved entries: ${result.preserved_entry_count}. ` +
+      `Verified schema version: ${result.verified_version}. Verified enabled entries: ${result.verified_entry_count}. ` +
       "Verification completed inside the controlled self-repair chain, and the result remains audit-visible and rollback-visible."
   };
 }

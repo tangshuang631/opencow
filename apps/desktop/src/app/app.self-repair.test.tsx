@@ -84,6 +84,8 @@ describe("App self-repair mutation continuation", () => {
       repaired_path: ".opencow/skills/enabled-skills.json",
       status: "repaired",
       preserved_entry_count: 0,
+      verified_version: 1,
+      verified_entry_count: 0,
       summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
     });
 
@@ -116,7 +118,9 @@ describe("App self-repair mutation continuation", () => {
 
     await waitFor(() => {
       expect(
-        screen.getAllByText(/Repair opencow enabled skills registry|enabled-skills\.json|verified default schema/i).length
+        screen.getAllByText(
+          /Repair opencow enabled skills registry|enabled-skills\.json|verified default schema|Verified schema version: 1|Verified enabled entries: 0/i
+        ).length
       ).toBeGreaterThan(0);
     });
   });

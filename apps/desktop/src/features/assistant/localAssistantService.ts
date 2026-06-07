@@ -142,6 +142,8 @@ export type OpencowSelfRepairEnabledSkillsRegistryResult = {
   repaired_path: string;
   status: "repaired";
   preserved_entry_count: number;
+  verified_version: number;
+  verified_entry_count: number;
   summary: string;
 };
 
@@ -786,6 +788,8 @@ function createBrowserPreviewOpencowEnabledSkillsRegistryRepair(
     repaired_path: ".opencow/skills/enabled-skills.json",
     status: "repaired",
     preserved_entry_count: 0,
+    verified_version: 1,
+    verified_entry_count: 0,
     summary: "Browser preview mode rewrote the workspace enabled skills registry to the default verified schema."
   };
 }

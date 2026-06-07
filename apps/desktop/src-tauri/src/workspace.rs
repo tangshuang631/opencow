@@ -251,6 +251,8 @@ pub struct OpencowSelfRepairEnabledSkillsRegistryResult {
     repaired_path: String,
     status: String,
     preserved_entry_count: usize,
+    verified_version: usize,
+    verified_entry_count: usize,
     summary: String,
 }
 
@@ -1306,12 +1308,29 @@ pub fn opencow_self_repair_enabled_skills_registry(
     fs::write(&registry_path, format!("{pretty}\n"))
         .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))?;
 
+    let verified_raw =
+        fs::read_to_string(&registry_path).map_err(|error| format!("failed to re-read {}: {error}", registry_path.display()))?;
+    let verified_parsed: Value = serde_json::from_str(&verified_raw)
+        .map_err(|error| format!("failed to verify repaired registry {}: {error}", registry_path.display()))?;
+    let verified_version = verified_parsed
+        .get("version")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| format!("repaired registry {} is missing numeric version", registry_path.display()))?
+        as usize;
+    let verified_entry_count = verified_parsed
+        .get("enabled_skills")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("repaired registry {} is missing enabled_skills array", registry_path.display()))?
+        .len();
+
     Ok(OpencowSelfRepairEnabledSkillsRegistryResult {
         query,
         repair_target: "enabled-skills-registry".to_string(),
         repaired_path: registry_relative_path.to_string(),
         status: "repaired".to_string(),
         preserved_entry_count,
+        verified_version,
+        verified_entry_count,
         summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
             .to_string(),
     })
@@ -2994,6 +3013,8 @@ mod tests {
         assert_eq!(result.repaired_path, ".opencow/skills/enabled-skills.json".to_string());
         assert_eq!(result.status, "repaired".to_string());
         assert_eq!(result.preserved_entry_count, 0);
+        assert_eq!(result.verified_version, 1);
+        assert_eq!(result.verified_entry_count, 0);
         assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
         assert!(parsed.get("enabled_skills").and_then(Value::as_array).is_some());
     }

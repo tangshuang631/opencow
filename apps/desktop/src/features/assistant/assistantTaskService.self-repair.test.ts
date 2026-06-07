@@ -105,6 +105,8 @@ describe("assistantTaskService self-repair preview", () => {
       repaired_path: ".opencow/skills/enabled-skills.json",
       status: "repaired",
       preserved_entry_count: 0,
+      verified_version: 1,
+      verified_entry_count: 0,
       summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
     });
 
@@ -119,6 +121,8 @@ describe("assistantTaskService self-repair preview", () => {
     expect(result.resultTitle).toBe("Repair opencow enabled skills registry");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("verified default schema");
+    expect(result.resultSummary).toContain("Verified schema version: 1");
+    expect(result.resultSummary).toContain("Verified enabled entries: 0");
     expect(result.resultSummary).toContain("audit");
     expect(result.resultSummary).toContain("rollback");
   });
