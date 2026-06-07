@@ -2004,14 +2004,24 @@ fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspacePr
     let raw = fs::read_to_string(&registry_path)
         .map_err(|error| format!("failed to read {}: {error}", registry_path.display()))?;
 
-    match serde_json::from_str::<WorkspaceProjectRuntimeRegistry>(&raw) {
-        Ok(parsed) => Ok(parsed.runs),
-        Err(_) => {
-            let repaired = default_workspace_project_runtime_registry();
-            write_workspace_project_runtime_registry(root, &repaired)?;
-            Ok(repaired.runs)
-        }
+    if let Ok(parsed) = serde_json::from_str::<WorkspaceProjectRuntimeRegistry>(&raw) {
+        return Ok(parsed.runs);
     }
+
+    if let Ok(legacy_runs) = serde_json::from_str::<Vec<WorkspaceProjectRuntimeRecord>>(&raw) {
+        write_workspace_project_runtime_registry(
+            root,
+            &WorkspaceProjectRuntimeRegistry {
+                version: 1,
+                runs: legacy_runs.clone(),
+            },
+        )?;
+        return Ok(legacy_runs);
+    }
+
+    let repaired = default_workspace_project_runtime_registry();
+    write_workspace_project_runtime_registry(root, &repaired)?;
+    Ok(repaired.runs)
 }
 
 fn write_workspace_project_runtime_registry(
@@ -2777,6 +2787,10 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
     }
 
+    fn lock_workspace_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        workspace_test_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn builds_git_status_readonly_command() {
         let spec = build_readonly_shell_command("git-status", Path::new("E:\\2026\\opencow")).unwrap();
@@ -3227,7 +3241,7 @@ mod tests {
 
     #[test]
     fn local_skill_install_copies_vendor_skill_into_workspace_skills_directory() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-local-skill-install-{unique}"));
@@ -3263,7 +3277,7 @@ mod tests {
 
     #[test]
     fn opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-self-repair-enabled-skills-{unique}"));
@@ -3301,7 +3315,7 @@ mod tests {
 
     #[test]
     fn workspace_project_run_preview_matches_app_with_dev_script_and_expected_url() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-preview-{unique}"));
@@ -3370,7 +3384,7 @@ mod tests {
 
     #[test]
     fn workspace_project_run_starts_matched_app_and_returns_handle() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-{unique}"));
@@ -3425,7 +3439,7 @@ mod tests {
 
     #[test]
     fn workspace_project_status_reports_active_runtime_handle_for_matched_app() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-{unique}"));
@@ -3482,7 +3496,7 @@ mod tests {
 
     #[test]
     fn workspace_project_status_recovers_runtime_registry_from_invalid_json() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-repair-{unique}"));
@@ -3543,8 +3557,94 @@ mod tests {
     }
 
     #[test]
+    fn workspace_project_status_migrates_legacy_runtime_registry_records() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-migrate-{unique}"));
+        let app_dir = workspace_root.join("apps/desktop");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+        let runtime_registry_path = workspace_root
+            .join(".opencow")
+            .join("runtime")
+            .join("workspace-project-runs.json");
+
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::create_dir_all(runtime_registry_path.parent().unwrap()).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            app_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"desktop\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"node -e \\\"console.log('desktop-started')\\\"\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &runtime_registry_path,
+            concat!(
+                "[\n",
+                "  {\n",
+                "    \"project_name\": \"desktop\",\n",
+                "    \"project_path\": \"apps/desktop\",\n",
+                "    \"command_label\": \"npm run dev\",\n",
+                "    \"working_directory\": \"apps/desktop\",\n",
+                "    \"pid\": ",
+                stringify!(0),
+                "  }\n",
+                "]\n"
+            ),
+        )
+        .unwrap();
+
+        let current_pid = std::process::id();
+        let legacy_registry = format!(
+            "[\n  {{\n    \"project_name\": \"desktop\",\n    \"project_path\": \"apps/desktop\",\n    \"command_label\": \"npm run dev\",\n    \"working_directory\": \"apps/desktop\",\n    \"pid\": {}\n  }}\n]\n",
+            current_pid
+        );
+        fs::write(&runtime_registry_path, legacy_registry).unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+
+        let repaired = fs::read_to_string(&runtime_registry_path).unwrap();
+        let parsed: Value = serde_json::from_str(&repaired).unwrap();
+        let runs = parsed.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(status_result.project_name, "desktop".to_string());
+        assert_eq!(status_result.project_path, "apps/desktop".to_string());
+        assert_eq!(status_result.status, "running".to_string());
+        assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].get("project_path").and_then(Value::as_str), Some("apps/desktop"));
+    }
+
+    #[test]
     fn workspace_project_stop_stops_matched_app_and_clears_runtime_handle() {
-        let _guard = workspace_test_lock().lock().unwrap();
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-stop-{unique}"));
