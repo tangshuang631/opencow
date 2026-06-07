@@ -275,6 +275,47 @@ describe("App", () => {
     });
   });
 
+  it("shows the final enabled skill recommendation result for an explicit readonly match request", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "which enabled skill should handle shell automation in this workspace",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "shell-automation",
+          path: "skills/shell-automation/SKILL.md",
+          source: "workspace-skill",
+          description: "Run safe local shell automation tasks.",
+          content_preview: "Use this skill when the task needs shell automation with local safety rails."
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "which enabled skill should handle shell automation in this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Match enabled local skills|shell-automation|enabled-skills\.json/i).length
+      ).toBeGreaterThan(0);
+    });
+  });
+
   it("continues from skill disable permission approval into the final disabled result", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
