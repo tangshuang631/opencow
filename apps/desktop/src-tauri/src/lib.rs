@@ -28,6 +28,7 @@ pub fn run() {
             workspace::controlled_full_command,
             workspace::workspace_overview,
             workspace::workspace_project_run,
+            workspace::workspace_project_npc_screenshot_capture,
             workspace::workspace_project_status,
             workspace::workspace_project_stop,
             workspace::workspace_project_run_preview,

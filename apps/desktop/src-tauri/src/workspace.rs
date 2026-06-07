@@ -89,6 +89,17 @@ pub struct WorkspaceProjectStopResult {
     summary: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct WorkspaceProjectNpcScreenshotCaptureResult {
+    project_name: String,
+    project_path: String,
+    expected_url: Option<String>,
+    artifact_path: String,
+    artifact_directory: String,
+    capture_target: String,
+    summary: String,
+}
+
 #[derive(Serialize)]
 pub struct WorkspaceProjectRunCandidate {
     name: String,
@@ -748,6 +759,38 @@ pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResul
         status: "stopped".to_string(),
         stdout_preview,
         summary: "Workspace project stop completed successfully and released the local process handle.".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn workspace_project_npc_screenshot_capture(
+    query: String,
+) -> Result<WorkspaceProjectNpcScreenshotCaptureResult, String> {
+    let root = resolve_workspace_root()?;
+    let candidates = collect_workspace_project_run_candidates(&root)?;
+    let normalized_query = query.to_lowercase();
+    let matched = select_project_run_candidate(&normalized_query, &candidates)
+        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .ok_or_else(|| "no runnable local workspace project matched the screenshot capture request".to_string())?;
+    let runtime = find_workspace_project_runtime_record(&root, &matched.relative_path)?
+        .ok_or_else(|| format!("No active matched local project run is available for NPC screenshot capture: {}", matched.relative_path))?;
+    let expected_url = infer_project_expected_url(Some(matched));
+    let capture_target = expected_url
+        .clone()
+        .ok_or_else(|| format!("no local capture target URL could be inferred for {}", matched.relative_path))?;
+    let artifact_path =
+        build_npc_showcase_screenshot_artifact_path(&root, &matched.name, &current_unix_timestamp_string());
+
+    capture_url_to_png_via_edge(&capture_target, &artifact_path)?;
+
+    Ok(WorkspaceProjectNpcScreenshotCaptureResult {
+        project_name: runtime.project_name,
+        project_path: runtime.project_path,
+        expected_url,
+        artifact_path: path_relative_to_root(&root, &artifact_path),
+        artifact_directory: ".opencow/artifacts/npc-showcase".to_string(),
+        capture_target,
+        summary: "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact.".to_string(),
     })
 }
 
@@ -1999,6 +2042,63 @@ fn infer_project_expected_url(candidate: Option<&WorkspaceProjectRunCandidateInt
     None
 }
 
+fn build_npc_showcase_screenshot_artifact_path(root: &Path, project_name: &str, timestamp: &str) -> PathBuf {
+    root.join(".opencow")
+        .join("artifacts")
+        .join("npc-showcase")
+        .join(format!(
+            "{}-screenshot-{}.png",
+            sanitize_artifact_segment(project_name),
+            timestamp
+        ))
+}
+
+fn sanitize_artifact_segment(value: &str) -> String {
+    let mut sanitized = String::new();
+
+    for character in value.chars() {
+        if character.is_ascii_alphanumeric() {
+            sanitized.push(character.to_ascii_lowercase());
+        } else if (character == '-' || character == '_') && !sanitized.ends_with('-') {
+            sanitized.push('-');
+        }
+    }
+
+    let sanitized = sanitized.trim_matches('-').to_string();
+    if sanitized.is_empty() {
+        "artifact".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn capture_url_to_png_via_edge(url: &str, artifact_path: &Path) -> Result<(), String> {
+    let artifact_parent = artifact_path
+        .parent()
+        .ok_or_else(|| format!("failed to resolve screenshot artifact parent for {}", artifact_path.display()))?;
+    fs::create_dir_all(artifact_parent)
+        .map_err(|error| format!("failed to create {}: {error}", artifact_parent.display()))?;
+
+    let status = Command::new("msedge")
+        .arg("--headless")
+        .arg("--disable-gpu")
+        .arg("--hide-scrollbars")
+        .arg("--window-size=1440,1024")
+        .arg(format!("--screenshot={}", artifact_path.display()))
+        .arg(url)
+        .status()
+        .map_err(|error| format!("failed to launch Edge headless screenshot capture: {error}"))?;
+
+    if !status.success() {
+        return Err(format!(
+            "Edge headless screenshot capture failed with status {}",
+            status
+        ));
+    }
+
+    Ok(())
+}
+
 fn workspace_project_runtime_registry_path(root: &Path) -> PathBuf {
     root.join(".opencow").join("runtime").join("workspace-project-runs.json")
 }
@@ -2814,14 +2914,15 @@ fn escape_powershell_single_quote(input: &str) -> String {
 mod tests {
     use super::{
         build_controlled_full_shell_command, build_enabled_local_skill_items, build_openclaw_capability_spec,
-        build_readonly_shell_command, build_workspace_write_shell_command, classify_mcp_plugin_source,
-        extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file, local_mcp_plugin_inspect,
-        local_mcp_plugin_scan, local_mcp_plugin_start_preview, local_skill_disable, local_skill_install,
-        looks_like_workspace_root, opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name,
-        read_enabled_skill_registry, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
-        score_snippet, split_knowledge_segments, tokenize_query, truncate_preview, workspace_project_run,
-        workspace_project_run_preview, workspace_project_status, workspace_project_stop,
-        read_workspace_project_runtime_records,
+        build_npc_showcase_screenshot_artifact_path, build_readonly_shell_command,
+        build_workspace_write_shell_command, classify_mcp_plugin_source, extract_skill_content_preview,
+        is_local_knowledge_file, is_local_mcp_plugin_file, local_mcp_plugin_inspect, local_mcp_plugin_scan,
+        local_mcp_plugin_start_preview, local_skill_disable, local_skill_install, looks_like_workspace_root,
+        opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name, read_enabled_skill_registry,
+        read_workspace_project_runtime_records, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
+        score_snippet, split_knowledge_segments, tokenize_query, truncate_preview,
+        workspace_project_npc_screenshot_capture, workspace_project_run, workspace_project_run_preview,
+        workspace_project_status, workspace_project_stop,
     };
     use serde_json::{Value, json};
     use std::{
@@ -3762,5 +3863,68 @@ mod tests {
         assert_eq!(stop_result.status, "stopped".to_string());
         assert!(stop_result.stdout_preview.contains("stopped:"));
         assert!(registry_records.is_empty());
+    }
+
+    #[test]
+    fn workspace_project_npc_screenshot_capture_returns_error_without_active_runtime_handle() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-npc-screenshot-{unique}"));
+        let project_dir = workspace_root.join("apps/cattle");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+
+        fs::create_dir_all(&project_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            project_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"cattle\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"vite\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let error = workspace_project_npc_screenshot_capture(
+            "use npc collaboration to capture a screenshot from the matched cattle project now".to_string(),
+        )
+        .unwrap_err();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert!(error.contains("No active matched local project run is available"));
+    }
+
+    #[test]
+    fn workspace_project_npc_screenshot_capture_artifact_path_stays_inside_workspace_artifacts_root() {
+        let workspace_root = Path::new("E:/2026/opencow");
+        let artifact_path =
+            build_npc_showcase_screenshot_artifact_path(workspace_root, "cattle", "1700000000");
+
+        assert!(artifact_path.ends_with(Path::new(
+            ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png"
+        )));
     }
 }

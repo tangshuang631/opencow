@@ -99,6 +99,7 @@ export type LocalTaskExecutionKind =
   | "npc-local-collaboration-preview"
   | "npc-local-project-showcase-preview"
   | "npc-local-project-run"
+  | "npc-local-project-screenshot-capture"
   | "npc-local-shell-plan-preview"
   | "capability-npc-overview"
   | "capability-mcp-overview"

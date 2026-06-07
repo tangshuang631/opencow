@@ -264,6 +264,16 @@ export type WorkspaceProjectStopResult = {
   summary: string;
 };
 
+export type WorkspaceProjectNpcScreenshotCaptureResult = {
+  project_name: string;
+  project_path: string;
+  expected_url: string | null;
+  artifact_path: string;
+  artifact_directory: string;
+  capture_target: string;
+  summary: string;
+};
+
 export type ReadonlyShellCommandResult = {
   command_id: ReadonlyShellCommandId;
   command_label: string;
@@ -512,6 +522,18 @@ export async function stopWorkspaceProject(query: string): Promise<WorkspaceProj
   });
 }
 
+export async function captureNpcLocalProjectScreenshot(
+  query: string
+): Promise<WorkspaceProjectNpcScreenshotCaptureResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcProjectScreenshotCapture(query);
+  }
+
+  return invoke<WorkspaceProjectNpcScreenshotCaptureResult>("workspace_project_npc_screenshot_capture", {
+    query
+  });
+}
+
 export async function runControlledFullShellCommand(
   commandId: ControlledFullShellCommandId
 ): Promise<ControlledFullShellCommandResult> {
@@ -700,6 +722,24 @@ function createBrowserPreviewWorkspaceProjectStop(query: string): WorkspaceProje
     status: "stopped",
     stdout_preview: "browser preview mode stopped a mock workspace project process",
     summary: "Browser preview mode returned a mock workspace project stop result."
+  };
+}
+
+function createBrowserPreviewNpcProjectScreenshotCapture(
+  query: string
+): WorkspaceProjectNpcScreenshotCaptureResult {
+  const prefersCattle = /\bcattle\b/i.test(query);
+
+  return {
+    project_name: prefersCattle ? "cattle" : "desktop",
+    project_path: prefersCattle ? "projects/cattle" : "apps/desktop",
+    expected_url: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
+    artifact_path: prefersCattle
+      ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
+      : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
+    artifact_directory: ".opencow/artifacts/npc-showcase",
+    capture_target: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
+    summary: "Browser preview mode returned a mock NPC local project screenshot capture result."
   };
 }
 
