@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize)]
 pub struct WorkspaceOverview {
@@ -110,6 +111,7 @@ struct WorkspaceProjectRuntimeRecord {
     command_label: String,
     working_directory: String,
     pid: u32,
+    launched_at: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -590,6 +592,7 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
             command_label: command_label.clone(),
             working_directory: working_directory_relative.clone(),
             pid,
+            launched_at: current_unix_timestamp_string(),
         },
     )?;
 
@@ -2019,6 +2022,30 @@ fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspacePr
         return Ok(legacy_runs);
     }
 
+    if let Ok(legacy_value_runs) = serde_json::from_str::<Vec<Value>>(&raw) {
+        let migrated_runs = legacy_value_runs
+            .into_iter()
+            .filter_map(|entry| {
+                Some(WorkspaceProjectRuntimeRecord {
+                    project_name: entry.get("project_name")?.as_str()?.to_string(),
+                    project_path: entry.get("project_path")?.as_str()?.to_string(),
+                    command_label: entry.get("command_label")?.as_str()?.to_string(),
+                    working_directory: entry.get("working_directory")?.as_str()?.to_string(),
+                    pid: entry.get("pid")?.as_u64()? as u32,
+                    launched_at: "legacy-migrated".to_string(),
+                })
+            })
+            .collect::<Vec<_>>();
+        write_workspace_project_runtime_registry(
+            root,
+            &WorkspaceProjectRuntimeRegistry {
+                version: 1,
+                runs: migrated_runs.clone(),
+            },
+        )?;
+        return Ok(migrated_runs);
+    }
+
     let repaired = default_workspace_project_runtime_registry();
     write_workspace_project_runtime_registry(root, &repaired)?;
     Ok(repaired.runs)
@@ -2094,6 +2121,13 @@ fn sanitize_skill_directory_name(skill_name: &str) -> String {
     } else {
         sanitized
     }
+}
+
+fn current_unix_timestamp_string() -> String {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
 }
 
 fn collect_existing_paths(root: &Path, candidates: &[&str]) -> Vec<String> {
@@ -3480,6 +3514,13 @@ mod tests {
 
         let run_result = workspace_project_run("run the desktop app locally".to_string()).unwrap();
         let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+        let runtime_registry_path = workspace_root
+            .join(".opencow")
+            .join("runtime")
+            .join("workspace-project-runs.json");
+        let persisted = fs::read_to_string(&runtime_registry_path).unwrap();
+        let parsed: Value = serde_json::from_str(&persisted).unwrap();
+        let runs = parsed.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
@@ -3492,6 +3533,9 @@ mod tests {
         assert_eq!(status_result.pid, Some(run_result.pid));
         assert_eq!(status_result.status, "running".to_string());
         assert!(status_result.stdout_preview.contains("running:"));
+
+        assert_eq!(runs.len(), 1);
+        assert!(runs[0].get("launched_at").and_then(Value::as_str).is_some());
     }
 
     #[test]
@@ -3640,6 +3684,7 @@ mod tests {
         assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].get("project_path").and_then(Value::as_str), Some("apps/desktop"));
+        assert_eq!(runs[0].get("launched_at").and_then(Value::as_str), Some("legacy-migrated"));
     }
 
     #[test]
