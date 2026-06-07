@@ -2,12 +2,22 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock, enableLocalSkillMock, installLocalSkillMock, listEnabledLocalSkillsMock, disableLocalSkillMock } = vi.hoisted(() => ({
+const {
+  loadOllamaOverviewMock,
+  enableLocalSkillMock,
+  installLocalSkillMock,
+  listEnabledLocalSkillsMock,
+  disableLocalSkillMock,
+  matchEnabledLocalSkillsMock,
+  runWorkspaceWriteShellCommandMock
+} = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
-  disableLocalSkillMock: vi.fn()
+  disableLocalSkillMock: vi.fn(),
+  matchEnabledLocalSkillsMock: vi.fn(),
+  runWorkspaceWriteShellCommandMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -24,7 +34,9 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
-    disableLocalSkill: disableLocalSkillMock
+    disableLocalSkill: disableLocalSkillMock,
+    matchEnabledLocalSkills: matchEnabledLocalSkillsMock,
+    runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock
   };
 });
 
@@ -296,6 +308,64 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText(/Disable local skill|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("continues from a skill-assisted workspace-write request into the final temp-output creation result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "use the enabled shell automation skill to create a temp-output folder for this workspace",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "shell-automation",
+          path: "skills/shell-automation/SKILL.md",
+          source: "workspace-skill",
+          description: "Run safe local shell automation tasks.",
+          content_preview: "Use this skill when the task needs shell automation with local safety rails."
+        }
+      ]
+    });
+    runWorkspaceWriteShellCommandMock.mockResolvedValueOnce({
+      command_id: "create-temp-output-dir",
+      command_label: "New-Item -ItemType Directory -Force temp-output",
+      stdout_preview: "temp-output",
+      line_count: 1,
+      summary: "Workspace write shell command completed successfully."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "use the enabled shell automation skill to create a temp-output folder for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(
+      /Workspace write permission is required before a skill-assisted temp-output creation task can modify the workspace/i
+    );
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Skill-assisted temp-output creation|shell-automation|temp-output|enabled-skills\.json/i)
+          .length
+      ).toBeGreaterThan(0);
     });
   });
 });
