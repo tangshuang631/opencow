@@ -478,6 +478,32 @@ npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTas
 cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
 ```
 
+## 6.15b Local project lifecycle verification addition
+
+For the local project lifecycle slice, acceptance is not satisfied by launch-only coverage.
+
+Required checks:
+
+- planner maps explicit local run requests into `permission-request -> workspace-project-run`
+- planner maps explicit status requests into readonly `workspace-project-status`
+- planner maps explicit stop requests into `permission-request -> workspace-project-stop`
+- desktop execution returns stable lifecycle fields for run and status, including `pid`, `expected_url`, and a readable summary
+- Tauri lifecycle behavior shares one runtime registry across run, status, and stop instead of disconnected shell guesses
+- app-level conversation flow proves:
+  - `run` enters the permission-backed final result
+  - `status` returns a readonly final result
+  - `stop` enters the permission-backed final result
+
+Minimum focused verification:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.project-run.test.ts src/localAssistantPlan.project-status.test.ts src/localAssistantPlan.project-stop.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/features/assistant/assistantTaskService.project-status.test.ts src/features/assistant/assistantTaskService.project-stop.test.ts src/app/app.project-run.test.tsx
+npm --workspace apps/desktop exec tsc --noEmit
+cargo test workspace_project_ -- --nocapture
+```
+
 ## 6.16 Local task anti-stall verification addition
 
 For the homepage conversation and local assistant task chain, acceptance is not satisfied by successful task starts alone.

@@ -934,17 +934,22 @@ npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTas
 cargo test workspace_project_run_preview -- --nocapture
 ```
 
-## 6.23 First permission-backed local project run landing
+## 6.23 Permission-backed local project lifecycle landing
 
-The next concrete desktop-first execution slice is now the first real local project run task:
+The desktop-first assistant chain now includes the first real local project lifecycle trio:
 
 - `workspace-project-run`
+- `workspace-project-status`
+- `workspace-project-stop`
 
 Current planner behavior:
 
 - explicit local run requests such as `run the desktop app locally` no longer fall back into generic help
 - in `readonly`, the planner returns `permission-request` for `workspace-write`
 - after approval, the planner continues into the fixed `workspace-project-run` task kind
+- explicit status requests such as `show the status of the desktop app local run` map directly into the readonly `workspace-project-status` task kind
+- explicit stop requests such as `stop the desktop app local run` return `permission-request` in `readonly`
+- after approval, the planner continues into the fixed `workspace-project-stop` task kind
 
 Current desktop execution behavior:
 
@@ -958,8 +963,10 @@ Current Tauri behavior:
 - resolve the workspace root
 - match a runnable local project from approved workspace candidates
 - choose a fixed launch command from `dev`, then `start`, then `build`
-- start the project through a narrow PowerShell job-based launch path
-- return a stable process-handle-like result to the desktop assistant chain
+- start the project through a narrow PowerShell launch path and return the real child `pid`
+- persist lifecycle records in `.opencow/runtime/workspace-project-runs.json`
+- answer readonly status checks through the same runtime registry
+- stop matched local project runs through the same runtime registry instead of a disconnected shell guess
 
 Current safety boundary remains intentionally narrow:
 
@@ -972,8 +979,18 @@ Current safety boundary remains intentionally narrow:
 
 Current known limitation:
 
-- the returned `pid` is currently derived from the PowerShell background job handle instead of a durable child-process lifecycle model
-- a later slice should replace this with a stronger launch-and-stop contract before long-running multi-step NPC workflows depend on it
+- the runtime registry is now durable enough for the current desktop mainline, including invalid-JSON repair, legacy migration, and persisted launch or status metadata
+- this is still not a full long-running orchestration system for broader NPC workflows, process restarts, or remote coordination
+
+Verification for this slice:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.project-run.test.ts src/localAssistantPlan.project-status.test.ts src/localAssistantPlan.project-stop.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/features/assistant/assistantTaskService.project-status.test.ts src/features/assistant/assistantTaskService.project-stop.test.ts src/app/app.project-run.test.tsx
+npm --workspace apps/desktop exec tsc --noEmit
+cargo test workspace_project_ -- --nocapture
+```
 
 ## 6.23a First permission-backed opencow self-repair mutation mapping
 
@@ -996,14 +1013,4 @@ npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan
 npm --workspace packages/openclaw-adapter run build
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
 cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
-```
-
-Verification for this slice:
-
-```bash
-npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.project-run.test.ts
-npm --workspace packages/openclaw-adapter run build
-npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/app/app.project-run.test.tsx
-npm --workspace apps/desktop exec tsc --noEmit
-cargo test workspace_project_run -- --nocapture
 ```
