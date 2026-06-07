@@ -140,6 +140,32 @@ describe("App", () => {
     });
   });
 
+  it("routes a generic project summary request into the workspace overview result instead of generic help copy", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "summarize this project" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("summarize this project").length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("Workspace overview")).toBeInTheDocument();
+    });
+  });
+
   it("shows a visible assistant pending block while an ordinary chat request is still running", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,

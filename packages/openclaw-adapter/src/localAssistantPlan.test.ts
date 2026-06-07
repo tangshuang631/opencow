@@ -14,6 +14,30 @@ describe("local assistant task planner", () => {
     });
   });
 
+  it("plans a readonly workspace overview for a generic project summary request instead of default help copy", () => {
+    const plan = planLocalAssistantTask({
+      message: "summarize this project",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "workspace-overview",
+      title: "Workspace overview"
+    });
+  });
+
+  it("keeps explicit capability questions on the assistant help overview path", () => {
+    const plan = planLocalAssistantTask({
+      message: "what can you do",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "assistant-help-overview",
+      title: "Assistant help overview"
+    });
+  });
+
   it("requests controlled full permission for destructive cleanup tasks", () => {
     const plan = planLocalAssistantTask({
       message: "delete temp-output and clean temporary files",

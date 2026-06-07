@@ -11,7 +11,7 @@ const createTempOutputContainerPatterns = [/\bfolder\b/i, /\bdirectory\b/i];
 const enabledSkillPatterns = [/\benabled\b/i, /\bactive\b/i];
 const skillMediationPatterns = [/\bskill\b/i, /\bautomation\b/i];
 const shellAutomationPatterns = [/\bshell\b/i, /\bautomation\b/i];
-const workspaceOverviewPatterns = [/\bworkspace\b/i, /\brepo\b/i, /\brepository\b/i, /工作区/];
+const workspaceOverviewPatterns = [/\bworkspace\b/i, /\brepo\b/i, /\brepository\b/i, /\bproject\b/i, /工作区/, /项目/];
 const workspaceOverviewIntentPatterns = [/\binspect\b/i, /\boverview\b/i, /\bsummar/i, /\bstructure\b/i, /\blayout\b/i];
 const configOverviewPatterns = [
   /config/i,
