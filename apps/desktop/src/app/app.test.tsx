@@ -2,11 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock, enableLocalSkillMock, installLocalSkillMock, listEnabledLocalSkillsMock } = vi.hoisted(() => ({
+const { loadOllamaOverviewMock, enableLocalSkillMock, installLocalSkillMock, listEnabledLocalSkillsMock, disableLocalSkillMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
-  listEnabledLocalSkillsMock: vi.fn()
+  listEnabledLocalSkillsMock: vi.fn(),
+  disableLocalSkillMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -22,7 +23,8 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     ...actual,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
-    listEnabledLocalSkills: listEnabledLocalSkillsMock
+    listEnabledLocalSkills: listEnabledLocalSkillsMock,
+    disableLocalSkill: disableLocalSkillMock
   };
 });
 
@@ -255,6 +257,45 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText(/Enabled local skills|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("continues from skill disable permission approval into the final disabled result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    disableLocalSkillMock.mockResolvedValueOnce({
+      query: "disable the coding-agent skill for this workspace",
+      disabled_skill_name: "coding-agent",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      status: "disabled",
+      summary: "Local skill disablement removed coding-agent from the workspace skill registry."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "disable the coding-agent skill for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(
+      /Workspace write permission is required before disabling a local skill/i
+    );
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Disable local skill|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
     });
   });
 });
