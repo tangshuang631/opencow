@@ -2,113 +2,120 @@
 
 ## Goal
 
-Move the `NPC local project showcase workflow` from screenshot capture into the next smallest real execution slice:
+Move the `NPC local project showcase workflow` from screenshot artifact creation into the next smallest real repository-write slice:
 
 - `permission-backed NPC showcase-site write execution`
 
-This slice adds only local showcase-site generation plus a traceable changed-file summary inside the approved workspace. It does not expand into git status review, commit, push, screenshot selection, or broader repository refactoring.
+This slice adds only local showcase-site generation plus a traceable changed-file summary. It does not expand into git commit, git push, screenshot curation, or multi-page site generation.
 
 ## Why This Slice
 
 Current landed state:
 
 - readonly `npc-local-project-showcase-preview` exists
-- permission-backed `npc-local-project-run` exists and reuses the workspace project lifecycle
-- permission-backed `npc-local-project-screenshot-capture` exists and writes traceable workspace-local artifacts
-- app-level closure now explicitly covers preview, run, and screenshot execution
+- permission-backed `npc-local-project-run` exists and reuses the local project run lifecycle
+- permission-backed `npc-local-project-screenshot-capture` exists and returns workspace-local artifact paths
 
 Current gap:
 
-- the showcase chain still cannot write any actual showcase-site output after the screenshot artifact exists
-- product and acceptance docs already call out showcase-site generation as the next distinct stage before git actions
-- current preview language promises `showcase site generation`, but there is still no planner kind, desktop execution branch, or changed-file contract for that stage
+- the showcase chain can now launch the matched project and capture a real screenshot
+- but it still cannot turn that evidence into any repository-local showcase output
+- current docs already treat showcase-site generation as a distinct stage that must stay separate from git actions
 
-Why not git preview or push first:
+Why not go further in this slice:
 
-- git actions are explicitly later and separately confirmable
-- they depend on repository writes already existing
-- they would widen approval and verification scope beyond the next smallest repository mutation
+- git commit or push would add a second approval boundary and a different risk class
+- multi-page site generation would introduce templating and asset-layout complexity that is not required to prove the write surface
+- screenshot galleries or selection logic would reopen the previous stage instead of advancing the chain
+
+## Approaches Considered
+
+### 1. Single-page deterministic showcase write `(Recommended)`
+
+Write one small static site output into a deterministic workspace-local directory and return a changed-file summary.
+
+Pros:
+
+- smallest repository-write surface after screenshot capture
+- easy to verify with planner, desktop execution, app flow, and changed-path assertions
+- keeps git as a later, separately confirmable stage
+
+Cons:
+
+- does not solve richer site theming or multi-page presentation
+
+### 2. Multi-file showcase package write
+
+Write `index.html`, stylesheet, copied screenshot assets, and metadata in one shot.
+
+Pros:
+
+- more realistic final artifact
+- cleaner separation between content and styling
+
+Cons:
+
+- materially larger write surface
+- more file-path and asset-sync behavior to verify
+- not the smallest next slice
+
+### 3. Jump directly to git-ready showcase publication
+
+Generate site output and immediately continue into changed-files preview or git actions.
+
+Pros:
+
+- closer to end-user "publish" value
+
+Cons:
+
+- violates the current stage boundary
+- mixes repository write and VCS mutation into one approval decision
 
 ## Chosen Boundary
 
 This slice includes only:
 
-- explicit NPC wording that asks to generate or write the showcase site now
+- explicit NPC wording that asks to generate or write a showcase site for the matched local project
 - permission escalation before any repository write
-- desktop execution that writes a small deterministic showcase output set inside the workspace
-- returned result text that includes written paths or a changed-file summary
+- desktop execution that writes a deterministic single-page showcase output inside the approved workspace
+- returned changed-file summary that lists exactly what was written
 
 This slice excludes:
 
-- git status preview
-- commit creation
-- git push
-- screenshot ranking or selection UX
-- multi-page showcase generation
-- arbitrary repo cleanup or refactoring
-- free-form template editing outside the fixed showcase output surface
+- git status, commit, or push
+- multi-page site generation
+- template selection UX
+- screenshot ranking or gallery generation
+- arbitrary free-form repo edits outside the fixed showcase output target
 
-## Recommended Approach
+## Recommended Output Contract
 
-Use one new fixed execution kind:
+The generated output should be deterministic enough to verify without baking in unstable timestamps.
 
-- `npc-local-project-showcase-site-write`
+Recommended directory:
 
-Planner behavior:
+- `.opencow/artifacts/npc-showcase/sites/<project-name>/`
 
-- keep `npc-local-project-showcase-preview` as the readonly entry for broad showcase requests
-- add a narrow site-write branch for explicit execution wording such as:
-  - `use npc collaboration to generate the showcase site for the matched cattle project now`
-  - `write the resume-ready showcase website now`
-  - `create the showcase page in my repo now`
-- in `readonly`, return:
-  - `kind: "permission-request"`
-  - `targetMode: "workspace-write"`
-  - `queuedExecutionKind: "npc-local-project-showcase-site-write"`
-- after approval, return:
-  - `kind: "npc-local-project-showcase-site-write"`
+Recommended files:
 
-Desktop behavior:
+- `index.html`
+- optional copied image asset only if required for a self-contained page
 
-- resolve the matched local project through the existing showcase context rather than inventing a second target-selection path
-- use already available run metadata and screenshot artifact paths as inputs when present
-- write a tightly scoped showcase output into a deterministic workspace-local destination
-- return a result summary that includes:
-  - matched project name
-  - destination directory
-  - changed-file summary
-  - any screenshot artifact path reused by the generated output
-  - note that this is the showcase-site generation stage inside the broader NPC showcase chain
+Recommended result contract:
 
-Why this approach:
+- returned `site_root`
+- returned `entry_file`
+- returned `changed_paths`
+- returned `source_screenshot_path` when a screenshot artifact is used
+- returned summary stating this is the showcase-site write stage inside the NPC showcase chain
 
-- it keeps the chain incremental: preview -> run -> screenshot -> site write
-- it creates the first real repo mutation in this workflow without jumping into git actions
-- it gives later git preview/push stages concrete file outputs to reason about
+Why write under `.opencow/artifacts` first instead of mutating arbitrary user app files:
 
-## Output Contract
-
-This slice should define a minimal showcase-site write contract:
-
-- all output paths must stay inside the approved workspace
-- output must be narrow enough that tests can assert exact or pattern-stable changed files
-- result text must include the written file set directly instead of generic `site generated` wording
-
-Recommended shape:
-
-- output root stays under a deterministic workspace-local directory such as:
-  - `.opencow/artifacts/npc-showcase/site/`
-  - or one fixed showcase folder already reserved by the repo if such a target is introduced during implementation
-- initial output set should stay intentionally small, for example:
-  - one HTML entry file
-  - one adjacent metadata or asset reference file only if strictly necessary
-
-The exact destination can remain implementation-driven as long as:
-
-- it is workspace-local
-- it is stable enough for focused tests
-- the final result surfaces changed-file paths explicitly
-- the slice does not silently fan out into a large multi-file site scaffold
+- still counts as repository-local workspace write
+- keeps the output deterministic and audit-visible
+- avoids broad guessed edits to existing app code or routing
+- preserves a clean later boundary if the workflow eventually wants a stronger "publish into real app surfaces" slice
 
 ## Permission And Safety Boundary
 
@@ -118,17 +125,17 @@ Permission mode:
 
 Reasoning:
 
-- this slice writes new files or overwrites a bounded showcase output inside the workspace
-- it does not require `controlled-full` if the destination remains inside the approved workspace and avoids dangerous shell operations
-- git actions remain separate and require their own explicit later step
+- this slice creates or overwrites deterministic local output files inside the workspace
+- it is not destructive enough to require `controlled-full`
+- it must remain narrower than any future git or publish stage
 
 Safety requirements:
 
-- no site generation without explicit task-scoped approval
-- no hidden continuation into git status, commit, or push
-- no broad guessed rewrite of arbitrary existing app files
-- if no matched showcase target can be resolved, fail clearly instead of fabricating generated output
-- if required screenshot artifacts are missing for the chosen template, stop with a traceable failure instead of silently degrading into unrelated content
+- no repository write without explicit task-scoped approval
+- no implicit continuation into git actions after the write completes
+- no arbitrary target path chosen from free-form user wording
+- if required screenshot evidence is unavailable, fail clearly instead of generating a fabricated "finished showcase"
+- if file writes fail, stop the chain and return the write boundary that failed
 
 ## Planner Design
 
@@ -136,19 +143,30 @@ Add one new adapter task kind:
 
 - `npc-local-project-showcase-site-write`
 
-Recognition rules should require all of:
+Recognition rules should require:
 
 - explicit NPC collaboration wording
-- local showcase project context
-- site-generation wording such as `showcase`, `website`, `page`, or `site`
-- execution wording, not just preview wording
+- matched local project context
+- explicit showcase-site generation wording such as:
+  - `generate the showcase site now`
+  - `write the resume-ready showcase website`
+  - `create the local showcase page for the matched cattle project`
 
-Planner should not:
+Planner behavior:
 
-- infer site-write execution from a generic `continue` alone
-- collapse site generation into `npc-local-project-screenshot-capture`
-- route broad showcase ideation away from the existing readonly preview
-- infer git approval from earlier workspace-write approval for generation
+- broad end-to-end showcase requests still default to `npc-local-project-showcase-preview`
+- explicit site-write execution wording in `readonly` returns:
+  - `kind: "permission-request"`
+  - `targetMode: "workspace-write"`
+  - `queuedExecutionKind: "npc-local-project-showcase-site-write"`
+- after approval, return:
+  - `kind: "npc-local-project-showcase-site-write"`
+
+Important boundary:
+
+- planner must not infer site generation from generic `continue`
+- planner must not collapse site write into screenshot capture
+- git wording remains out of scope for this slice even if the message mentions a repo
 
 ## Desktop Execution Design
 
@@ -158,24 +176,47 @@ Add one new assistant execution branch:
 
 Execution should:
 
-- inspect the existing matched project context
-- locate the latest relevant screenshot artifact for the matched project if the chosen output format depends on it
-- call one dedicated showcase-site write service
-- return NPC-specific title and audit wording
+- resolve the matched local project through the same runtime-backed candidate flow already used by run and screenshot capture
+- require at least one valid screenshot artifact for that matched project
+- write deterministic showcase output under `.opencow/artifacts/npc-showcase/sites/<project-name>/`
+- return a changed-file summary instead of pretending the whole showcase chain is complete
 
-Expected result wording should include:
+Recommended generated page contents:
 
-- project identity
-- written output root
-- changed-file list or count plus representative paths
-- screenshot artifact path if reused
-- a statement that this is the showcase-site generation stage of the NPC showcase chain
+- project title
+- project path
+- expected local URL if known
+- screenshot reference
+- short statement that this page was generated by the NPC showcase workflow for local review
 
-Implementation boundary for the future plan:
+The generated page should stay intentionally simple:
 
-- prefer one dedicated desktop/Tauri write surface rather than spreading generation across unrelated shell helpers
-- keep generated content deterministic and template-bounded
-- if implementation cannot stay bounded without broad templating logic, stop and split the design again before coding
+- one static HTML entry point
+- no bundler
+- no framework-specific integration
+- no mutation of existing application source trees
+
+## Changed-File Summary Contract
+
+This slice should make repository writes easy to audit.
+
+Minimum returned fields:
+
+- `project_name`
+- `project_path`
+- `site_root`
+- `entry_file`
+- `changed_paths`
+- `source_screenshot_path`
+- `summary`
+
+Result wording should include:
+
+- matched project identity
+- generated site root
+- entry file
+- each changed path or a concise changed-file count plus explicit path list
+- note that this is the showcase-site write stage, not a git stage
 
 ## App Flow Design
 
@@ -184,14 +225,14 @@ Required user-visible chain:
 1. composer submit with explicit NPC showcase-site execution wording
 2. permission request for `workspace-write`
 3. approval
-4. final showcase-site write result with changed-file summary
+4. final repository-write result with changed paths
 
 Required assertions:
 
-- permission appears before repository mutation
+- permission appears before generation
 - final result remains NPC-specific
-- changed-file paths are visible in the conversation result
-- no git push or commit language appears in the final site-write result
+- changed paths are visible in the conversation result
+- result does not imply git commit or push happened
 
 ## Types And Interfaces
 
@@ -204,66 +245,62 @@ Expected additions:
 - local assistant desktop service:
   - one showcase-site write result type
   - one showcase-site write function
+- Tauri workspace command:
+  - one tightly scoped showcase-site write command
 
-Expected result shape should minimally expose:
-
-- `project_name`
-- `project_path`
-- `output_root`
-- `changed_files`
-- `changed_file_count`
-- `summary`
-
-Additional fields such as `screenshot_artifact_path` are acceptable if needed to keep downstream results explicit.
+The command should remain narrower than a general-purpose file generator. It should write only the deterministic NPC showcase-site output and return metadata about what changed.
 
 ## Error Handling
 
-If no matched showcase project can be resolved:
+If no matched running local project can be resolved:
 
-- fail with a clear result
-- do not invent generated files
-- do not silently fall back to preview text
+- fail clearly
+- do not generate placeholder site output
 
-If output writes partially succeed:
+If no valid screenshot artifact is available for the matched project:
+
+- fail clearly
+- do not silently downgrade into a text-only "showcase" unless a later design explicitly allows that
+
+If the output directory cannot be created or written:
 
 - fail the task
-- surface which files were written and which boundary failed
-- do not continue into later git stages
+- surface the path that failed
 
-If a required screenshot artifact cannot be found:
+If a page is generated successfully:
 
-- return a traceable failure
-- do not fabricate a screenshot reference
+- stop at the changed-file summary
+- do not auto-continue into git preview, commit, or push
 
 ## Verification Shape
 
-The next implementation batch should be verified with focused checks across:
+The eventual implementation batch should be verifiable with focused checks across:
 
 ```bash
 npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.npc-showcase.test.ts
 npm --workspace packages/openclaw-adapter run build
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.npc-showcase.test.ts src/app/app.npc-showcase.test.tsx
 npm --workspace apps/desktop exec tsc --noEmit
+cargo test workspace_project_npc_showcase_site_write --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
 ```
 
-If implementation adds a new Tauri write command, add one focused Rust test or desktop integration check for:
+Focused Rust or desktop checks should prove at least:
 
-- output paths staying inside the approved workspace
-- deterministic changed-file reporting
-- explicit failure when the write target cannot be resolved or the required screenshot artifact is missing
+- output paths stay inside `.opencow/artifacts/npc-showcase/sites`
+- screenshot absence fails explicitly
+- returned changed paths match what was written
 
 ## Non-Goals
 
 This slice does not attempt to solve:
 
-- git status preview
-- git commit
-- git push
-- multi-page site generation
-- screenshot curation
-- visual polish iteration
-- arbitrary repo-wide content edits
+- publishing into an existing app surface
+- framework-specific site scaffolding
+- screenshot selection or ranking
+- markdown or CMS import
+- git status, commit, or push
+- broad NPC autonomous "finish everything" execution
 
 The purpose of this slice is narrower:
 
-- prove that the NPC showcase chain can perform its first bounded repository write after screenshot capture while preserving explicit permission, explicit audit identity, and traceable changed-file results
+- prove that the NPC showcase chain can convert a running local project plus a real screenshot artifact into a deterministic repository-local showcase output while keeping permission, audit identity, and changed-file visibility explicit.
