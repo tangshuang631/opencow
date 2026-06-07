@@ -995,3 +995,31 @@ This slice is intentionally small, but it establishes the first real self-repair
 - controlled fix
 - verify
 - audit / rollback visibility
+
+## 6.22b Current self-repair mutation boundary after the first landing
+
+The current desktop-first self-repair chain is no longer preview-only, but it is still intentionally narrow.
+
+Current landed state:
+
+- readonly self-repair preview is available through `opencow-self-repair-preview`
+- the first permission-backed mutation is available through `opencow-self-repair-enabled-skills-registry`
+- app-level conversation coverage now proves both:
+  - readonly preview from composer submit to final preview result
+  - preview -> explicit continue -> permission approval -> final repaired result
+
+Current remaining gap:
+
+- opencow still does not expose a broader assistant-owned config repair path
+- opencow still does not expose a runtime-registry repair path through the same self-repair chain
+- destructive or higher-impact self-repair actions still do not exist and must not be implied by the first narrow registry repair
+
+Recommended rule for the next self-repair slice:
+
+- do not expand from the first registry repair into a broad guessed fixer
+- only land another mutation slice if it is:
+  - explicit in user wording
+  - narrow in target path or state surface
+  - permission-backed or confirmation-backed at the correct level
+  - verification-oriented
+  - audit-visible and rollback-visible in the same desktop task chain

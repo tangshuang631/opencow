@@ -449,7 +449,7 @@ Minimum focused verification:
 ```bash
 npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.self-repair.test.ts src/localAssistantPlan.capabilities.test.ts
 npm --workspace packages/openclaw-adapter run build
-npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
 npm --workspace apps/desktop exec tsc --noEmit
 ```
 
