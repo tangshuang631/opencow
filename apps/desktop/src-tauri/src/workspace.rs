@@ -111,6 +111,18 @@ pub struct WorkspaceProjectNpcShowcaseSiteWriteResult {
     summary: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
+    project_name: String,
+    project_path: String,
+    site_root: String,
+    entry_file: String,
+    changed_paths: Vec<String>,
+    source_screenshot_path: String,
+    next_git_step: String,
+    summary: String,
+}
+
 #[derive(Serialize)]
 pub struct WorkspaceProjectRunCandidate {
     name: String,
@@ -839,6 +851,40 @@ pub fn workspace_project_npc_showcase_site_write(
         changed_paths: vec![path_relative_to_root(&root, &entry_file)],
         source_screenshot_path: path_relative_to_root(&root, &screenshot_artifact),
         summary: "NPC local project showcase-site write completed successfully and returned a changed-file summary.".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn workspace_project_npc_showcase_publish_preview(
+    query: String,
+) -> Result<WorkspaceProjectNpcShowcasePublishPreviewResult, String> {
+    let root = resolve_workspace_root()?;
+    let candidates = collect_workspace_project_run_candidates(&root)?;
+    let normalized_query = query.to_lowercase();
+    let matched = select_project_run_candidate(&normalized_query, &candidates)
+        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .ok_or_else(|| "no runnable local workspace project matched the NPC showcase publish preview request".to_string())?;
+    let site_root = build_npc_showcase_site_root(&root, &matched.name);
+    let entry_file = site_root.join("index.html");
+    if !entry_file.exists() {
+        return Err(format!(
+            "No generated showcase site output is available for NPC showcase publish preview: {}",
+            matched.name
+        ));
+    }
+
+    let screenshot_artifact = find_latest_npc_showcase_screenshot_artifact(&root, &matched.name)?
+        .ok_or_else(|| format!("No screenshot artifact is available for NPC showcase publish preview: {}", matched.name))?;
+
+    Ok(WorkspaceProjectNpcShowcasePublishPreviewResult {
+        project_name: matched.name.clone(),
+        project_path: matched.relative_path.clone(),
+        site_root: path_relative_to_root(&root, &site_root),
+        entry_file: path_relative_to_root(&root, &entry_file),
+        changed_paths: vec![path_relative_to_root(&root, &entry_file)],
+        source_screenshot_path: path_relative_to_root(&root, &screenshot_artifact),
+        next_git_step: "Git commit or push is still separate and requires its own explicit confirmation stage.".to_string(),
+        summary: "NPC local project showcase publish preview loaded the latest generated showcase outputs without starting any git action.".to_string(),
     })
 }
 
@@ -3044,7 +3090,8 @@ mod tests {
         opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name, read_enabled_skill_registry,
         read_workspace_project_runtime_records, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
         score_snippet, split_knowledge_segments, tokenize_query, truncate_preview,
-        workspace_project_npc_screenshot_capture, workspace_project_npc_showcase_site_write, workspace_project_run, workspace_project_run_preview,
+        workspace_project_npc_screenshot_capture, workspace_project_npc_showcase_publish_preview,
+        workspace_project_npc_showcase_site_write, workspace_project_run, workspace_project_run_preview,
         workspace_project_status, workspace_project_stop,
     };
     use serde_json::{Value, json};
@@ -4112,5 +4159,153 @@ mod tests {
         let site_root = build_npc_showcase_site_root(workspace_root, "cattle");
 
         assert!(site_root.ends_with(Path::new(".opencow/artifacts/npc-showcase/sites/cattle")));
+    }
+
+    #[test]
+    fn workspace_project_npc_showcase_publish_preview_returns_error_without_site_output() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-npc-publish-preview-{unique}"));
+        let project_dir = workspace_root.join("apps/cattle");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+
+        fs::create_dir_all(&project_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            project_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"cattle\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"vite\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let run_result = workspace_project_run("run the cattle app locally".to_string()).unwrap();
+        assert_eq!(run_result.project_name, "cattle".to_string());
+
+        let error = workspace_project_npc_showcase_publish_preview(
+            "use npc collaboration to preview the generated showcase output for the matched cattle project before git"
+                .to_string(),
+        )
+        .unwrap_err();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert!(error.contains("No generated showcase site output"));
+    }
+
+    #[test]
+    fn workspace_project_npc_showcase_publish_preview_reads_deterministic_project_scoped_paths() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-npc-publish-preview-success-{unique}"));
+        let project_dir = workspace_root.join("apps/cattle");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+        let artifacts_root = workspace_root.join(".opencow").join("artifacts").join("npc-showcase");
+        let site_root = artifacts_root.join("sites").join("cattle");
+
+        fs::create_dir_all(&project_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::create_dir_all(&site_root).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            project_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"cattle\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"vite\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            site_root.join("index.html"),
+            "<html><body>cattle showcase</body></html>",
+        )
+        .unwrap();
+        fs::write(
+            artifacts_root.join("cattle-screenshot-1700000000.png"),
+            b"fake-png",
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let run_result = workspace_project_run("run the cattle app locally".to_string()).unwrap();
+        assert_eq!(run_result.project_name, "cattle".to_string());
+
+        let result = workspace_project_npc_showcase_publish_preview(
+            "use npc collaboration to review the changed showcase files for the matched cattle project before commit"
+                .to_string(),
+        )
+        .unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(result.project_name, "cattle".to_string());
+        assert_eq!(result.project_path, "apps/cattle".to_string());
+        assert_eq!(
+            result.site_root,
+            ".opencow/artifacts/npc-showcase/sites/cattle".to_string()
+        );
+        assert_eq!(
+            result.entry_file,
+            ".opencow/artifacts/npc-showcase/sites/cattle/index.html".to_string()
+        );
+        assert_eq!(
+            result.changed_paths,
+            vec![".opencow/artifacts/npc-showcase/sites/cattle/index.html".to_string()]
+        );
+        assert_eq!(
+            result.source_screenshot_path,
+            ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png".to_string()
+        );
+        assert_eq!(
+            result.next_git_step,
+            "Git commit or push is still separate and requires its own explicit confirmation stage."
+                .to_string()
+        );
     }
 }

@@ -284,6 +284,17 @@ export type WorkspaceProjectNpcShowcaseSiteWriteResult = {
   summary: string;
 };
 
+export type WorkspaceProjectNpcShowcasePublishPreviewResult = {
+  project_name: string;
+  project_path: string;
+  site_root: string;
+  entry_file: string;
+  changed_paths: string[];
+  source_screenshot_path: string;
+  next_git_step: string;
+  summary: string;
+};
+
 export type ReadonlyShellCommandResult = {
   command_id: ReadonlyShellCommandId;
   command_label: string;
@@ -556,6 +567,21 @@ export async function writeNpcLocalProjectShowcaseSite(
   });
 }
 
+export async function loadNpcLocalProjectShowcasePublishPreview(
+  query: string
+): Promise<WorkspaceProjectNpcShowcasePublishPreviewResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcProjectShowcasePublishPreview(query);
+  }
+
+  return invoke<WorkspaceProjectNpcShowcasePublishPreviewResult>(
+    "workspace_project_npc_showcase_publish_preview",
+    {
+      query
+    }
+  );
+}
+
 export async function runControlledFullShellCommand(
   commandId: ControlledFullShellCommandId
 ): Promise<ControlledFullShellCommandResult> {
@@ -783,6 +809,28 @@ function createBrowserPreviewNpcProjectShowcaseSiteWrite(
       ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     summary: "Browser preview mode returned a mock NPC local project showcase-site write result."
+  };
+}
+
+function createBrowserPreviewNpcProjectShowcasePublishPreview(
+  query: string
+): WorkspaceProjectNpcShowcasePublishPreviewResult {
+  const prefersCattle = /\bcattle\b/i.test(query);
+  const projectName = prefersCattle ? "cattle" : "desktop";
+  const siteRoot = `.opencow/artifacts/npc-showcase/sites/${projectName}`;
+  const entryFile = `${siteRoot}/index.html`;
+
+  return {
+    project_name: projectName,
+    project_path: prefersCattle ? "apps/cattle" : "apps/desktop",
+    site_root: siteRoot,
+    entry_file: entryFile,
+    changed_paths: [entryFile],
+    source_screenshot_path: prefersCattle
+      ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
+      : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
+    next_git_step: "Git commit or push is still separate and requires its own explicit confirmation stage.",
+    summary: "Browser preview mode returned a mock NPC local project showcase publish preview result."
   };
 }
 

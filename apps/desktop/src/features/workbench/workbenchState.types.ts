@@ -101,6 +101,7 @@ export type LocalTaskExecutionKind =
   | "npc-local-project-run"
   | "npc-local-project-screenshot-capture"
   | "npc-local-project-showcase-site-write"
+  | "npc-local-project-showcase-publish-preview"
   | "npc-local-shell-plan-preview"
   | "capability-npc-overview"
   | "capability-mcp-overview"

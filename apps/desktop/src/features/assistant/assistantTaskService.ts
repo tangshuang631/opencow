@@ -272,6 +272,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "npc-local-project-showcase-publish-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "npc-local-shell-plan-preview";
       title: string;
       summary: string;
