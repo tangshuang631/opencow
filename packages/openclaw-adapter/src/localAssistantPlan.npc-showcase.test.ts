@@ -92,4 +92,28 @@ describe("local assistant task planner npc showcase workflow", () => {
       title: "NPC local project showcase-site write"
     });
   });
+
+  it("plans a readonly npc showcase publish preview for explicit post-write review wording", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to preview the generated showcase output for the matched cattle project before git",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-showcase-publish-preview",
+      title: "NPC local project showcase publish preview"
+    });
+  });
+
+  it("does not collapse npc showcase publish preview wording into generic readonly git status", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to review the changed showcase files for the matched cattle project before commit",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-showcase-publish-preview",
+      title: "NPC local project showcase publish preview"
+    });
+  });
 });

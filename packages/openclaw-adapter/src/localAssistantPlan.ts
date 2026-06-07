@@ -43,6 +43,9 @@ const npcShowcaseActionPatterns = [/\brun\b/i, /运行/, /\bscreenshot/i, /截�
 const continuationPatterns = [/\bcontinue\b/i, /\bproceed\b/i, /\bexecute\b/i, /\brun\b/i];
 const npcShowcaseScreenshotPatterns = [/\bscreenshot\b/i, /\bcapture\b/i, /截图/, /截屏/];
 const npcShowcaseSiteWritePatterns = [/\bshowcase\b/i, /\bwebsite\b/i, /\bsite\b/i, /\bpage\b/i];
+const npcShowcasePublishPreviewPatterns = [/\bpreview\b/i, /\breview\b/i, /\binspect\b/i, /\bshow\b/i];
+const npcShowcasePublishArtifactPatterns = [/\bshowcase\b/i, /\bartifact/i, /\boutput\b/i, /\bfiles?\b/i, /\bchanged\b/i];
+const npcShowcasePublishGitBoundaryPatterns = [/\bbefore git\b/i, /\bbefore commit\b/i, /\bbefore push\b/i];
 const mcpCapabilityPatterns = [/\bmcp\b/i, /model context protocol/i];
 const mcpLocalPluginInspectPatterns = [/\bshow\b/i, /\bdetail\b/i, /\bdetails\b/i, /\bread\b/i, /\binspect\b/i, /\bopen\b/i];
 const mcpLocalPluginStartPreviewPatterns = [/\bpreview\b/i, /\bstart\b/i, /\blaunch\b/i, /\brun\b/i];
@@ -211,6 +214,24 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: message,
       auditSummary: "Local assistant planned NPC local project showcase-site write.",
       auditDetail: `NPC local project showcase-site write task: ${message}`
+    };
+  }
+
+  if (
+    /\bnpc\b/i.test(message)
+    && /collaboration/i.test(message)
+    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
+    && npcShowcasePublishPreviewPatterns.some((pattern) => pattern.test(message))
+    && npcShowcasePublishArtifactPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "npc-local-project-showcase-publish-preview",
+      title: "NPC local project showcase publish preview",
+      summary: npcShowcasePublishGitBoundaryPatterns.some((pattern) => pattern.test(message))
+        ? message
+        : "Preview the latest NPC showcase outputs and changed files before any later git stage is considered.",
+      auditSummary: "Local assistant planned a readonly NPC local project showcase publish preview.",
+      auditDetail: `Readonly NPC local project showcase publish preview task: ${message}`
     };
   }
 
