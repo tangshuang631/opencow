@@ -1012,6 +1012,7 @@ Verification for this slice:
 npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.self-repair.test.ts
 npm --workspace packages/openclaw-adapter run build
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
+npm --workspace apps/desktop exec tsc --noEmit
 cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
 ```
 
