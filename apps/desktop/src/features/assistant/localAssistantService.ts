@@ -274,6 +274,16 @@ export type WorkspaceProjectNpcScreenshotCaptureResult = {
   summary: string;
 };
 
+export type WorkspaceProjectNpcShowcaseSiteWriteResult = {
+  project_name: string;
+  project_path: string;
+  site_root: string;
+  entry_file: string;
+  changed_paths: string[];
+  source_screenshot_path: string;
+  summary: string;
+};
+
 export type ReadonlyShellCommandResult = {
   command_id: ReadonlyShellCommandId;
   command_label: string;
@@ -534,6 +544,18 @@ export async function captureNpcLocalProjectScreenshot(
   });
 }
 
+export async function writeNpcLocalProjectShowcaseSite(
+  query: string
+): Promise<WorkspaceProjectNpcShowcaseSiteWriteResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcProjectShowcaseSiteWrite(query);
+  }
+
+  return invoke<WorkspaceProjectNpcShowcaseSiteWriteResult>("workspace_project_npc_showcase_site_write", {
+    query
+  });
+}
+
 export async function runControlledFullShellCommand(
   commandId: ControlledFullShellCommandId
 ): Promise<ControlledFullShellCommandResult> {
@@ -740,6 +762,27 @@ function createBrowserPreviewNpcProjectScreenshotCapture(
     artifact_directory: ".opencow/artifacts/npc-showcase",
     capture_target: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
     summary: "Browser preview mode returned a mock NPC local project screenshot capture result."
+  };
+}
+
+function createBrowserPreviewNpcProjectShowcaseSiteWrite(
+  query: string
+): WorkspaceProjectNpcShowcaseSiteWriteResult {
+  const prefersCattle = /\bcattle\b/i.test(query);
+  const projectName = prefersCattle ? "cattle" : "desktop";
+  const siteRoot = `.opencow/artifacts/npc-showcase/sites/${projectName}`;
+  const entryFile = `${siteRoot}/index.html`;
+
+  return {
+    project_name: projectName,
+    project_path: prefersCattle ? "apps/cattle" : "apps/desktop",
+    site_root: siteRoot,
+    entry_file: entryFile,
+    changed_paths: [entryFile],
+    source_screenshot_path: prefersCattle
+      ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
+      : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
+    summary: "Browser preview mode returned a mock NPC local project showcase-site write result."
   };
 }
 

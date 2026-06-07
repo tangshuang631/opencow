@@ -29,6 +29,7 @@ pub fn run() {
             workspace::workspace_overview,
             workspace::workspace_project_run,
             workspace::workspace_project_npc_screenshot_capture,
+            workspace::workspace_project_npc_showcase_site_write,
             workspace::workspace_project_status,
             workspace::workspace_project_stop,
             workspace::workspace_project_run_preview,

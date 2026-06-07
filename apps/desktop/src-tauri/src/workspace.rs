@@ -100,6 +100,17 @@ pub struct WorkspaceProjectNpcScreenshotCaptureResult {
     summary: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct WorkspaceProjectNpcShowcaseSiteWriteResult {
+    project_name: String,
+    project_path: String,
+    site_root: String,
+    entry_file: String,
+    changed_paths: Vec<String>,
+    source_screenshot_path: String,
+    summary: String,
+}
+
 #[derive(Serialize)]
 pub struct WorkspaceProjectRunCandidate {
     name: String,
@@ -791,6 +802,43 @@ pub fn workspace_project_npc_screenshot_capture(
         artifact_directory: ".opencow/artifacts/npc-showcase".to_string(),
         capture_target,
         summary: "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact.".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn workspace_project_npc_showcase_site_write(
+    query: String,
+) -> Result<WorkspaceProjectNpcShowcaseSiteWriteResult, String> {
+    let root = resolve_workspace_root()?;
+    let candidates = collect_workspace_project_run_candidates(&root)?;
+    let normalized_query = query.to_lowercase();
+    let matched = select_project_run_candidate(&normalized_query, &candidates)
+        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .ok_or_else(|| "no runnable local workspace project matched the showcase-site write request".to_string())?;
+    let runtime = find_workspace_project_runtime_record(&root, &matched.relative_path)?
+        .ok_or_else(|| format!("No active matched local project run is available for NPC showcase-site write: {}", matched.relative_path))?;
+    let screenshot_artifact = find_latest_npc_showcase_screenshot_artifact(&root, &matched.name)?
+        .ok_or_else(|| format!("No screenshot artifact is available for NPC showcase-site write: {}", matched.name))?;
+    let expected_url = infer_project_expected_url(Some(matched));
+    let site_root = build_npc_showcase_site_root(&root, &matched.name);
+    let entry_file = site_root.join("index.html");
+
+    write_npc_showcase_site_html(
+        &entry_file,
+        &runtime.project_name,
+        &runtime.project_path,
+        expected_url.as_deref(),
+        &screenshot_artifact,
+    )?;
+
+    Ok(WorkspaceProjectNpcShowcaseSiteWriteResult {
+        project_name: runtime.project_name,
+        project_path: runtime.project_path,
+        site_root: path_relative_to_root(&root, &site_root),
+        entry_file: path_relative_to_root(&root, &entry_file),
+        changed_paths: vec![path_relative_to_root(&root, &entry_file)],
+        source_screenshot_path: path_relative_to_root(&root, &screenshot_artifact),
+        summary: "NPC local project showcase-site write completed successfully and returned a changed-file summary.".to_string(),
     })
 }
 
@@ -2053,6 +2101,14 @@ fn build_npc_showcase_screenshot_artifact_path(root: &Path, project_name: &str, 
         ))
 }
 
+fn build_npc_showcase_site_root(root: &Path, project_name: &str) -> PathBuf {
+    root.join(".opencow")
+        .join("artifacts")
+        .join("npc-showcase")
+        .join("sites")
+        .join(sanitize_artifact_segment(project_name))
+}
+
 fn sanitize_artifact_segment(value: &str) -> String {
     let mut sanitized = String::new();
 
@@ -2096,6 +2152,73 @@ fn capture_url_to_png_via_edge(url: &str, artifact_path: &Path) -> Result<(), St
         ));
     }
 
+    Ok(())
+}
+
+fn find_latest_npc_showcase_screenshot_artifact(root: &Path, project_name: &str) -> Result<Option<PathBuf>, String> {
+    let artifact_root = root.join(".opencow").join("artifacts").join("npc-showcase");
+    if !artifact_root.exists() {
+        return Ok(None);
+    }
+
+    let prefix = format!("{}-screenshot-", sanitize_artifact_segment(project_name));
+    let mut matches = Vec::new();
+
+    for entry in fs::read_dir(&artifact_root).map_err(|error| format!("failed to read {}: {error}", artifact_root.display()))? {
+        let entry = entry.map_err(|error| format!("failed to read {} entry: {error}", artifact_root.display()))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+
+        if file_name.starts_with(&prefix) && file_name.ends_with(".png") {
+            matches.push(path);
+        }
+    }
+
+    matches.sort();
+    Ok(matches.pop())
+}
+
+fn write_npc_showcase_site_html(
+    entry_file: &Path,
+    project_name: &str,
+    project_path: &str,
+    expected_url: Option<&str>,
+    screenshot_artifact: &Path,
+) -> Result<(), String> {
+    let parent = entry_file
+        .parent()
+        .ok_or_else(|| format!("failed to resolve showcase-site parent for {}", entry_file.display()))?;
+    fs::create_dir_all(parent).map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+
+    let screenshot_file_name = screenshot_artifact
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("screenshot.png");
+    let expected_url_line = expected_url.unwrap_or("not inferred");
+    let html = format!(
+        concat!(
+            "<!doctype html>\n",
+            "<html lang=\"en\">\n",
+            "<head><meta charset=\"utf-8\"><title>{}</title></head>\n",
+            "<body>\n",
+            "<h1>{}</h1>\n",
+            "<p>Project path: {}</p>\n",
+            "<p>Expected URL: {}</p>\n",
+            "<p>Screenshot artifact: {}</p>\n",
+            "<p>Generated by the NPC showcase workflow for local review.</p>\n",
+            "</body>\n",
+            "</html>\n"
+        ),
+        project_name, project_name, project_path, expected_url_line, screenshot_file_name
+    );
+
+    fs::write(entry_file, html).map_err(|error| format!("failed to write {}: {error}", entry_file.display()))?;
     Ok(())
 }
 
@@ -2914,14 +3037,14 @@ fn escape_powershell_single_quote(input: &str) -> String {
 mod tests {
     use super::{
         build_controlled_full_shell_command, build_enabled_local_skill_items, build_openclaw_capability_spec,
-        build_npc_showcase_screenshot_artifact_path, build_readonly_shell_command,
+        build_npc_showcase_screenshot_artifact_path, build_npc_showcase_site_root, build_readonly_shell_command,
         build_workspace_write_shell_command, classify_mcp_plugin_source, extract_skill_content_preview,
         is_local_knowledge_file, is_local_mcp_plugin_file, local_mcp_plugin_inspect, local_mcp_plugin_scan,
         local_mcp_plugin_start_preview, local_skill_disable, local_skill_install, looks_like_workspace_root,
         opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name, read_enabled_skill_registry,
         read_workspace_project_runtime_records, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
         score_snippet, split_knowledge_segments, tokenize_query, truncate_preview,
-        workspace_project_npc_screenshot_capture, workspace_project_run, workspace_project_run_preview,
+        workspace_project_npc_screenshot_capture, workspace_project_npc_showcase_site_write, workspace_project_run, workspace_project_run_preview,
         workspace_project_status, workspace_project_stop,
     };
     use serde_json::{Value, json};
@@ -3926,5 +4049,68 @@ mod tests {
         assert!(artifact_path.ends_with(Path::new(
             ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png"
         )));
+    }
+
+    #[test]
+    fn workspace_project_npc_showcase_site_write_returns_error_without_screenshot_artifact() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-npc-showcase-site-{unique}"));
+        let project_dir = workspace_root.join("apps/cattle");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+
+        fs::create_dir_all(&project_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            project_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"cattle\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"vite\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let run_result = workspace_project_run("run the cattle app locally".to_string()).unwrap();
+        assert_eq!(run_result.project_name, "cattle".to_string());
+
+        let error = workspace_project_npc_showcase_site_write(
+            "use npc collaboration to generate the showcase site for the matched cattle project now".to_string(),
+        )
+        .unwrap_err();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert!(error.contains("No screenshot artifact"));
+    }
+
+    #[test]
+    fn workspace_project_npc_showcase_site_write_output_path_stays_inside_workspace_artifacts_root() {
+        let workspace_root = Path::new("E:/2026/opencow");
+        let site_root = build_npc_showcase_site_root(workspace_root, "cattle");
+
+        assert!(site_root.ends_with(Path::new(".opencow/artifacts/npc-showcase/sites/cattle")));
     }
 }
