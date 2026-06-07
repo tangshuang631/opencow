@@ -15,6 +15,8 @@ import {
   createRemoteApiToggleState,
   createSearchEnabledState,
   createSearchProviderConfigState,
+  createTaskExecutionStartedState,
+  createTaskExecutionSucceededState,
   createSearchToggleState,
   createUserTaskSubmittedState,
   createRollbackLimitUpdatedState,
@@ -543,16 +545,32 @@ describe("createInitialWorkbenchState", () => {
     });
 
     expect(updated.conversation.entries[0]).toMatchObject({
-      title: "任务已进入本地队列",
-      summary: "将优先使用本地 Ollama 处理这条任务。"
-    });
-    expect(updated.conversation.entries[1]).toMatchObject({
       kind: "user",
       summary: "请检查当前工作区并整理待办"
     });
-    expect(updated.audit.summary).toBe("已提交 1 条本地任务");
+    expect(updated.audit.summary).toBe("已提交本地任务");
     expect(updated.audit.lastEvent.source).toBe("composer_submit");
     expect(updated.rollback.entries[0]?.label).toBe("会话输入");
+  });
+
+  it("keeps completed local task results rollback-visible in conversation", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "repair opencow enabled skills registry"
+    });
+    const running = createTaskExecutionStartedState(queued);
+    const completed = createTaskExecutionSucceededState(running, {
+      resultTitle: "Repair opencow enabled skills registry",
+      resultSummary: "Self-repair completed and verified."
+    });
+
+    expect(completed.conversation.entries[0]).toMatchObject({
+      kind: "assistant",
+      title: "Repair opencow enabled skills registry",
+      summary: "Self-repair completed and verified.",
+      actionLabel: "预览回退到本次任务执行前",
+      rollbackTargetId: `${running.tasks.activeTaskId}-completed`
+    });
+    expect(completed.rollback.entries[0]?.id).toBe(`${running.tasks.activeTaskId}-completed`);
   });
 
   it("updates the rollback active limit within the allowed desktop range", () => {

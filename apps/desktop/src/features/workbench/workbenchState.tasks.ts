@@ -213,7 +213,9 @@ export function createTaskExecutionSucceededState(
           id: `${activeTaskId}-assistant`,
           kind: "assistant",
           title: payload.resultTitle,
-          summary: payload.resultSummary
+          summary: payload.resultSummary,
+          actionLabel: "预览回退到本次任务执行前",
+          rollbackTargetId: `${activeTaskId}-completed`
         })
       },
       audit: {

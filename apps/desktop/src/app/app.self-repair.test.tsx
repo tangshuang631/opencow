@@ -123,6 +123,8 @@ describe("App self-repair mutation continuation", () => {
         ).length
       ).toBeGreaterThan(0);
     });
+
+    expect(screen.getAllByText(/Repair opencow enabled skills registry/i).length).toBeGreaterThan(0);
   });
 });
 
