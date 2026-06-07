@@ -41,6 +41,7 @@ const npcShowcaseProjectPatterns = [/\bcattle\b/i, /\bproject\b/i, /项目/];
 const npcShowcaseOutputPatterns = [/\bshowcase\b/i, /\bportfolio\b/i, /\bresume\b/i, /简历/];
 const npcShowcaseActionPatterns = [/\brun\b/i, /运行/, /\bscreenshot/i, /截图/, /\bwebsite\b/i, /网站/, /\bgit repo\b/i, /仓库/];
 const continuationPatterns = [/\bcontinue\b/i, /\bproceed\b/i, /\bexecute\b/i, /\brun\b/i];
+const npcShowcaseScreenshotPatterns = [/\bscreenshot\b/i, /\bcapture\b/i, /截图/, /截屏/];
 const mcpCapabilityPatterns = [/\bmcp\b/i, /model context protocol/i];
 const mcpLocalPluginInspectPatterns = [/\bshow\b/i, /\bdetail\b/i, /\bdetails\b/i, /\bread\b/i, /\binspect\b/i, /\bopen\b/i];
 const mcpLocalPluginStartPreviewPatterns = [/\bpreview\b/i, /\bstart\b/i, /\blaunch\b/i, /\brun\b/i];
@@ -140,6 +141,40 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: message,
       auditSummary: "Local assistant planned an NPC local project run.",
       auditDetail: `NPC local project run task: ${message}`
+    };
+  }
+
+  if (
+    /\bnpc\b/i.test(message)
+    && /collaboration/i.test(message)
+    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseScreenshotPatterns.some((pattern) => pattern.test(message))
+    && (/\bnow\b/i.test(message) || /\bcapture\b/i.test(message) || /\btake\b/i.test(message))
+    && !npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason: "Workspace write permission is required before NPC collaboration can capture a screenshot from the matched local project.",
+        riskSummary:
+          "This task captures only a task-scoped screenshot artifact for the matched running local workspace project, writes it inside the approved workspace, and must remain audit-visible.",
+        auditSummary: "Local assistant task requires workspace-write permission for NPC local project screenshot capture.",
+        auditDetail: `NPC local project screenshot capture task is waiting for permission: ${message}`,
+        queuedExecutionKind: "npc-local-project-screenshot-capture",
+        queuedExecutionTitle: "NPC local project screenshot capture",
+        queuedExecutionAuditSummary: "Local assistant planned NPC local project screenshot capture.",
+        queuedExecutionAuditDetail: `NPC local project screenshot capture task: ${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "npc-local-project-screenshot-capture",
+      title: "NPC local project screenshot capture",
+      summary: message,
+      auditSummary: "Local assistant planned NPC local project screenshot capture.",
+      auditDetail: `NPC local project screenshot capture task: ${message}`
     };
   }
 

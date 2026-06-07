@@ -40,4 +40,30 @@ describe("local assistant task planner npc showcase workflow", () => {
       title: "NPC local project run"
     });
   });
+
+  it("requests workspace-write before capturing a matched npc showcase screenshot", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to capture a screenshot from the matched cattle project now",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-local-project-screenshot-capture",
+      queuedExecutionTitle: "NPC local project screenshot capture"
+    });
+  });
+
+  it("plans npc screenshot capture after workspace-write is approved", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to capture a screenshot from the matched cattle project now",
+      permissionMode: "workspace-write"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-screenshot-capture",
+      title: "NPC local project screenshot capture"
+    });
+  });
 });
