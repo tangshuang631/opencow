@@ -11,6 +11,8 @@ const createTempOutputContainerPatterns = [/\bfolder\b/i, /\bdirectory\b/i];
 const enabledSkillPatterns = [/\benabled\b/i, /\bactive\b/i];
 const skillMediationPatterns = [/\bskill\b/i, /\bautomation\b/i];
 const shellAutomationPatterns = [/\bshell\b/i, /\bautomation\b/i];
+const workspaceOverviewPatterns = [/\bworkspace\b/i, /\brepo\b/i, /\brepository\b/i, /工作区/];
+const workspaceOverviewIntentPatterns = [/\binspect\b/i, /\boverview\b/i, /\bsummar/i, /\bstructure\b/i, /\blayout\b/i];
 const configOverviewPatterns = [
   /config/i,
   /configs/i,
@@ -89,6 +91,21 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Preview a readonly opencow self-repair workflow by inspecting local docs, config surfaces, and likely repair boundaries before any mutation is approved.",
       auditSummary: "Local assistant planned a readonly opencow self-repair preview.",
       auditDetail: `Readonly opencow self-repair preview task: ${message}`
+    };
+  }
+
+  if (
+    workspaceOverviewPatterns.some((pattern) => pattern.test(message))
+    && workspaceOverviewIntentPatterns.some((pattern) => pattern.test(message))
+    && !configOverviewPatterns.some((pattern) => pattern.test(message))
+    && !packagesOverviewPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "workspace-overview",
+      title: "Workspace overview",
+      summary: "Inspect the current workspace structure before deeper local assistant execution.",
+      auditSummary: "Local assistant planned a workspace overview task.",
+      auditDetail: `Readonly workspace overview task: ${message}`
     };
   }
 

@@ -410,7 +410,7 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
     return {
       resultTitle: "本地助手能力说明",
       resultSummary:
-        "我目前可以先稳定帮你做这几类事：1. 使用本地 Ollama 进行基础对话与任务处理；2. 查看工作区、配置、包信息；3. 在你同意后执行受控 shell 操作；4. 检索本地规则和文档；5. 读取本地 Skills、NPC、MCP 的当前可用状态。当前更适合先做对话、项目检查、规则检索和受控本地操作，后续再继续补强更深的自动执行链。"
+        "I can help with local chat, inspect workspace/packages/config, run permission-backed project run/status/stop tasks, perform guarded shell changes, search local docs, inspect Skills/MCP/NPC status, and continue into controlled self-repair when the request is explicit."
     };
   }
 
