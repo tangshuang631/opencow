@@ -6,13 +6,15 @@ const {
   listEnabledLocalSkillsMock,
   loadWorkspaceOverviewMock,
   loadWorkspaceProjectRunPreviewMock,
-  runWorkspaceProjectMock
+  runWorkspaceProjectMock,
+  captureNpcLocalProjectScreenshotMock
 } = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
   loadWorkspaceOverviewMock: vi.fn(),
   loadWorkspaceProjectRunPreviewMock: vi.fn(),
-  runWorkspaceProjectMock: vi.fn()
+  runWorkspaceProjectMock: vi.fn(),
+  captureNpcLocalProjectScreenshotMock: vi.fn()
 }));
 
 vi.mock("./localAssistantService", async () => {
@@ -24,7 +26,8 @@ vi.mock("./localAssistantService", async () => {
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
     loadWorkspaceOverview: loadWorkspaceOverviewMock,
     loadWorkspaceProjectRunPreview: loadWorkspaceProjectRunPreviewMock,
-    runWorkspaceProject: runWorkspaceProjectMock
+    runWorkspaceProject: runWorkspaceProjectMock,
+    captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock
   };
 });
 
@@ -157,5 +160,45 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
     expect(result.resultSummary).toContain("5252");
     expect(result.resultSummary).toContain("first executed stage inside the NPC showcase chain");
+  });
+
+  it("requests workspace-write before capturing a matched npc showcase screenshot", () => {
+    const plan = planAssistantTask(
+      "use npc collaboration to capture a screenshot from the matched cattle project now",
+      "readonly"
+    );
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-local-project-screenshot-capture"
+    });
+  });
+
+  it("captures the matched local project screenshot with npc-specific identity", async () => {
+    captureNpcLocalProjectScreenshotMock.mockResolvedValueOnce({
+      project_name: "cattle",
+      project_path: "apps/cattle",
+      expected_url: "http://127.0.0.1:3000",
+      artifact_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
+      artifact_directory: ".opencow/artifacts/npc-showcase",
+      capture_target: "http://127.0.0.1:3000",
+      summary: "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "npc-local-project-screenshot-capture",
+      title: "NPC local project screenshot capture",
+      summary: "use npc collaboration to capture a screenshot from the matched cattle project now",
+      auditSummary: "Local assistant planned NPC local project screenshot capture.",
+      auditDetail: "NPC local project screenshot capture task."
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC local project screenshot capture");
+    expect(result.resultSummary).toContain("cattle");
+    expect(result.resultSummary).toContain("apps/cattle");
+    expect(result.resultSummary).toContain("http://127.0.0.1:3000");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase");
+    expect(result.resultSummary).toContain("screenshot stage inside the NPC showcase chain");
   });
 });

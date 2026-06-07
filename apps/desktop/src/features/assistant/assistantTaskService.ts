@@ -23,6 +23,7 @@ import {
   loadWorkspaceProjectRunPreview,
   getWorkspaceProjectStatus,
   runWorkspaceProject,
+  captureNpcLocalProjectScreenshot,
   stopWorkspaceProject,
   runControlledFullShellCommand,
   runReadonlyShellCommand,
@@ -578,6 +579,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
 
   if (plan.kind === "npc-local-project-run") {
     return executeNpcLocalProjectRunPlan(plan.title, plan.summary);
+  }
+
+  if (plan.kind === "npc-local-project-screenshot-capture") {
+    return executeNpcLocalProjectScreenshotCapturePlan(plan.title, plan.summary);
   }
 
   if (plan.kind === "npc-local-shell-plan-preview") {
@@ -1270,6 +1275,22 @@ async function executeNpcLocalProjectRunPlan(
       `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
       `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. ` +
       `Preview: ${result.stdout_preview}. This is the first executed stage inside the NPC showcase chain.`
+  };
+}
+
+async function executeNpcLocalProjectScreenshotCapturePlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await captureNpcLocalProjectScreenshot(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
+      `Capture target: ${result.capture_target}. Expected URL: ${result.expected_url ?? "not inferred"}. ` +
+      `Artifact path: ${result.artifact_path}. Artifact directory: ${result.artifact_directory}. ` +
+      `This is the screenshot stage inside the NPC showcase chain.`
   };
 }
 
