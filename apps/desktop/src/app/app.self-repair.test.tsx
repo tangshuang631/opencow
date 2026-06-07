@@ -113,6 +113,17 @@ describe("App self-repair mutation continuation", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
+    expect(
+      screen.getAllByText(
+        /Workspace write permission is required before opencow can repair its workspace-local enabled skills registry\./i
+      ).length
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        /This repair rewrites only \.opencow\/skills\/enabled-skills\.json through a narrow self-repair path and must remain audit-visible and rollback-visible\./i
+      ).length
+    ).toBeGreaterThan(0);
+
     const approvePermissionButton = await screen.findByRole("button", { name: /批准提权/i });
     fireEvent.click(approvePermissionButton as HTMLButtonElement);
 

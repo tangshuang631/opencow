@@ -258,6 +258,8 @@ describe("createInitialWorkbenchState", () => {
       queuedExecutionAuditDetail: "Workspace-write shell command task: create temp-output directory",
       queuedMessage: "create a temp-output folder for this workspace"
     });
+    expect(updated.audit.lastEvent.detail).toContain("Need workspace write access before creating temp-output.");
+    expect(updated.audit.lastEvent.detail).toContain("Allow write actions inside the approved workspace only.");
   });
 
   it("clears the active error when a permission upgrade request begins", () => {

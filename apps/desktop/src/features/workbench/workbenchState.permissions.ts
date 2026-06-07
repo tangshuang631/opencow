@@ -355,7 +355,7 @@ export function requestPermissionModeChangeState(
       summary: "等待用户确认权限升级",
       lastEvent: {
         module: "permission",
-        detail: pendingModeChange.reason,
+        detail: `${pendingModeChange.reason} Risk: ${pendingModeChange.riskSummary}`,
         timestamp: "待用户确认",
         source: "permission_mode_change"
       }
