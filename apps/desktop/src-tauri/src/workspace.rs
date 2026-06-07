@@ -112,6 +112,7 @@ struct WorkspaceProjectRuntimeRecord {
     working_directory: String,
     pid: u32,
     launched_at: String,
+    last_status: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -593,6 +594,7 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
             working_directory: working_directory_relative.clone(),
             pid,
             launched_at: current_unix_timestamp_string(),
+            last_status: "running".to_string(),
         },
     )?;
 
@@ -663,6 +665,14 @@ pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusR
                 summary: "Workspace project status found no active local process handle for the matched project.".to_string(),
             });
         }
+
+        upsert_workspace_project_runtime_record(
+            &root,
+            WorkspaceProjectRuntimeRecord {
+                last_status: "running".to_string(),
+                ..runtime.clone()
+            },
+        )?;
 
         return Ok(WorkspaceProjectStatusResult {
             project_name: runtime.project_name,
@@ -2033,6 +2043,7 @@ fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspacePr
                     working_directory: entry.get("working_directory")?.as_str()?.to_string(),
                     pid: entry.get("pid")?.as_u64()? as u32,
                     launched_at: "legacy-migrated".to_string(),
+                    last_status: "legacy-migrated".to_string(),
                 })
             })
             .collect::<Vec<_>>();
@@ -3536,6 +3547,7 @@ mod tests {
 
         assert_eq!(runs.len(), 1);
         assert!(runs[0].get("launched_at").and_then(Value::as_str).is_some());
+        assert_eq!(runs[0].get("last_status").and_then(Value::as_str), Some("running"));
     }
 
     #[test]
@@ -3685,6 +3697,7 @@ mod tests {
         assert_eq!(runs.len(), 1);
         assert_eq!(runs[0].get("project_path").and_then(Value::as_str), Some("apps/desktop"));
         assert_eq!(runs[0].get("launched_at").and_then(Value::as_str), Some("legacy-migrated"));
+        assert_eq!(runs[0].get("last_status").and_then(Value::as_str), Some("running"));
     }
 
     #[test]
