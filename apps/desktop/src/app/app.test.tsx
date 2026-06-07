@@ -2,13 +2,25 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock } = vi.hoisted(() => ({
-  loadOllamaOverviewMock: vi.fn()
+const { loadOllamaOverviewMock, enableLocalSkillMock } = vi.hoisted(() => ({
+  loadOllamaOverviewMock: vi.fn(),
+  enableLocalSkillMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
   loadOllamaOverview: loadOllamaOverviewMock
 }));
+
+vi.mock("../features/assistant/localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("../features/assistant/localAssistantService")>(
+    "../features/assistant/localAssistantService"
+  );
+
+  return {
+    ...actual,
+    enableLocalSkill: enableLocalSkillMock
+  };
+});
 
 function getComposerInput() {
   return screen.getByLabelText("输入任务");
@@ -74,7 +86,7 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("你能干什么").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText(/Workspace overview|本地助手答复/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/本地助手能力说明|Workspace overview|本地助手答复/)).toBeInTheDocument();
     });
 
     expect(within(conversation).queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
@@ -132,4 +144,37 @@ describe("App", () => {
     expect(getComposerInput()).toBeEnabled();
     expect(getComposerSendButton()).toBeInTheDocument();
   }, 10000);
+
+  it("continues from skill enable permission approval into the final enabled result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    enableLocalSkillMock.mockResolvedValueOnce({
+      query: "enable the coding-agent skill for this workspace",
+      enabled_skill_name: "coding-agent",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      status: "enabled",
+      summary: "Local skill enablement registered coding-agent in the workspace skill registry."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "enable the coding-agent skill for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const approvePermissionButton = await screen.findByRole("button", { name: /批准提权/i });
+    fireEvent.click(approvePermissionButton);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Enable local skill|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+    });
+  });
 });
