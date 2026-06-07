@@ -220,6 +220,20 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
+    /\bstatus\b/i.test(message)
+    && /\blocal(ly)?\b/i.test(message)
+    && (/\bdesktop\b/i.test(message) || /\bapp\b/i.test(message) || /\bproject\b/i.test(message) || /\brun\b/i.test(message))
+  ) {
+    return {
+      kind: "workspace-project-status",
+      title: "Matched local project status",
+      summary: message,
+      auditSummary: "Local assistant planned a readonly workspace-backed local project status lookup.",
+      auditDetail: `Readonly workspace-backed local project status task: ${message}`
+    };
+  }
+
+  if (
     /\b(stop|terminate|kill)\b/i.test(message)
     && /\blocal(ly)?\b/i.test(message)
     && (/\bdesktop\b/i.test(message) || /\bapp\b/i.test(message) || /\bproject\b/i.test(message) || /\brun\b/i.test(message))

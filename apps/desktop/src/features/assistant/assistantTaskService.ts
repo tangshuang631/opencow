@@ -21,6 +21,7 @@ import {
   loadWorkspaceOverview,
   loadWorkspacePackagesOverview,
   loadWorkspaceProjectRunPreview,
+  getWorkspaceProjectStatus,
   runWorkspaceProject,
   stopWorkspaceProject,
   runControlledFullShellCommand,
@@ -339,6 +340,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "workspace-project-status";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "workspace-project-stop";
       title: string;
       summary: string;
@@ -604,6 +612,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
 
   if (plan.kind === "workspace-project-run") {
     return executeWorkspaceProjectRunPlan(plan.title, plan.summary);
+  }
+
+  if (plan.kind === "workspace-project-status") {
+    return executeWorkspaceProjectStatusPlan(plan.title, plan.summary);
   }
 
   if (plan.kind === "workspace-project-stop") {
@@ -1312,6 +1324,22 @@ async function executeWorkspaceProjectRunPlan(
       `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
       `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
       `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. Preview: ${result.stdout_preview}`
+  };
+}
+
+async function executeWorkspaceProjectStatusPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await getWorkspaceProjectStatus(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
+      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
+      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid ?? "none"}. ` +
+      `Status: ${result.status}. Preview: ${result.stdout_preview}`
   };
 }
 

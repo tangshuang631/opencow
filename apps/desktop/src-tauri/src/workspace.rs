@@ -64,6 +64,19 @@ pub struct WorkspaceProjectRunResult {
 }
 
 #[derive(Serialize)]
+pub struct WorkspaceProjectStatusResult {
+    project_name: String,
+    project_path: String,
+    command_label: String,
+    working_directory: String,
+    expected_url: Option<String>,
+    pid: Option<u32>,
+    status: String,
+    stdout_preview: String,
+    summary: String,
+}
+
+#[derive(Serialize)]
 pub struct WorkspaceProjectStopResult {
     project_name: String,
     project_path: String,
@@ -583,6 +596,88 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
         pid,
         stdout_preview,
         summary: "Workspace project run started successfully and returned a live local process handle.".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusResult, String> {
+    let root = resolve_workspace_root()?;
+    let candidates = collect_workspace_project_run_candidates(&root)?;
+    let normalized_query = query.to_lowercase();
+    let matched = select_project_run_candidate(&normalized_query, &candidates)
+        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .ok_or_else(|| "no runnable local workspace project matched the request".to_string())?;
+    let command_label = build_project_run_command_label(matched)
+        .ok_or_else(|| format!("matched project {} does not expose a supported run script", matched.name))?;
+    let expected_url = infer_project_expected_url(Some(matched));
+    let working_directory = root.join(&matched.relative_path);
+    let record = find_workspace_project_runtime_record(&root, &matched.relative_path)?;
+
+    if let Some(runtime) = record {
+        let powershell_command = format!(
+            "if (Get-Process -Id {0} -ErrorAction SilentlyContinue) {{ \"running:{0}\" }} else {{ \"stopped:{0}\" }}",
+            runtime.pid
+        );
+        let output = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(powershell_command)
+            .current_dir(&root)
+            .output()
+            .map_err(|error| format!("failed to execute workspace project status command: {error}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(format!(
+                "workspace project status failed with status {}: {}",
+                output.status,
+                stderr
+            ));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
+        let stdout_preview = truncate_preview(stdout.trim(), 20);
+        let is_running = stdout_preview.contains("running:");
+
+        if !is_running {
+            remove_workspace_project_runtime_record(&root, &matched.relative_path)?;
+
+            return Ok(WorkspaceProjectStatusResult {
+                project_name: matched.name.clone(),
+                project_path: matched.relative_path.clone(),
+                command_label,
+                working_directory: path_relative_to_root(&root, &working_directory),
+                expected_url,
+                pid: None,
+                status: "stopped".to_string(),
+                stdout_preview,
+                summary: "Workspace project status found no active local process handle for the matched project.".to_string(),
+            });
+        }
+
+        return Ok(WorkspaceProjectStatusResult {
+            project_name: runtime.project_name,
+            project_path: runtime.project_path,
+            command_label: runtime.command_label,
+            working_directory: runtime.working_directory,
+            expected_url,
+            pid: Some(runtime.pid),
+            status: "running".to_string(),
+            stdout_preview,
+            summary: "Workspace project status found an active local process handle for the matched project.".to_string(),
+        });
+    }
+
+    Ok(WorkspaceProjectStatusResult {
+        project_name: matched.name.clone(),
+        project_path: matched.relative_path.clone(),
+        command_label,
+        working_directory: path_relative_to_root(&root, &working_directory),
+        expected_url,
+        pid: None,
+        status: "stopped".to_string(),
+        stdout_preview: "no recorded runtime handle".to_string(),
+        summary: "Workspace project status found no active local process handle for the matched project.".to_string(),
     })
 }
 
@@ -2635,7 +2730,8 @@ mod tests {
         looks_like_workspace_root, opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name,
         read_enabled_skill_registry, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
         score_snippet, split_knowledge_segments, tokenize_query, truncate_preview, workspace_project_run,
-        workspace_project_run_preview, workspace_project_stop, read_workspace_project_runtime_records,
+        workspace_project_run_preview, workspace_project_status, workspace_project_stop,
+        read_workspace_project_runtime_records,
     };
     use serde_json::{Value, json};
     use std::{
@@ -3294,6 +3390,63 @@ mod tests {
         assert_eq!(result.expected_url, Some("http://127.0.0.1:1420".to_string()));
         assert!(result.pid > 0);
         assert!(result.stdout_preview.contains("pid:"));
+    }
+
+    #[test]
+    fn workspace_project_status_reports_active_runtime_handle_for_matched_app() {
+        let _guard = workspace_test_lock().lock().unwrap();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-{unique}"));
+        let app_dir = workspace_root.join("apps/desktop");
+        let package_dir = workspace_root.join("packages/openclaw-adapter");
+        let docs_dir = workspace_root.join("docs");
+
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&package_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            app_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"desktop\",\n",
+                "  \"scripts\": {\n",
+                "    \"dev\": \"node -e \\\"setTimeout(() => {}, 60000)\\\"\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            package_dir.join("package.json"),
+            concat!(
+                "{\n",
+                "  \"name\": \"openclaw-adapter\",\n",
+                "  \"scripts\": {\n",
+                "    \"build\": \"tsup\"\n",
+                "  }\n",
+                "}\n"
+            ),
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let run_result = workspace_project_run("run the desktop app locally".to_string()).unwrap();
+        let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(status_result.project_name, "desktop".to_string());
+        assert_eq!(status_result.project_path, "apps/desktop".to_string());
+        assert_eq!(status_result.command_label, "npm run dev".to_string());
+        assert_eq!(status_result.working_directory, "apps/desktop".to_string());
+        assert_eq!(status_result.expected_url, Some("http://127.0.0.1:1420".to_string()));
+        assert_eq!(status_result.pid, Some(run_result.pid));
+        assert_eq!(status_result.status, "running".to_string());
+        assert!(status_result.stdout_preview.contains("running:"));
     }
 
     #[test]

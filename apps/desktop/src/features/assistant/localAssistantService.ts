@@ -241,6 +241,18 @@ export type WorkspaceProjectRunResult = {
   summary: string;
 };
 
+export type WorkspaceProjectStatusResult = {
+  project_name: string;
+  project_path: string;
+  command_label: string;
+  working_directory: string;
+  expected_url: string | null;
+  pid: number | null;
+  status: "running" | "stopped";
+  stdout_preview: string;
+  summary: string;
+};
+
 export type WorkspaceProjectStopResult = {
   project_name: string;
   project_path: string;
@@ -480,6 +492,16 @@ export async function runWorkspaceProject(query: string): Promise<WorkspaceProje
   });
 }
 
+export async function getWorkspaceProjectStatus(query: string): Promise<WorkspaceProjectStatusResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewWorkspaceProjectStatus(query);
+  }
+
+  return invoke<WorkspaceProjectStatusResult>("workspace_project_status", {
+    query
+  });
+}
+
 export async function stopWorkspaceProject(query: string): Promise<WorkspaceProjectStopResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewWorkspaceProjectStop(query);
@@ -647,6 +669,22 @@ function createBrowserPreviewWorkspaceProjectRun(query: string): WorkspaceProjec
     pid: 4242,
     stdout_preview: "browser preview mode started a mock workspace project process",
     summary: "Browser preview mode returned a mock workspace project run result."
+  };
+}
+
+function createBrowserPreviewWorkspaceProjectStatus(query: string): WorkspaceProjectStatusResult {
+  const prefersDesktop = /\bdesktop\b/i.test(query) || /\bapp\b/i.test(query);
+
+  return {
+    project_name: prefersDesktop ? "desktop" : "workspace-project",
+    project_path: prefersDesktop ? "apps/desktop" : "apps/example",
+    command_label: "npm run dev",
+    working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
+    expected_url: prefersDesktop ? "http://127.0.0.1:1420" : "http://127.0.0.1:3000",
+    pid: 4242,
+    status: "running",
+    stdout_preview: "pid:4242",
+    summary: "Browser preview mode found a mock active workspace project process handle."
   };
 }
 
