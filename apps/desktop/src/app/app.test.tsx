@@ -4,6 +4,8 @@ import { App } from "./App";
 
 const {
   loadOllamaOverviewMock,
+  loadWorkspacePackagesOverviewMock,
+  loadWorkspaceConfigOverviewMock,
   enableLocalSkillMock,
   installLocalSkillMock,
   listEnabledLocalSkillsMock,
@@ -13,6 +15,8 @@ const {
   runControlledFullShellCommandMock
 } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
+  loadWorkspacePackagesOverviewMock: vi.fn(),
+  loadWorkspaceConfigOverviewMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
@@ -33,6 +37,8 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 
   return {
     ...actual,
+    loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
+    loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
@@ -163,6 +169,74 @@ describe("App", () => {
     await waitFor(() => {
       expect(within(conversation).getAllByText("summarize this project").length).toBeGreaterThan(0);
       expect(within(conversation).getByText("Workspace overview")).toBeInTheDocument();
+    });
+  });
+
+  it("routes an explicit packages inspection request into the workspace packages overview result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    loadWorkspacePackagesOverviewMock.mockResolvedValueOnce({
+      root_name: "opencow",
+      package_count: 3,
+      package_names: ["openclaw-adapter", "permission-engine", "shell-runtime"],
+      total_script_count: 9,
+      packages_with_scripts: ["openclaw-adapter", "permission-engine"],
+      summary: "Workspace package inspection found 3 packages and 9 npm scripts."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "inspect workspace packages and scripts" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("inspect workspace packages and scripts").length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("Workspace packages overview")).toBeInTheDocument();
+    });
+  });
+
+  it("routes an explicit config inspection request into the workspace config overview result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    loadWorkspaceConfigOverviewMock.mockResolvedValueOnce({
+      root_name: "opencow",
+      config_files: ["package.json", "apps/desktop/package.json", "apps/desktop/src-tauri/Cargo.toml"],
+      root_script_names: ["dev", "desktop:dev", "verify:all"],
+      root_script_count: 3,
+      package_manager_files: ["package-lock.json"],
+      summary: "Workspace config inspection found 3 key config files and 3 root scripts."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "inspect workspace config and root scripts" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("inspect workspace config and root scripts").length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("Workspace config overview")).toBeInTheDocument();
     });
   });
 
