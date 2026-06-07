@@ -1014,3 +1014,29 @@ npm --workspace packages/openclaw-adapter run build
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
 cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
 ```
+
+## 6.23b Current adapter boundary for self-repair mutation
+
+The adapter side of self-repair is no longer preview-only, but it still intentionally exposes only one narrow writable repair target.
+
+Current landed adapter scope:
+
+- readonly preview planning through `opencow-self-repair-preview`
+- permission-backed continuation planning through `opencow-self-repair-enabled-skills-registry`
+- fixed repair targeting for `.opencow/skills/enabled-skills.json` only
+
+Current non-goals at this stage:
+
+- no broad assistant-owned config rewrite planning
+- no runtime-registry self-repair planning
+- no destructive or process-restart self-repair planning
+- no free-form guessed repair target selected from arbitrary user text
+
+Rule for the next adapter self-repair mapping:
+
+- a new mapping should land only if it keeps the same narrow contract:
+  - explicit self-repair wording
+  - fixed target path or state surface
+  - correct permission or confirmation gating
+  - verification-oriented result contract
+  - no bypass around audit-visible and rollback-visible desktop execution
