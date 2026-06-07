@@ -219,10 +219,10 @@ export function createTaskExecutionSucceededState(
         })
       },
       audit: {
-        summary: "本地任务执行完成",
+        summary: activeTask.executionAuditSummary ?? "本地任务执行完成",
         lastEvent: {
           module: "tasks",
-          detail: payload.resultSummary,
+          detail: activeTask.executionAuditDetail ?? payload.resultSummary,
           timestamp: "completed",
           source: "local_task_runner"
         }

@@ -82,6 +82,30 @@ describe("task queue state", () => {
     expect(completed.error).toBeNull();
   });
 
+  it("keeps task-specific audit summary and detail when a controlled task completes", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "diagnose opencow and continue repairing its enabled skills registry",
+        executionKind: "opencow-self-repair-enabled-skills-registry",
+        executionTitle: "Repair opencow enabled skills registry",
+        executionAuditSummary: "Local assistant planned an opencow enabled skills registry self-repair.",
+        executionAuditDetail:
+          "Opencow self-repair task: enabled skills registry | request=diagnose opencow and continue repairing its enabled skills registry"
+      })
+    );
+
+    const completed = createTaskExecutionSucceededState(running, {
+      resultTitle: "Repair opencow enabled skills registry",
+      resultSummary: "Self-repair completed and verified."
+    });
+
+    expect(completed.audit.summary).toBe("Local assistant planned an opencow enabled skills registry self-repair.");
+    expect(completed.audit.lastEvent.source).toBe("local_task_runner");
+    expect(completed.audit.lastEvent.detail).toBe(
+      "Opencow self-repair task: enabled skills registry | request=diagnose opencow and continue repairing its enabled skills registry"
+    );
+  });
+
   it("marks the active task as failed and records a traceable error", () => {
     const running = createTaskExecutionStartedState(
       createUserTaskSubmittedState(createInitialWorkbenchState(), {

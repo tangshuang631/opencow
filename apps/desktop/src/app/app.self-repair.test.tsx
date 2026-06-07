@@ -125,6 +125,12 @@ describe("App self-repair mutation continuation", () => {
     });
 
     expect(screen.getAllByText(/Repair opencow enabled skills registry/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Local assistant planned an opencow enabled skills registry self-repair\./i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Opencow self-repair task: enabled skills registry \| request=diagnose opencow and continue repairing its enabled skills registry/i
+      )
+    ).toBeInTheDocument();
   });
 });
 
