@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add `npc-local-project-screenshot-capture` as the next permission-backed NPC showcase execution slice so the assistant can capture a real local screenshot and return a traceable workspace-local artifact path.
+**Goal:** Add the next smallest real NPC showcase execution slice by introducing `npc-local-project-screenshot-capture` as a permission-backed screenshot path that returns traceable workspace-local artifact paths.
 
-**Architecture:** Extend the adapter planner with one new fixed execution kind, add one new desktop screenshot capture service plus a tightly scoped Tauri command, and keep the app flow inside the existing permission-backed queued task pipeline. Reuse the existing matched-project lifecycle state to resolve the target project, but do not reuse generic shell or repo-write flows. Keep the slice strictly limited to screenshot capture and returned artifact metadata.
+**Architecture:** Extend the adapter planner with one new fixed execution kind, keep permission and queued execution identity NPC-specific, and add one tightly scoped desktop screenshot capture surface. The desktop path should resolve the matched running local project through the existing runtime-backed project lifecycle, capture a screenshot into `.opencow/artifacts/npc-showcase`, and return artifact metadata without expanding into gallery management, showcase-site generation, or git actions.
 
-**Tech Stack:** TypeScript, Vitest, React Testing Library, Tauri desktop bridge, Rust, PowerShell/Edge headless screenshot invocation on Windows
+**Tech Stack:** TypeScript, Vitest, React Testing Library, Tauri desktop command bridge, Rust workspace command module, Windows headless browser screenshot execution
 
 ---
 
@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest";
 import { planLocalAssistantTask } from "./index.js";
 
 describe("local assistant task planner npc showcase workflow", () => {
-  it("requests workspace-write before capturing an npc showcase screenshot", () => {
+  it("requests workspace-write before capturing a matched npc showcase screenshot", () => {
     const plan = planLocalAssistantTask({
       message: "use npc collaboration to capture a screenshot from the matched cattle project now",
       permissionMode: "readonly"
@@ -34,11 +34,11 @@ describe("local assistant task planner npc showcase workflow", () => {
       kind: "permission-request",
       targetMode: "workspace-write",
       queuedExecutionKind: "npc-local-project-screenshot-capture",
-      queuedExecutionTitle: "NPC project screenshot capture"
+      queuedExecutionTitle: "NPC local project screenshot capture"
     });
   });
 
-  it("plans npc showcase screenshot capture after workspace-write is approved", () => {
+  it("plans npc screenshot capture after workspace-write is approved", () => {
     const plan = planLocalAssistantTask({
       message: "use npc collaboration to capture a screenshot from the matched cattle project now",
       permissionMode: "workspace-write"
@@ -46,7 +46,7 @@ describe("local assistant task planner npc showcase workflow", () => {
 
     expect(plan).toMatchObject({
       kind: "npc-local-project-screenshot-capture",
-      title: "NPC project screenshot capture"
+      title: "NPC local project screenshot capture"
     });
   });
 });
@@ -64,7 +64,7 @@ Expected:
 
 ```text
 FAIL
-Expected queuedExecutionKind "npc-local-project-screenshot-capture" or kind "npc-local-project-screenshot-capture", but received the current preview-only or NPC overview behavior.
+Expected queuedExecutionKind "npc-local-project-screenshot-capture" or kind "npc-local-project-screenshot-capture", but received the current preview-only or generic NPC behavior.
 ```
 
 - [ ] **Step 3: Add the new planner type and branch**
@@ -82,38 +82,39 @@ Expected queuedExecutionKind "npc-local-project-screenshot-capture" or kind "npc
 
 ```ts
 // packages/openclaw-adapter/src/localAssistantPlan.ts
-const npcScreenshotIntentPatterns = [/\bscreenshot\b/i, /\bcapture\b/i, /截图/, /截屏/];
+const npcShowcaseScreenshotPatterns = [/\bscreenshot\b/i, /\bcapture\b/i, /截图/, /截屏/];
 
 if (
   /\bnpc\b/i.test(message)
   && /collaboration/i.test(message)
   && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
-  && npcScreenshotIntentPatterns.some((pattern) => pattern.test(message))
+  && npcShowcaseScreenshotPatterns.some((pattern) => pattern.test(message))
+  && (/\bnow\b/i.test(message) || /\bcapture\b/i.test(message) || /\btake\b/i.test(message))
   && !npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
 ) {
   if (request.permissionMode === "readonly") {
     return {
       kind: "permission-request",
       targetMode: "workspace-write",
-      reason: "Workspace write permission is required before NPC collaboration can capture a screenshot artifact from the matched local project.",
+      reason: "Workspace write permission is required before NPC collaboration can capture a screenshot from the matched local project.",
       riskSummary:
-        "This task captures only a workspace-local screenshot artifact for the matched local project, keeps the artifact inside the approved workspace, and must remain audit-visible.",
-      auditSummary: "Local assistant task requires workspace-write permission for NPC screenshot capture.",
-      auditDetail: `NPC screenshot capture task is waiting for permission: ${message}`,
+        "This task captures only a task-scoped screenshot artifact for the matched running local workspace project, writes it inside the approved workspace, and must remain audit-visible.",
+      auditSummary: "Local assistant task requires workspace-write permission for NPC local project screenshot capture.",
+      auditDetail: `NPC local project screenshot capture task is waiting for permission: ${message}`,
       queuedExecutionKind: "npc-local-project-screenshot-capture",
-      queuedExecutionTitle: "NPC project screenshot capture",
-      queuedExecutionAuditSummary: "Local assistant planned NPC screenshot capture for the matched local project.",
-      queuedExecutionAuditDetail: `NPC project screenshot capture task: ${message}`,
+      queuedExecutionTitle: "NPC local project screenshot capture",
+      queuedExecutionAuditSummary: "Local assistant planned NPC local project screenshot capture.",
+      queuedExecutionAuditDetail: `NPC local project screenshot capture task: ${message}`,
       queuedMessage: message
     };
   }
 
   return {
     kind: "npc-local-project-screenshot-capture",
-    title: "NPC project screenshot capture",
+    title: "NPC local project screenshot capture",
     summary: message,
-    auditSummary: "Local assistant planned NPC screenshot capture for the matched local project.",
-    auditDetail: `NPC project screenshot capture task: ${message}`
+    auditSummary: "Local assistant planned NPC local project screenshot capture.",
+    auditDetail: `NPC local project screenshot capture task: ${message}`
   };
 }
 ```
@@ -139,25 +140,24 @@ git add packages/openclaw-adapter/src/types.ts packages/openclaw-adapter/src/loc
 git commit -m "feat: plan npc screenshot capture"
 ```
 
-### Task 2: Add Desktop Screenshot Capture Service And Tauri Bridge
+### Task 2: Add Desktop Screenshot Capture Service And Tauri Command
 
 **Files:**
 - Modify: `apps/desktop/src/features/assistant/localAssistantService.ts`
 - Modify: `apps/desktop/src-tauri/src/workspace.rs`
 - Modify: `apps/desktop/src-tauri/src/lib.rs`
-- Modify: `apps/desktop/src-tauri/Cargo.toml`
 
-- [ ] **Step 1: Write the failing desktop bridge and Rust tests**
+- [ ] **Step 1: Write the failing service and Rust tests**
 
 ```ts
 // apps/desktop/src/features/assistant/localAssistantService.ts
 export type WorkspaceProjectNpcScreenshotCaptureResult = {
   project_name: string;
   project_path: string;
-  expected_url: string;
+  expected_url: string | null;
   artifact_path: string;
   artifact_directory: string;
-  stdout_preview: string;
+  capture_target: string;
   summary: string;
 };
 ```
@@ -166,26 +166,26 @@ export type WorkspaceProjectNpcScreenshotCaptureResult = {
 // apps/desktop/src-tauri/src/workspace.rs
 #[test]
 fn workspace_project_npc_screenshot_capture_returns_error_without_active_runtime_handle() {
-    let workspace_root = tempdir().unwrap();
-    std::env::set_current_dir(workspace_root.path()).unwrap();
-    seed_workspace_project_candidate(workspace_root.path(), "cattle", "projects/cattle", "dev");
+    let workspace_root = create_workspace_project_run_fixture();
+    let _guard = acquire_workspace_test_lock();
+    std::env::set_current_dir(&workspace_root).unwrap();
 
     let error = workspace_project_npc_screenshot_capture(
         "use npc collaboration to capture a screenshot from the matched cattle project now".to_string()
-    ).unwrap_err();
+    )
+    .unwrap_err();
 
-    assert!(error.contains("No active matched local project run is available"));
+    assert!(error.contains("No active matched local project run"));
 }
 
 #[test]
-fn workspace_project_npc_screenshot_capture_builds_workspace_local_artifact_path() {
-    let artifact_path = build_npc_screenshot_artifact_path(
-        Path::new("E:/2026/opencow"),
-        "cattle",
-        "1700000000"
-    );
+fn build_npc_showcase_screenshot_artifact_path_stays_inside_workspace_artifacts_root() {
+    let workspace_root = PathBuf::from("E:/2026/opencow");
+    let artifact_path = build_npc_showcase_screenshot_artifact_path(&workspace_root, "cattle", "1700000000");
 
-    assert!(artifact_path.ends_with(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png"));
+    assert!(artifact_path.ends_with(".png"));
+    assert!(artifact_path.to_string_lossy().contains(".opencow/artifacts/npc-showcase"));
+    assert!(artifact_path.to_string_lossy().contains("cattle-screenshot-1700000000"));
 }
 ```
 
@@ -194,7 +194,7 @@ fn workspace_project_npc_screenshot_capture_builds_workspace_local_artifact_path
 Run:
 
 ```powershell
-cargo test workspace_project_npc_screenshot_ --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
+cargo test workspace_project_npc_screenshot_capture --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
 ```
 
 Expected:
@@ -204,7 +204,7 @@ FAIL
 cannot find function `workspace_project_npc_screenshot_capture`
 ```
 
-- [ ] **Step 3: Add the service result type, browser preview fallback, and Tauri invoke call**
+- [ ] **Step 3: Add the desktop service result type, browser preview fallback, and invoke bridge**
 
 ```ts
 // apps/desktop/src/features/assistant/localAssistantService.ts
@@ -226,18 +226,18 @@ function createBrowserPreviewNpcProjectScreenshotCapture(
   const prefersCattle = /\bcattle\b/i.test(query);
 
   return {
-    project_name: prefersCattle ? "cattle" : "desktop",
-    project_path: prefersCattle ? "projects/cattle" : "apps/desktop",
+    project_name: prefersCattle ? "cattle" : "workspace-project",
+    project_path: prefersCattle ? "projects/cattle" : "apps/example",
     expected_url: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
+    artifact_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png",
     artifact_directory: ".opencow/artifacts/npc-showcase",
-    artifact_path: prefersCattle
-      ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
-      : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
-    stdout_preview: "browser preview mode simulated a workspace-local NPC screenshot artifact",
-    summary: "Browser preview mode returned a mock NPC screenshot capture result."
+    capture_target: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
+    summary: "Browser preview mode returned a mock NPC local project screenshot capture result."
   };
 }
 ```
+
+- [ ] **Step 4: Add the Rust command, artifact-path helper, and command registration**
 
 ```rust
 // apps/desktop/src-tauri/src/workspace.rs
@@ -245,10 +245,10 @@ function createBrowserPreviewNpcProjectScreenshotCapture(
 pub struct WorkspaceProjectNpcScreenshotCaptureResult {
     project_name: String,
     project_path: String,
-    expected_url: String,
+    expected_url: Option<String>,
     artifact_path: String,
     artifact_directory: String,
-    stdout_preview: String,
+    capture_target: String,
     summary: String,
 }
 
@@ -258,65 +258,35 @@ pub fn workspace_project_npc_screenshot_capture(
 ) -> Result<WorkspaceProjectNpcScreenshotCaptureResult, String> {
     let root = workspace_root()?;
     let candidates = collect_workspace_project_run_candidates(&root)?;
-    let matched = match_workspace_project_candidate(&query, &candidates)
-        .ok_or_else(|| format!("No matched local project was found for screenshot capture: {query}"))?;
-    let record = find_workspace_project_runtime_record(&root, &matched.relative_path)?
-        .ok_or_else(|| "No active matched local project run is available for NPC screenshot capture.".to_string())?;
-    let expected_url = infer_workspace_project_expected_url(&matched)
-        .ok_or_else(|| "Could not infer a capture URL for the matched local project.".to_string())?;
+    let matched = select_workspace_project_run_candidate(&query, &candidates)
+        .ok_or_else(|| format!("No matched local project run candidate was found for screenshot capture: {}", query))?;
+    let _record = find_workspace_project_runtime_record(&root, &matched.relative_path)?
+        .ok_or_else(|| format!("No active matched local project run is available for NPC screenshot capture: {}", query))?;
+    let expected_url = infer_expected_local_url(&matched);
+    let capture_target = expected_url
+        .clone()
+        .ok_or_else(|| format!("No capture target URL could be inferred for NPC screenshot capture: {}", matched.name))?;
     let timestamp = current_unix_timestamp_string();
-    let artifact_path = build_npc_screenshot_artifact_path(&root, &matched.name, &timestamp);
+    let artifact_path = build_npc_showcase_screenshot_artifact_path(&root, &matched.name, &timestamp);
 
-    capture_url_to_png_via_edge(&expected_url, &artifact_path)?;
+    capture_url_to_png_via_edge(&capture_target, &artifact_path)?;
 
     Ok(WorkspaceProjectNpcScreenshotCaptureResult {
         project_name: matched.name.clone(),
         project_path: matched.relative_path.clone(),
-        expected_url: expected_url.clone(),
-        artifact_directory: root
-            .join(".opencow")
-            .join("artifacts")
-            .join("npc-showcase")
-            .display()
-            .to_string(),
-        artifact_path: artifact_path.display().to_string(),
-        stdout_preview: format!("Captured screenshot for {} at {}", expected_url, artifact_path.display()),
-        summary: format!(
-            "NPC screenshot capture completed successfully for the matched local project run (pid {}).",
-            record.pid
-        ),
+        expected_url,
+        artifact_path: to_workspace_relative_display_path(&root, &artifact_path),
+        artifact_directory: ".opencow/artifacts/npc-showcase".to_string(),
+        capture_target,
+        summary: "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact.".to_string(),
     })
 }
 
-fn build_npc_screenshot_artifact_path(root: &Path, project_name: &str, timestamp: &str) -> PathBuf {
+fn build_npc_showcase_screenshot_artifact_path(root: &Path, project_name: &str, timestamp: &str) -> PathBuf {
     root.join(".opencow")
         .join("artifacts")
         .join("npc-showcase")
-        .join(format!("{project_name}-screenshot-{timestamp}.png"))
-}
-
-fn capture_url_to_png_via_edge(url: &str, artifact_path: &Path) -> Result<(), String> {
-    if let Some(parent) = artifact_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("Failed to create screenshot artifact directory: {error}"))?;
-    }
-
-    let status = Command::new("msedge")
-        .args([
-            "--headless",
-            "--disable-gpu",
-            "--hide-scrollbars",
-            "--window-size=1440,1024",
-            &format!("--screenshot={}", artifact_path.display()),
-            url,
-        ])
-        .status()
-        .map_err(|error| format!("Failed to launch Edge headless screenshot capture: {error}"))?;
-
-    if !status.success() {
-        return Err(format!("Edge headless screenshot capture exited with status {status}."));
-    }
-
-    Ok(())
+        .join(format!("{}-screenshot-{}.png", sanitize_artifact_segment(project_name), timestamp))
 }
 ```
 
@@ -325,12 +295,13 @@ fn capture_url_to_png_via_edge(url: &str, artifact_path: &Path) -> Result<(), St
 workspace::workspace_project_npc_screenshot_capture,
 ```
 
-- [ ] **Step 4: Run the focused Rust verification to verify it passes**
+- [ ] **Step 5: Run the focused service and Rust tests to verify they pass**
 
 Run:
 
 ```powershell
-cargo test workspace_project_npc_screenshot_ --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
+cargo test workspace_project_npc_screenshot_capture --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
+npm --workspace apps/desktop exec tsc --noEmit
 ```
 
 Expected:
@@ -339,11 +310,11 @@ Expected:
 PASS
 ```
 
-- [ ] **Step 5: Commit the desktop bridge slice**
+- [ ] **Step 6: Commit the desktop screenshot surface**
 
 ```powershell
-git add apps/desktop/src/features/assistant/localAssistantService.ts apps/desktop/src-tauri/src/workspace.rs apps/desktop/src-tauri/src/lib.rs apps/desktop/src-tauri/Cargo.toml
-git commit -m "feat: add npc screenshot capture bridge"
+git add apps/desktop/src/features/assistant/localAssistantService.ts apps/desktop/src-tauri/src/workspace.rs apps/desktop/src-tauri/src/lib.rs
+git commit -m "feat: add npc screenshot capture service"
 ```
 
 ### Task 3: Add Assistant Execution Support For `npc-local-project-screenshot-capture`
@@ -365,7 +336,6 @@ const { captureNpcLocalProjectScreenshotMock } = vi.hoisted(() => ({
 
 vi.mock("./localAssistantService", async () => {
   const actual = await vi.importActual<typeof import("./localAssistantService")>("./localAssistantService");
-
   return {
     ...actual,
     captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock
@@ -373,7 +343,7 @@ vi.mock("./localAssistantService", async () => {
 });
 
 describe("assistantTaskService npc screenshot capture", () => {
-  it("requests workspace-write before capturing an npc showcase screenshot", () => {
+  it("requests workspace-write before capturing a matched npc showcase screenshot", () => {
     const plan = planAssistantTask(
       "use npc collaboration to capture a screenshot from the matched cattle project now",
       "readonly"
@@ -386,31 +356,31 @@ describe("assistantTaskService npc screenshot capture", () => {
     });
   });
 
-  it("returns the npc screenshot result with the workspace-local artifact path", async () => {
+  it("captures the matched local project screenshot with npc-specific identity", async () => {
     captureNpcLocalProjectScreenshotMock.mockResolvedValueOnce({
       project_name: "cattle",
       project_path: "projects/cattle",
       expected_url: "http://127.0.0.1:3000",
-      artifact_directory: ".opencow/artifacts/npc-showcase",
       artifact_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
-      stdout_preview: "Captured screenshot for http://127.0.0.1:3000",
-      summary: "NPC screenshot capture completed successfully for the matched local project run."
+      artifact_directory: ".opencow/artifacts/npc-showcase",
+      capture_target: "http://127.0.0.1:3000",
+      summary: "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact."
     });
 
     const result = await executeAssistantTask({
       kind: "npc-local-project-screenshot-capture",
-      title: "NPC project screenshot capture",
+      title: "NPC local project screenshot capture",
       summary: "use npc collaboration to capture a screenshot from the matched cattle project now",
-      auditSummary: "Local assistant planned NPC screenshot capture for the matched local project.",
-      auditDetail: "NPC project screenshot capture task."
+      auditSummary: "Local assistant planned NPC local project screenshot capture.",
+      auditDetail: "NPC local project screenshot capture task."
     } as const);
 
-    expect(result.resultTitle).toBe("NPC project screenshot capture");
+    expect(result.resultTitle).toBe("NPC local project screenshot capture");
     expect(result.resultSummary).toContain("cattle");
     expect(result.resultSummary).toContain("projects/cattle");
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
-    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
-    expect(result.resultSummary).toContain("screenshot stage inside the NPC showcase chain");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase");
+    expect(result.resultSummary).toContain("screenshot stage");
   });
 });
 ```
@@ -430,7 +400,7 @@ FAIL
 Unsupported assistant task execution plan: npc-local-project-screenshot-capture
 ```
 
-- [ ] **Step 3: Add desktop task typing and execution dispatch**
+- [ ] **Step 3: Add task typing and execution dispatch**
 
 ```ts
 // apps/desktop/src/features/workbench/workbenchState.types.ts
@@ -439,10 +409,17 @@ Unsupported assistant task execution plan: npc-local-project-screenshot-capture
 
 ```ts
 // apps/desktop/src/features/assistant/assistantTaskService.ts
-import {
-  captureNpcLocalProjectScreenshot,
-  // existing imports...
-} from "./localAssistantService";
+import { captureNpcLocalProjectScreenshot } from "./localAssistantService";
+
+type ReadonlyAssistantTaskPlan =
+  | {
+      kind: "npc-local-project-screenshot-capture";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  // existing variants...
 
 if (plan.kind === "npc-local-project-screenshot-capture") {
   return executeNpcLocalProjectScreenshotCapturePlan(plan.title, plan.summary);
@@ -458,9 +435,8 @@ async function executeNpcLocalProjectScreenshotCapturePlan(
     resultTitle,
     resultSummary:
       `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Capture URL: ${result.expected_url}. Artifact directory: ${result.artifact_directory}. ` +
-      `Artifact path: ${result.artifact_path}. Preview: ${result.stdout_preview}. ` +
-      `This is the screenshot stage inside the NPC showcase chain.`
+      `Capture target: ${result.capture_target}. Artifact path: ${result.artifact_path}. ` +
+      `Artifact directory: ${result.artifact_directory}. This is the screenshot stage inside the NPC showcase chain.`
   };
 }
 ```
@@ -491,14 +467,17 @@ git commit -m "feat: execute npc screenshot capture"
 **Files:**
 - Modify: `apps/desktop/src/app/app.npc-showcase.test.tsx`
 
-- [ ] **Step 1: Write the failing app-level conversation test**
+- [ ] **Step 1: Write the failing app-level screenshot conversation test**
 
 ```tsx
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock, captureNpcLocalProjectScreenshotMock } = vi.hoisted(() => ({
+const {
+  loadOllamaOverviewMock,
+  captureNpcLocalProjectScreenshotMock
+} = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
   captureNpcLocalProjectScreenshotMock: vi.fn()
 }));
@@ -519,7 +498,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 });
 
 describe("App npc screenshot capture flow", () => {
-  it("continues from npc screenshot permission approval into the final artifact result", async () => {
+  it("continues from npc screenshot permission approval into the final screenshot result", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -531,10 +510,10 @@ describe("App npc screenshot capture flow", () => {
       project_name: "cattle",
       project_path: "projects/cattle",
       expected_url: "http://127.0.0.1:3000",
-      artifact_directory: ".opencow/artifacts/npc-showcase",
       artifact_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
-      stdout_preview: "Captured screenshot for http://127.0.0.1:3000",
-      summary: "NPC screenshot capture completed successfully for the matched local project run."
+      artifact_directory: ".opencow/artifacts/npc-showcase",
+      capture_target: "http://127.0.0.1:3000",
+      summary: "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact."
     });
 
     const { container } = render(<App />);
@@ -549,7 +528,7 @@ describe("App npc screenshot capture flow", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before NPC collaboration can capture a screenshot artifact from the matched local project\./i
+      /Workspace write permission is required before NPC collaboration can capture a screenshot from the matched local project\./i
     );
     const permissionSection = permissionReasonMatches[0]?.closest("section");
 
@@ -558,7 +537,7 @@ describe("App npc screenshot capture flow", () => {
     await waitFor(() => {
       expect(
         screen.getAllByText(
-          /NPC project screenshot capture|cattle|projects\/cattle|http:\/\/127\.0\.0\.1:3000|\.opencow\/artifacts\/npc-showcase\/cattle-screenshot-1700000000\.png/i
+          /NPC local project screenshot capture|cattle|projects\/cattle|http:\/\/127\.0\.0\.1:3000|\.opencow\/artifacts\/npc-showcase/i
         ).length
       ).toBeGreaterThan(0);
     });
@@ -578,23 +557,26 @@ Expected:
 
 ```text
 FAIL
-Unable to find the final NPC screenshot capture result because the execution kind is not wired through the app flow yet.
+Unable to find the NPC local project screenshot capture result because the execution kind is not wired through the app flow yet.
 ```
 
-- [ ] **Step 3: Confirm no app production wiring is required**
+- [ ] **Step 3: Confirm that no `App.tsx` production wiring is required**
 
 ```ts
-// No App.tsx production change is expected.
-// The existing queued local task pipeline should accept the new execution kind
-// once planner, workbench type union, and assistant execution dispatch are wired.
+// No App.tsx edit is expected for this slice.
+// The existing queued local task pipeline should accept the new execution kind once
+// the desktop task union and assistant execution dispatcher are extended.
 ```
 
-- [ ] **Step 4: Run the focused app verification to verify it passes**
+- [ ] **Step 4: Run focused app and module verification**
 
 Run:
 
 ```powershell
-npm --workspace apps/desktop exec vitest run src/app/app.npc-showcase.test.tsx src/features/assistant/assistantTaskService.npc-showcase.test.ts
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.npc-showcase.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.npc-showcase.test.ts src/app/app.npc-showcase.test.tsx
+npm --workspace apps/desktop exec tsc --noEmit
 ```
 
 Expected:
@@ -622,9 +604,9 @@ Run:
 ```powershell
 npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.npc-showcase.test.ts
 npm --workspace packages/openclaw-adapter run build
-cargo test workspace_project_npc_screenshot_ --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
 npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.npc-showcase.test.ts src/app/app.npc-showcase.test.tsx
 npm --workspace apps/desktop exec tsc --noEmit
+cargo test workspace_project_npc_screenshot_capture --manifest-path apps/desktop/src-tauri/Cargo.toml -- --nocapture
 ```
 
 Expected:
@@ -651,7 +633,7 @@ Only the intended NPC screenshot capture files are modified.
 - [ ] **Step 3: Create the checkpoint commit**
 
 ```powershell
-git add packages/openclaw-adapter/src/types.ts packages/openclaw-adapter/src/localAssistantPlan.ts packages/openclaw-adapter/src/localAssistantPlan.npc-showcase.test.ts apps/desktop/src/features/assistant/localAssistantService.ts apps/desktop/src/features/workbench/workbenchState.types.ts apps/desktop/src/features/assistant/assistantTaskService.ts apps/desktop/src/features/assistant/assistantTaskService.npc-showcase.test.ts apps/desktop/src/app/app.npc-showcase.test.tsx apps/desktop/src-tauri/src/workspace.rs apps/desktop/src-tauri/src/lib.rs apps/desktop/src-tauri/Cargo.toml
+git add packages/openclaw-adapter/src/types.ts packages/openclaw-adapter/src/localAssistantPlan.ts packages/openclaw-adapter/src/localAssistantPlan.npc-showcase.test.ts apps/desktop/src/features/assistant/localAssistantService.ts apps/desktop/src/features/workbench/workbenchState.types.ts apps/desktop/src/features/assistant/assistantTaskService.ts apps/desktop/src/features/assistant/assistantTaskService.npc-showcase.test.ts apps/desktop/src/app/app.npc-showcase.test.tsx apps/desktop/src-tauri/src/workspace.rs apps/desktop/src-tauri/src/lib.rs
 git commit -m "feat: add npc screenshot capture execution"
 ```
 
