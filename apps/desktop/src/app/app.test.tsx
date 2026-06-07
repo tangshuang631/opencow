@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock, enableLocalSkillMock, installLocalSkillMock } = vi.hoisted(() => ({
+const { loadOllamaOverviewMock, enableLocalSkillMock, installLocalSkillMock, listEnabledLocalSkillsMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
-  installLocalSkillMock: vi.fn()
+  installLocalSkillMock: vi.fn(),
+  listEnabledLocalSkillsMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -20,7 +21,8 @@ vi.mock("../features/assistant/localAssistantService", async () => {
   return {
     ...actual,
     enableLocalSkill: enableLocalSkillMock,
-    installLocalSkill: installLocalSkillMock
+    installLocalSkill: installLocalSkillMock,
+    listEnabledLocalSkills: listEnabledLocalSkillsMock
   };
 });
 
@@ -217,6 +219,42 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText(/Install local skill|gpt-taste|skills\/gpt-taste\/SKILL\.md/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows the final enabled skills list result for an explicit readonly skills registry request", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    listEnabledLocalSkillsMock.mockResolvedValueOnce({
+      summary: "Enabled local skills registry currently contains 1 enabled skill entry.",
+      total_count: 1,
+      registry_path: ".opencow/skills/enabled-skills.json",
+      items: [
+        {
+          name: "coding-agent",
+          path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+          source: "vendor-openclaw-skill",
+          description: "OpenClaw coding agent workflow"
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show enabled skills for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Enabled local skills|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
     });
   });
 });
