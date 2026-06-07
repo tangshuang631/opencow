@@ -9,7 +9,8 @@ const {
   listEnabledLocalSkillsMock,
   disableLocalSkillMock,
   matchEnabledLocalSkillsMock,
-  runWorkspaceWriteShellCommandMock
+  runWorkspaceWriteShellCommandMock,
+  runControlledFullShellCommandMock
 } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
@@ -17,7 +18,8 @@ const {
   listEnabledLocalSkillsMock: vi.fn(),
   disableLocalSkillMock: vi.fn(),
   matchEnabledLocalSkillsMock: vi.fn(),
-  runWorkspaceWriteShellCommandMock: vi.fn()
+  runWorkspaceWriteShellCommandMock: vi.fn(),
+  runControlledFullShellCommandMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -36,7 +38,8 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
     disableLocalSkill: disableLocalSkillMock,
     matchEnabledLocalSkills: matchEnabledLocalSkillsMock,
-    runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock
+    runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock,
+    runControlledFullShellCommand: runControlledFullShellCommandMock
   };
 });
 
@@ -364,6 +367,69 @@ describe("App", () => {
     await waitFor(() => {
       expect(
         screen.getAllByText(/Skill-assisted temp-output creation|shell-automation|temp-output|enabled-skills\.json/i)
+          .length
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  it("continues from a skill-assisted destructive request through permission and dangerous confirmation into the final removal result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "use the enabled shell automation skill to delete temp-output and clean temporary files",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "shell-automation",
+          path: "skills/shell-automation/SKILL.md",
+          source: "workspace-skill",
+          description: "Run safe local shell automation tasks.",
+          content_preview: "Use this skill when the task needs shell automation with local safety rails."
+        }
+      ]
+    });
+    runControlledFullShellCommandMock.mockResolvedValueOnce({
+      command_id: "remove-temp-output-dir",
+      command_label: "Remove-Item -LiteralPath temp-output -Recurse -Force",
+      stdout_preview: "temp-output removed",
+      line_count: 1,
+      summary: "Controlled full shell command completed successfully."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "use the enabled shell automation skill to delete temp-output and clean temporary files" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(
+      /Controlled full permission is required before a skill-assisted destructive shell cleanup task can continue/i
+    );
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    const approveDangerButton = await within(permissionSection as HTMLElement).findByRole("button", {
+      name: "批准高风险操作"
+    });
+    fireEvent.click(approveDangerButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Skill-assisted temp-output removal|shell-automation|temp-output removed|enabled-skills\.json/i)
           .length
       ).toBeGreaterThan(0);
     });
