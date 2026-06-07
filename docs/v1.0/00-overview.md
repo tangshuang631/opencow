@@ -128,3 +128,15 @@ Conversation-driven self-repair, Skill install or enable flows, assistant-owned 
 - execute
 - verify
 - summarize with audit and rollback visibility
+
+Current self-repair landing state:
+
+- readonly preview is already available through `opencow-self-repair-preview`
+- the first permission-backed mutation is already available through `opencow-self-repair-enabled-skills-registry`
+- the current landed mutation remains intentionally narrow and only repairs `.opencow/skills/enabled-skills.json`
+
+Current non-goals for this stage:
+
+- no broad assistant-owned config rewrite flow yet
+- no runtime-registry self-repair flow yet
+- no destructive or process-restart self-repair flow yet
