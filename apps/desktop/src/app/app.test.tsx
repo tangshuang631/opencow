@@ -2,9 +2,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock, enableLocalSkillMock } = vi.hoisted(() => ({
+const { loadOllamaOverviewMock, enableLocalSkillMock, installLocalSkillMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
-  enableLocalSkillMock: vi.fn()
+  enableLocalSkillMock: vi.fn(),
+  installLocalSkillMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -18,7 +19,8 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 
   return {
     ...actual,
-    enableLocalSkill: enableLocalSkillMock
+    enableLocalSkill: enableLocalSkillMock,
+    installLocalSkill: installLocalSkillMock
   };
 });
 
@@ -175,6 +177,46 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText(/Enable local skill|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("continues from skill install permission approval into the final installed result", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    installLocalSkillMock.mockResolvedValueOnce({
+      query: "install the gpt-taste skill into this workspace skills folder",
+      installed_skill_name: "gpt-taste",
+      installed_skill_path: "skills/gpt-taste/SKILL.md",
+      source_skill_path: "vendor/openclaw/skills/gpt-taste/SKILL.md",
+      status: "installed",
+      summary: "Local skill installation copied gpt-taste into the workspace skills directory."
+    });
+
+    render(<App />);
+
+    await screen.findAllByText("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "install the gpt-taste skill into this workspace skills folder" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(
+      /Workspace write permission is required before installing a local skill/i
+    );
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Install local skill|gpt-taste|skills\/gpt-taste\/SKILL\.md/i).length).toBeGreaterThan(0);
     });
   });
 });
