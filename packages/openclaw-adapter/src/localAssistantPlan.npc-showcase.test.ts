@@ -66,4 +66,30 @@ describe("local assistant task planner npc showcase workflow", () => {
       title: "NPC local project screenshot capture"
     });
   });
+
+  it("requests workspace-write before generating a matched npc showcase site", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to generate the showcase site for the matched cattle project now",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-local-project-showcase-site-write",
+      queuedExecutionTitle: "NPC local project showcase-site write"
+    });
+  });
+
+  it("plans npc showcase-site write after workspace-write is approved", () => {
+    const plan = planLocalAssistantTask({
+      message: "use npc collaboration to generate the showcase site for the matched cattle project now",
+      permissionMode: "workspace-write"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-showcase-site-write",
+      title: "NPC local project showcase-site write"
+    });
+  });
 });

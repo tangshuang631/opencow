@@ -266,6 +266,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "npc-local-project-showcase-site-write";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "npc-local-shell-plan-preview";
       readonly title: string;
       readonly summary: string;
@@ -413,6 +420,7 @@ export type LocalAssistantTaskPlan =
         | "npc-local-enabled-rag-shell-handoff-preview"
         | "npc-local-project-run"
         | "npc-local-project-screenshot-capture"
+        | "npc-local-project-showcase-site-write"
         | "rag-local-shell-create-temp-output"
         | "rag-local-shell-remove-temp-output"
         | "skills-local-enabled-rag-shell-create-temp-output"

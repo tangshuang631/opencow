@@ -42,6 +42,7 @@ const npcShowcaseOutputPatterns = [/\bshowcase\b/i, /\bportfolio\b/i, /\bresume\
 const npcShowcaseActionPatterns = [/\brun\b/i, /运行/, /\bscreenshot/i, /截图/, /\bwebsite\b/i, /网站/, /\bgit repo\b/i, /仓库/];
 const continuationPatterns = [/\bcontinue\b/i, /\bproceed\b/i, /\bexecute\b/i, /\brun\b/i];
 const npcShowcaseScreenshotPatterns = [/\bscreenshot\b/i, /\bcapture\b/i, /截图/, /截屏/];
+const npcShowcaseSiteWritePatterns = [/\bshowcase\b/i, /\bwebsite\b/i, /\bsite\b/i, /\bpage\b/i];
 const mcpCapabilityPatterns = [/\bmcp\b/i, /model context protocol/i];
 const mcpLocalPluginInspectPatterns = [/\bshow\b/i, /\bdetail\b/i, /\bdetails\b/i, /\bread\b/i, /\binspect\b/i, /\bopen\b/i];
 const mcpLocalPluginStartPreviewPatterns = [/\bpreview\b/i, /\bstart\b/i, /\blaunch\b/i, /\brun\b/i];
@@ -175,6 +176,41 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: message,
       auditSummary: "Local assistant planned NPC local project screenshot capture.",
       auditDetail: `NPC local project screenshot capture task: ${message}`
+    };
+  }
+
+  if (
+    /\bnpc\b/i.test(message)
+    && /collaboration/i.test(message)
+    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseSiteWritePatterns.some((pattern) => pattern.test(message))
+    && (/\bgenerate\b/i.test(message) || /\bwrite\b/i.test(message) || /\bcreate\b/i.test(message))
+    && /\bnow\b/i.test(message)
+    && !/\bgit\s+(status|commit|push)\b/i.test(message)
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason: "Workspace write permission is required before NPC collaboration can generate the showcase site for the matched local project.",
+        riskSummary:
+          "This task writes only a deterministic local showcase-site output under the approved workspace and must keep changed-file paths audit-visible.",
+        auditSummary: "Local assistant task requires workspace-write permission for NPC local project showcase-site write.",
+        auditDetail: `NPC local project showcase-site write task is waiting for permission: ${message}`,
+        queuedExecutionKind: "npc-local-project-showcase-site-write",
+        queuedExecutionTitle: "NPC local project showcase-site write",
+        queuedExecutionAuditSummary: "Local assistant planned NPC local project showcase-site write.",
+        queuedExecutionAuditDetail: `NPC local project showcase-site write task: ${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "npc-local-project-showcase-site-write",
+      title: "NPC local project showcase-site write",
+      summary: message,
+      auditSummary: "Local assistant planned NPC local project showcase-site write.",
+      auditDetail: `NPC local project showcase-site write task: ${message}`
     };
   }
 
