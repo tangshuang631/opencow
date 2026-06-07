@@ -82,7 +82,7 @@ Expected queuedExecutionKind "npc-local-project-showcase-site-write" or kind "np
 
 ```ts
 // packages/openclaw-adapter/src/localAssistantPlan.ts
-const npcShowcaseSiteWritePatterns = [/\bshowcase\b/i, /\bwebsite\b/i, /\bsite\b/i, /\bpage\b/i, /绔欑偣/, /椤甸潰/];
+const npcShowcaseSiteWritePatterns = [/\bshowcase\b/i, /\bwebsite\b/i, /\bsite\b/i, /\bpage\b/i];
 
 if (
   /\bnpc\b/i.test(message)
