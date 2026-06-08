@@ -25,6 +25,7 @@ import {
   runWorkspaceProject,
   captureNpcLocalProjectScreenshot,
   writeNpcLocalProjectShowcaseSite,
+  loadNpcLocalProjectShowcasePublishPreview,
   stopWorkspaceProject,
   runControlledFullShellCommand,
   runReadonlyShellCommand,
@@ -602,6 +603,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
 
   if (plan.kind === "npc-local-project-showcase-site-write") {
     return executeNpcLocalProjectShowcaseSiteWritePlan(plan.title, plan.summary);
+  }
+
+  if (plan.kind === "npc-local-project-showcase-publish-preview") {
+    return executeNpcLocalProjectShowcasePublishPreviewPlan(plan.title, plan.summary);
   }
 
   if (plan.kind === "npc-local-shell-plan-preview") {
@@ -1326,6 +1331,22 @@ async function executeNpcLocalProjectShowcaseSiteWritePlan(
       `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
       `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
       `This is the showcase-site write stage inside the NPC showcase chain.`
+  };
+}
+
+async function executeNpcLocalProjectShowcasePublishPreviewPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await loadNpcLocalProjectShowcasePublishPreview(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
+      `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
+      `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
+      `Next git step: ${result.next_git_step} This is the readonly publish-preview stage inside the NPC showcase chain.`
   };
 }
 

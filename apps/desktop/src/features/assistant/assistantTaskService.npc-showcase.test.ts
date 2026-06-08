@@ -8,7 +8,8 @@ const {
   loadWorkspaceProjectRunPreviewMock,
   runWorkspaceProjectMock,
   captureNpcLocalProjectScreenshotMock,
-  writeNpcLocalProjectShowcaseSiteMock
+  writeNpcLocalProjectShowcaseSiteMock,
+  loadNpcLocalProjectShowcasePublishPreviewMock
 } = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
@@ -16,7 +17,8 @@ const {
   loadWorkspaceProjectRunPreviewMock: vi.fn(),
   runWorkspaceProjectMock: vi.fn(),
   captureNpcLocalProjectScreenshotMock: vi.fn(),
-  writeNpcLocalProjectShowcaseSiteMock: vi.fn()
+  writeNpcLocalProjectShowcaseSiteMock: vi.fn(),
+  loadNpcLocalProjectShowcasePublishPreviewMock: vi.fn()
 }));
 
 vi.mock("./localAssistantService", async () => {
@@ -30,7 +32,8 @@ vi.mock("./localAssistantService", async () => {
     loadWorkspaceProjectRunPreview: loadWorkspaceProjectRunPreviewMock,
     runWorkspaceProject: runWorkspaceProjectMock,
     captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock,
-    writeNpcLocalProjectShowcaseSite: writeNpcLocalProjectShowcaseSiteMock
+    writeNpcLocalProjectShowcaseSite: writeNpcLocalProjectShowcaseSiteMock,
+    loadNpcLocalProjectShowcasePublishPreview: loadNpcLocalProjectShowcasePublishPreviewMock
   };
 });
 
@@ -244,5 +247,47 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("index.html");
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
     expect(result.resultSummary).toContain("showcase-site write stage inside the NPC showcase chain");
+  });
+
+  it("plans a readonly npc showcase publish preview without collapsing into generic git status", () => {
+    const plan = planAssistantTask(
+      "use npc collaboration to preview the generated showcase output for the matched cattle project before git",
+      "readonly"
+    );
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-showcase-publish-preview",
+      title: "NPC local project showcase publish preview"
+    });
+  });
+
+  it("loads the matched local project showcase publish preview with npc-specific identity", async () => {
+    loadNpcLocalProjectShowcasePublishPreviewMock.mockResolvedValueOnce({
+      project_name: "cattle",
+      project_path: "apps/cattle",
+      site_root: ".opencow/artifacts/npc-showcase/sites/cattle",
+      entry_file: ".opencow/artifacts/npc-showcase/sites/cattle/index.html",
+      changed_paths: [".opencow/artifacts/npc-showcase/sites/cattle/index.html"],
+      source_screenshot_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
+      next_git_step: "Git commit or push is still separate and requires its own explicit confirmation stage.",
+      summary: "NPC local project showcase publish-preview loaded the latest generated showcase outputs without entering git."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "npc-local-project-showcase-publish-preview",
+      title: "NPC local project showcase publish preview",
+      summary: "use npc collaboration to preview the generated showcase output for the matched cattle project before git",
+      auditSummary: "Local assistant planned a readonly NPC local project showcase publish preview.",
+      auditDetail: "Readonly NPC local project showcase publish preview task."
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC local project showcase publish preview");
+    expect(result.resultSummary).toContain("cattle");
+    expect(result.resultSummary).toContain("apps/cattle");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/sites/cattle");
+    expect(result.resultSummary).toContain("index.html");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
+    expect(result.resultSummary).toContain("Git commit or push is still separate");
+    expect(result.resultSummary).toContain("readonly publish-preview stage");
   });
 });
