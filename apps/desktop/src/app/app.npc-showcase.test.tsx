@@ -227,6 +227,14 @@ describe("App npc local run flow", () => {
 
     await waitFor(() => {
       expect(
+        screen.queryByText(
+          /Workspace write permission is required before NPC collaboration can/i
+        )
+      ).toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(
         screen.getAllByText(
           /NPC local project showcase publish preview|cattle|apps\/cattle|\.opencow\/artifacts\/npc-showcase\/sites\/cattle|index\.html|Git commit or push is still separate/i
         ).length
