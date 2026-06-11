@@ -33,9 +33,15 @@ export interface LocalAssistantTaskRequest {
   readonly permissionMode: ControlledPermissionMode;
 }
 
+export interface OpenclawSelfRepairTargetDescriptor {
+  readonly label: "enabled skills registry" | "workspace project runtime registry" | null;
+  readonly path: string | null;
+  readonly continueRequest: string | null;
+}
+
 export type LocalAssistantTaskPlan =
   | {
-      readonly kind: "assistant-help-overview";
+      readonly kind: "local-model-chat";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -70,7 +76,21 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "opencow-self-repair-target-guidance";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "opencow-self-repair-enabled-skills-registry";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "opencow-self-repair-workspace-project-runtime-registry";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -280,6 +300,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "npc-local-project-showcase-git-confirmation-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "npc-local-shell-plan-preview";
       readonly title: string;
       readonly summary: string;
@@ -330,6 +357,13 @@ export type LocalAssistantTaskPlan =
     }
   | {
       readonly kind: "rag-local-doc-search";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "network-search-guidance";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -400,12 +434,14 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
       readonly queuedExecutionKind?: Extract<
         LocalAssistantTaskPlan["kind"],
-        | "assistant-help-overview"
+        | "local-model-chat"
         | "workspace-overview"
         | "packages-overview"
         | "workspace-config-overview"
         | "opencow-self-repair-preview"
+        | "opencow-self-repair-target-guidance"
         | "opencow-self-repair-enabled-skills-registry"
+        | "opencow-self-repair-workspace-project-runtime-registry"
         | "capability-rag-overview"
         | "capability-skills-overview"
         | "skills-local-scan"
@@ -429,6 +465,7 @@ export type LocalAssistantTaskPlan =
         | "npc-local-project-screenshot-capture"
         | "npc-local-project-showcase-site-write"
         | "npc-local-project-showcase-publish-preview"
+        | "npc-local-project-showcase-git-confirmation-preview"
         | "rag-local-shell-create-temp-output"
         | "rag-local-shell-remove-temp-output"
         | "skills-local-enabled-rag-shell-create-temp-output"

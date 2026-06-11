@@ -26,15 +26,116 @@ describe("local assistant task planner", () => {
     });
   });
 
-  it("keeps explicit capability questions on the assistant help overview path", () => {
+  it("routes explicit capability questions through the local model instead of fixed help copy", () => {
     const plan = planLocalAssistantTask({
       message: "what can you do",
       permissionMode: "readonly"
     });
 
     expect(plan).toMatchObject({
-      kind: "assistant-help-overview",
-      title: "Assistant help overview"
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("plans ordinary conceptual questions as local model chat instead of assistant help", () => {
+    const plan = planLocalAssistantTask({
+      message: "软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("keeps ordinary git and commit knowledge questions on local model chat instead of readonly git status", () => {
+    const plan = planLocalAssistantTask({
+      message: "git 和 commit 是干嘛的，是开发项目的 git 还是 opencow 也要内置接入 git 功能呢",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("keeps ordinary latest knowledge questions on local model chat instead of network search guidance", () => {
+    const plan = planLocalAssistantTask({
+      message: "最新的开源协议有哪些，它们的区别是什么",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("keeps ordinary english latest knowledge questions on local model chat unless web search is explicit", () => {
+    const plan = planLocalAssistantTask({
+      message: "what are the latest open source licenses and how are they different",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it.each([
+    "什么是 RAG，和普通搜索有什么区别",
+    "skills 在这个项目里是干嘛的",
+    "npc 是什么意思，和普通助手有什么不同",
+    "mcp 是什么，为什么要接入它"
+  ])("keeps ordinary capability concept questions on local model chat: %s", (message) => {
+    const plan = planLocalAssistantTask({
+      message,
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("keeps ordinary package.json concept questions on local model chat instead of workspace config overview", () => {
+    const plan = planLocalAssistantTask({
+      message: "package.json 是干嘛的，为什么前端项目里经常会有它",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("keeps ordinary tsconfig concept questions on local model chat instead of workspace config overview", () => {
+    const plan = planLocalAssistantTask({
+      message: "tsconfig.json 是干嘛的，它和 TypeScript 编译有什么关系",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it("keeps ordinary npm scripts concept questions on local model chat instead of packages overview", () => {
+    const plan = planLocalAssistantTask({
+      message: "npm scripts 是什么，为什么很多项目会在 package.json 里定义它们",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
     });
   });
 
@@ -60,8 +161,82 @@ describe("local assistant task planner", () => {
     expect(plan).toMatchObject({
       kind: "confirmation",
       requiredMode: "controlled-full",
+      commandPreview: "Remove-Item -LiteralPath temp-output -Recurse -Force",
       queuedExecutionKind: "controlled-full-remove-temp-output",
       queuedExecutionTitle: "Remove temp-output directory"
+    });
+  });
+
+  it("routes shell failure recovery advice to a readonly workspace root diagnostic", () => {
+    const plan = planLocalAssistantTask({
+      message: "verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics"
+    });
+    expect(plan.auditDetail).toMatch(/readonly shell diagnostics/i);
+  });
+
+  it("routes workspace-write recovery advice to a readonly shell diagnostic", () => {
+    const plan = planLocalAssistantTask({
+      message: "verify the permission approval, workspace root, command whitelist, and audit trail before retrying",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics"
+    });
+  });
+
+  it("routes controlled-full recovery advice to a readonly shell diagnostic", () => {
+    const plan = planLocalAssistantTask({
+      message: "verify the dangerous confirmation, rollback snapshot availability, workspace root, command whitelist, and audit trail before retrying",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics"
+    });
+  });
+
+  it("routes blocked destructive retry advice to a readonly shell diagnostic", () => {
+    const plan = planLocalAssistantTask({
+      message: "restore snapshot capability or run a readonly preview before retrying destructive execution",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics"
+    });
+  });
+
+  it("routes short Chinese permission recovery advice to a readonly shell diagnostic", () => {
+    const plan = planLocalAssistantTask({
+      message: "检查权限批准和工作区根目录再重试",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics"
+    });
+  });
+
+  it("routes short Chinese dangerous confirmation recovery advice to a readonly shell diagnostic", () => {
+    const plan = planLocalAssistantTask({
+      message: "检查危险确认和回退快照再重试",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics"
     });
   });
 });

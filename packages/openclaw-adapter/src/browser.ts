@@ -1,5 +1,6 @@
 export { analyzeControlledCommand } from "./commandPolicy.js";
 export { planLocalAssistantTask } from "./localAssistantPlan.js";
+export { resolveOpencowSelfRepairTargetDescriptor } from "./selfRepairTargetDescriptor.js";
 export type {
   ControlledCommandAnalysis,
   ControlledCommandReasonCode,
@@ -8,5 +9,6 @@ export type {
   ControlledCommandStatus,
   ControlledPermissionMode,
   LocalAssistantTaskPlan,
-  LocalAssistantTaskRequest
+  LocalAssistantTaskRequest,
+  OpenclawSelfRepairTargetDescriptor
 } from "./types.js";

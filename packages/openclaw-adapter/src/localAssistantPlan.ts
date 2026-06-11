@@ -1,10 +1,37 @@
 import type { LocalAssistantTaskPlan, LocalAssistantTaskRequest } from "./types.js";
+import { resolveOpencowSelfRepairTargetDescriptor } from "./selfRepairTargetDescriptor.js";
+
+const SHELL_DIALOG_RECOVERY_NARRATIVE =
+  "Shell 出问题时，可以把它当成一个可对话恢复的受控能力来处理：\n" +
+  "1. 先判断当前 shell 属于只读、写入还是高危。\n" +
+  "2. 确认权限是否已经批准，或者是否需要先走危险确认。\n" +
+  "3. 检查工作区根目录、命令白名单、输出路径和快照是否可用。\n" +
+  "4. 如果失败来自只读或环境问题，优先通过对话重新发起检查。\n" +
+  "5. 如果失败来自写入或高危操作，先补齐权限或回退条件，再继续对话修复。";
 
 const destructivePatterns = [/remove-item/i, /\brm\b/i, /\bdel\b/i, /\bdelete\b/i, /\bclean up\b/i];
+const controlledTempOutputRemovalCommand = "Remove-Item -LiteralPath temp-output -Recurse -Force";
 
-const gitStatusPatterns = [/\bgit status\b/i, /\bgit\b/i, /\bworkspace status\b/i, /\bmodified files\b/i];
+const gitStatusPatterns = [/\bgit status\b/i, /\bworkspace status\b/i, /\bmodified files\b/i];
 const workspaceRootPatterns = [/\blist files\b/i, /\broot files\b/i, /\bworkspace files\b/i, /\btop level\b/i];
 const packagesDirectoryPatterns = [/\bpackage folders\b/i, /\blist packages\b/i, /\bpackages directory\b/i];
+const readonlyShellDiagnosticPatterns = [
+  /\breadonly shell bridge\b/i,
+  /\bpermission approval\b/i,
+  /\bdangerous confirmation\b/i,
+  /\brollback snapshot\b/i,
+  /\brun a readonly preview before retrying destructive execution\b/i,
+  /\bcommand whitelist\b/i,
+  /\baudit trail\b/i,
+  /\bshell diagnostics?\b/i,
+  /权限批准/,
+  /危险确认/,
+  /回退快照/,
+  /工作区根目录/,
+  /命令白名单/,
+  /审计链路/,
+  /再重试/
+];
 const createTempOutputVerbPatterns = [/\bcreate\b/i, /\bmake\b/i];
 const createTempOutputNamePatterns = [/temp-output/i];
 const createTempOutputContainerPatterns = [/\bfolder\b/i, /\bdirectory\b/i];
@@ -21,12 +48,64 @@ const configOverviewPatterns = [
   /root scripts?/i,
   /workspace config/i
 ];
+const configOverviewIntentPatterns = [
+  /\binspect\b/i,
+  /\boverview\b/i,
+  /\blist\b/i,
+  /\bread\b/i,
+  /\bshow\b/i,
+  /\bcheck\b/i,
+  /\bworkspace config\b/i,
+  /\broot scripts?\b/i,
+  /配置/,
+  /概览/,
+  /检查/,
+  /脚本/
+];
 const opencowSelfRepairPatterns = [/\bopencow\b/i, /自修复/, /修复自己/, /fix yourself/i, /repair yourself/i];
 const diagnosticPreviewPatterns = [/\bdiagnos/i, /\binspect\b/i, /\bpreview\b/i, /\brepair\b/i, /\bfix\b/i, /报错/, /错误/];
 const repairContinuationPatterns = [/\bcontinue\b/i, /\bproceed\b/i, /\bexecute\b/i, /继续/];
-const enabledSkillsRegistryPatterns = [/\benabled\b/i, /\bskills?\b/i, /\bregistry\b/i, /enabled-skills/i];
+const enabledSkillsRegistryPatterns = [/\benabled\b/i, /\bskills?\b/i, /enabled-skills/i];
+const workspaceProjectRuntimeRegistryPatterns = [/\bworkspace\b/i, /\bproject\b/i, /\bruntime\b/i, /\bregistry\b/i, /workspace-project-runs/i];
 const packagesOverviewPatterns = [/package/i, /packages/i, /script/i, /scripts/i, /workspace package/i];
+const packagesOverviewIntentPatterns = [
+  /\binspect\b/i,
+  /\boverview\b/i,
+  /\blist\b/i,
+  /\bshow\b/i,
+  /\bsummar/i,
+  /\bscan\b/i,
+  /\bworkspace packages?\b/i,
+  /检查/,
+  /概览/,
+  /列出/,
+  /查看/
+];
 const ragCapabilityPatterns = [/\brag\b/i, /retrieval/i, /knowledge base/i, /embedding/i];
+const capabilityOverviewIntentPatterns = [
+  /\binspect\b/i,
+  /\boverview\b/i,
+  /\breadiness\b/i,
+  /\bwiring\b/i,
+  /\bsetup\b/i,
+  /\bfoundation\b/i,
+  /\bcapability\b/i,
+  /能力/,
+  /概览/,
+  /就绪/,
+  /接线/,
+  /配置/,
+  /检查/
+];
+const networkSearchIntentPatterns = [
+  /\bweb search\b/i,
+  /\binternet search\b/i,
+  /\bsearch (the )?web\b/i,
+  /\bsearch online\b/i,
+  /\bonline search\b/i,
+  /\u8054\u7f51\u641c\u7d22/,
+  /\u6700\u65b0\u8d44\u6599/
+];
 const skillsCapabilityPatterns = [/\bskills?\b/i, /skill ecosystem/i];
 const localSkillsScanPatterns = [/\bscan\b/i, /\blist\b/i, /\binventory\b/i];
 const localEnabledSkillsPatterns = [/\benabled\b/i, /\bactive\b/i, /\bactivated\b/i];
@@ -46,27 +125,63 @@ const npcShowcaseSiteWritePatterns = [/\bshowcase\b/i, /\bwebsite\b/i, /\bsite\b
 const npcShowcasePublishPreviewPatterns = [/\bpreview\b/i, /\breview\b/i, /\binspect\b/i, /\bshow\b/i];
 const npcShowcasePublishArtifactPatterns = [/\bshowcase\b/i, /\bartifact/i, /\boutput\b/i, /\bfiles?\b/i, /\bchanged\b/i];
 const npcShowcasePublishGitBoundaryPatterns = [/\bbefore git\b/i, /\bbefore commit\b/i, /\bbefore push\b/i];
+const npcShowcaseGitConfirmationPreviewPatterns = [/\bprepare\b/i, /\bpreview\b/i, /\breview\b/i, /\binspect\b/i];
+const npcShowcaseGitActionPatterns = [/\bcommit\b/i, /\bpush\b/i];
+const npcShowcaseGitContextPatterns = [/\bshowcase\b/i, /\bchanges?\b/i, /\bgit step\b/i];
 const mcpCapabilityPatterns = [/\bmcp\b/i, /model context protocol/i];
 const mcpLocalPluginInspectPatterns = [/\bshow\b/i, /\bdetail\b/i, /\bdetails\b/i, /\bread\b/i, /\binspect\b/i, /\bopen\b/i];
 const mcpLocalPluginStartPreviewPatterns = [/\bpreview\b/i, /\bstart\b/i, /\blaunch\b/i, /\brun\b/i];
 const mcpLocalPluginScanPatterns = [/\bscan\b/i, /\blist\b/i, /\binventory\b/i, /\bplugins?\b/i, /\bservers?\b/i];
 const localRagSearchPatterns = [/\bsearch\b/i, /\bfind\b/i, /\blookup\b/i, /knowledge/i, /docs?/i, /rules?/i];
+const longDocumentFilePatterns = [/\bpptx?\b/i, /\bdocx?\b/i, /\bmd\b/i, /\bmarkdown\b/i];
+const longDocumentIntentPatterns = [
+  /\bsummar/i,
+  /\banaly[sz]e/i,
+  /\bprocess\b/i,
+  /\bread\b/i,
+  /\blong\b/i,
+  /\bdocuments?\b/i,
+  /\bfiles?\b/i,
+  /\u603b\u7ed3/,
+  /\u5206\u6790/,
+  /\u5904\u7406/,
+  /\u9605\u8bfb/,
+  /\u8bfb\u53d6/,
+  /\u957f\u6587\u6863/,
+  /\u6587\u6863/,
+  /\u6587\u4ef6/
+];
 
 export function planLocalAssistantTask(request: LocalAssistantTaskRequest): LocalAssistantTaskPlan {
   const message = request.message.trim();
   const normalizedLowerMessage = message.toLowerCase();
 
+  const selfRepairTarget = resolveOpencowSelfRepairTargetDescriptor(message);
+
+  if (readonlyShellDiagnosticPatterns.some((pattern) => pattern.test(message))) {
+    return {
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics",
+      summary: "Run a readonly shell diagnostic by listing the workspace root before retrying command execution.",
+      auditSummary: "Local assistant planned readonly shell diagnostics.",
+      auditDetail: `Readonly shell diagnostics task: workspace root listing | request=${message}`
+    };
+  }
+
   if (
     opencowSelfRepairPatterns.some((pattern) => pattern.test(message))
     && repairContinuationPatterns.some((pattern) => pattern.test(message))
-    && enabledSkillsRegistryPatterns.some((pattern) => pattern.test(message))
+    && selfRepairTarget.label === "enabled skills registry"
+    && selfRepairTarget.path
   ) {
     if (request.permissionMode === "readonly") {
       return {
         kind: "permission-request",
         targetMode: "workspace-write",
-        reason: "Workspace write permission is required before opencow can repair its workspace-local enabled skills registry.",
-        riskSummary: "This repair rewrites only .opencow/skills/enabled-skills.json through a narrow self-repair path and must remain audit-visible and rollback-visible.",
+        reason:
+          `Workspace write permission is required before opencow can repair its workspace-local enabled skills registry at ${selfRepairTarget.path}.`,
+        riskSummary:
+          `This repair rewrites only ${selfRepairTarget.path} through a narrow self-repair path and must remain audit-visible and rollback-visible. Approve this only if you want opencow to rewrite that file and then verify the schema version and enabled entry count.`,
         auditSummary: "Local assistant task requires workspace-write permission for opencow self-repair.",
         auditDetail: `Opencow self-repair is waiting for workspace-write permission: ${message}`,
         queuedExecutionKind: "opencow-self-repair-enabled-skills-registry",
@@ -83,6 +198,53 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Repair the workspace-local enabled skills registry through the controlled self-repair chain.",
       auditSummary: "Local assistant planned an opencow enabled skills registry self-repair.",
       auditDetail: `Opencow self-repair task: enabled skills registry | request=${message}`
+    };
+  }
+
+  if (
+    opencowSelfRepairPatterns.some((pattern) => pattern.test(message))
+    && repairContinuationPatterns.some((pattern) => pattern.test(message))
+    && selfRepairTarget.label === "workspace project runtime registry"
+    && selfRepairTarget.path
+  ) {
+    if (request.permissionMode === "readonly") {
+      return {
+        kind: "permission-request",
+        targetMode: "workspace-write",
+        reason:
+          `Workspace write permission is required before opencow can repair its workspace project runtime registry at ${selfRepairTarget.path}.`,
+        riskSummary:
+          `This repair rewrites only ${selfRepairTarget.path} through a narrow self-repair path and must remain audit-visible and rollback-visible. Approve this only if you want opencow to rewrite that file and then verify the schema version and runtime run count.`,
+        auditSummary: "Local assistant task requires workspace-write permission for opencow self-repair.",
+        auditDetail: `Opencow self-repair is waiting for workspace-write permission: ${message}`,
+        queuedExecutionKind: "opencow-self-repair-workspace-project-runtime-registry",
+        queuedExecutionTitle: "Repair opencow workspace project runtime registry",
+        queuedExecutionAuditSummary: "Local assistant planned an opencow workspace project runtime registry self-repair.",
+        queuedExecutionAuditDetail: `Opencow self-repair task: workspace project runtime registry | request=${message}`,
+        queuedMessage: message
+      };
+    }
+
+    return {
+      kind: "opencow-self-repair-workspace-project-runtime-registry",
+      title: "Repair opencow workspace project runtime registry",
+      summary: "Repair the workspace project runtime registry through the controlled self-repair chain.",
+      auditSummary: "Local assistant planned an opencow workspace project runtime registry self-repair.",
+      auditDetail: `Opencow self-repair task: workspace project runtime registry | request=${message}`
+    };
+  }
+
+  if (
+    opencowSelfRepairPatterns.some((pattern) => pattern.test(message))
+    && repairContinuationPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "opencow-self-repair-target-guidance",
+      title: "Clarify opencow self-repair target",
+      summary:
+        "Opencow self-repair needs a narrower target before continuing. Ask to continue repairing either the enabled skills registry or the workspace project runtime registry so the assistant can avoid retry loops and keep the repair chain explicit.",
+      auditSummary: "Local assistant stopped a generic opencow self-repair continuation and requested a narrower target.",
+      auditDetail: `Opencow self-repair target guidance task: ${message}`
     };
   }
 
@@ -109,7 +271,9 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     return {
       kind: "npc-local-project-showcase-preview",
       title: "NPC local project showcase preview",
-      summary: "Preview a readonly NPC-assisted local project showcase workflow before any run, screenshot, website generation, repository write, or git push action is approved.",
+      summary:
+        "Preview a readonly NPC-assisted local project showcase workflow before any run, screenshot, website generation, repository write, or git push action is approved.\n" +
+        SHELL_DIALOG_RECOVERY_NARRATIVE,
       auditSummary: "Local assistant planned a readonly NPC local project showcase preview.",
       auditDetail: `Readonly NPC local project showcase preview task: ${message}`
     };
@@ -126,9 +290,11 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       return {
         kind: "permission-request",
         targetMode: "workspace-write",
-        reason: "Workspace write permission is required before NPC collaboration can launch the matched local project.",
+        reason: "Workspace write permission is required before NPC collaboration can launch the matched local project.\n" +
+          SHELL_DIALOG_RECOVERY_NARRATIVE,
         riskSummary:
-          "This task launches only the matched local workspace project through the existing project-run path, keeps execution inside the approved workspace, and must remain audit-visible.",
+          "This task launches only the matched local workspace project through the existing project-run path, keeps execution inside the approved workspace, and must remain audit-visible.\n" +
+          SHELL_DIALOG_RECOVERY_NARRATIVE,
         auditSummary: "Local assistant task requires workspace-write permission for an NPC local project run.",
         auditDetail: `NPC local project run task is waiting for permission: ${message}`,
         queuedExecutionKind: "npc-local-project-run",
@@ -160,9 +326,11 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       return {
         kind: "permission-request",
         targetMode: "workspace-write",
-        reason: "Workspace write permission is required before NPC collaboration can capture a screenshot from the matched local project.",
+        reason: "Workspace write permission is required before NPC collaboration can capture a screenshot from the matched local project.\n" +
+          SHELL_DIALOG_RECOVERY_NARRATIVE,
         riskSummary:
-          "This task captures only a task-scoped screenshot artifact for the matched running local workspace project, writes it inside the approved workspace, and must remain audit-visible.",
+          "This task captures only a task-scoped screenshot artifact for the matched running local workspace project, writes it inside the approved workspace, and must remain audit-visible.\n" +
+          SHELL_DIALOG_RECOVERY_NARRATIVE,
         auditSummary: "Local assistant task requires workspace-write permission for NPC local project screenshot capture.",
         auditDetail: `NPC local project screenshot capture task is waiting for permission: ${message}`,
         queuedExecutionKind: "npc-local-project-screenshot-capture",
@@ -195,9 +363,11 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       return {
         kind: "permission-request",
         targetMode: "workspace-write",
-        reason: "Workspace write permission is required before NPC collaboration can generate the showcase site for the matched local project.",
+        reason: "Workspace write permission is required before NPC collaboration can generate the showcase site for the matched local project.\n" +
+          SHELL_DIALOG_RECOVERY_NARRATIVE,
         riskSummary:
-          "This task writes only a deterministic local showcase-site output under the approved workspace and must keep changed-file paths audit-visible.",
+          "This task writes only a deterministic local showcase-site output under the approved workspace and must keep changed-file paths audit-visible.\n" +
+          SHELL_DIALOG_RECOVERY_NARRATIVE,
         auditSummary: "Local assistant task requires workspace-write permission for NPC local project showcase-site write.",
         auditDetail: `NPC local project showcase-site write task is waiting for permission: ${message}`,
         queuedExecutionKind: "npc-local-project-showcase-site-write",
@@ -221,17 +391,50 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     /\bnpc\b/i.test(message)
     && /collaboration/i.test(message)
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseGitConfirmationPreviewPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseGitActionPatterns.some((pattern) => pattern.test(message))
+    && npcShowcaseGitContextPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "npc-local-project-showcase-git-confirmation-preview",
+      title: "NPC local project showcase git confirmation preview",
+      summary:
+        message + "\n" + SHELL_DIALOG_RECOVERY_NARRATIVE,
+      auditSummary: "Local assistant planned a readonly NPC local project showcase git confirmation preview.",
+      auditDetail: `Readonly NPC local project showcase git confirmation preview task: ${message}`
+    };
+  }
+
+  if (
+    /\bnpc\b/i.test(message)
+    && /collaboration/i.test(message)
+    && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && npcShowcasePublishPreviewPatterns.some((pattern) => pattern.test(message))
     && npcShowcasePublishArtifactPatterns.some((pattern) => pattern.test(message))
   ) {
     return {
       kind: "npc-local-project-showcase-publish-preview",
       title: "NPC local project showcase publish preview",
-      summary: npcShowcasePublishGitBoundaryPatterns.some((pattern) => pattern.test(message))
+      summary: (npcShowcasePublishGitBoundaryPatterns.some((pattern) => pattern.test(message))
         ? message
-        : "Preview the latest NPC showcase outputs and changed files before any later git stage is considered.",
+        : "Preview the latest NPC showcase outputs and changed files before any later git stage is considered.") +
+        "\n" +
+        SHELL_DIALOG_RECOVERY_NARRATIVE,
       auditSummary: "Local assistant planned a readonly NPC local project showcase publish preview.",
       auditDetail: `Readonly NPC local project showcase publish preview task: ${message}`
+    };
+  }
+
+  if (
+    longDocumentFilePatterns.some((pattern) => pattern.test(message))
+    && longDocumentIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "rag-local-doc-search",
+      title: "Local RAG document search",
+      summary: message,
+      auditSummary: "Local assistant planned a local RAG long document search.",
+      auditDetail: `Readonly local RAG long document search task: ${message}`
     };
   }
 
@@ -247,23 +450,6 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Inspect the current workspace structure before deeper local assistant execution.",
       auditSummary: "Local assistant planned a workspace overview task.",
       auditDetail: `Readonly workspace overview task: ${message}`
-    };
-  }
-
-  if (
-    /你能(帮我)?做什么/.test(message)
-    || /你会做什么/.test(message)
-    || /能干什么/.test(message)
-    || /what can you do/.test(normalizedLowerMessage)
-    || /help me with/.test(normalizedLowerMessage)
-    || /how can you help/.test(normalizedLowerMessage)
-  ) {
-    return {
-      kind: "assistant-help-overview",
-      title: "Assistant help overview",
-      summary: "Summarize the local desktop assistant's current core conversation, Ollama, shell safety, RAG, Skills, NPC, and MCP capabilities in user-facing language.",
-      auditSummary: "Local assistant planned a user-facing help overview.",
-      auditDetail: `User-facing assistant help overview task: ${message}`
     };
   }
 
@@ -293,7 +479,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       kind: "confirmation",
       title: "Confirm local RAG handoff destructive cleanup",
       summary: "The assistant identified a local RAG handoff destructive cleanup request and requires explicit confirmation before execution.",
-      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      commandPreview: controlledTempOutputRemovalCommand,
       impact: "This will delete temporary workspace output after reviewing local shell rules, and must keep audit and rollback protections.",
       requiredMode: "controlled-full",
       safetySummary: "A snapshot preview must be available before local RAG handoff destructive execution continues.",
@@ -462,7 +648,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       kind: "confirmation",
       title: "Confirm NPC-assisted RAG handoff destructive cleanup",
       summary: "The assistant identified an NPC-assisted RAG handoff destructive cleanup request and requires explicit confirmation before execution.",
-      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      commandPreview: controlledTempOutputRemovalCommand,
       impact: "This will delete temporary workspace output after NPC collaboration reviews local shell rules and routes into an enabled local shell-oriented skill, and must keep audit and rollback protections.",
       requiredMode: "controlled-full",
       safetySummary: "A snapshot preview must be available before NPC-assisted RAG handoff destructive execution continues.",
@@ -554,7 +740,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       kind: "confirmation",
       title: "Confirm NPC-assisted destructive cleanup",
       summary: "The assistant identified an NPC-assisted destructive cleanup request and requires explicit confirmation before execution.",
-      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      commandPreview: controlledTempOutputRemovalCommand,
       impact: "This will delete temporary workspace output after NPC collaboration routes into an enabled local shell-oriented skill, and must keep audit and rollback protections.",
       requiredMode: "controlled-full",
       safetySummary: "A snapshot preview must be available before NPC-assisted destructive execution continues.",
@@ -658,7 +844,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       kind: "confirmation",
       title: "Confirm skill-assisted RAG handoff destructive cleanup",
       summary: "The assistant identified a skill-assisted RAG handoff destructive cleanup request and requires explicit confirmation before execution.",
-      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      commandPreview: controlledTempOutputRemovalCommand,
       impact: "This will delete temporary workspace output after matching an enabled local skill and reviewing local shell rules, and must keep audit and rollback protections.",
       requiredMode: "controlled-full",
       safetySummary: "A snapshot preview must be available before skill-assisted RAG handoff destructive execution continues.",
@@ -777,7 +963,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       kind: "confirmation",
       title: "Confirm skill-assisted destructive cleanup",
       summary: "The assistant identified a skill-assisted destructive cleanup request and requires explicit confirmation before execution.",
-      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      commandPreview: controlledTempOutputRemovalCommand,
       impact: "This will delete temporary workspace output after matching an enabled local shell-oriented skill, and must keep audit and rollback protections.",
       requiredMode: "controlled-full",
       safetySummary: "A snapshot preview must be available before skill-assisted destructive execution continues.",
@@ -871,7 +1057,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       kind: "confirmation",
       title: "Confirm destructive cleanup",
       summary: "The assistant identified a destructive cleanup request and requires explicit confirmation before execution.",
-      commandPreview: "Remove-Item .\\temp-output -Recurse",
+      commandPreview: controlledTempOutputRemovalCommand,
       impact: "This will delete temporary workspace output and must keep audit and rollback protections.",
       requiredMode: "controlled-full",
       safetySummary: "A snapshot preview must be available before destructive execution continues.",
@@ -915,7 +1101,20 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     };
   }
 
-  if (ragCapabilityPatterns.some((pattern) => pattern.test(message))) {
+  if (networkSearchIntentPatterns.some((pattern) => pattern.test(message))) {
+    return {
+      kind: "network-search-guidance",
+      title: "Network search guidance",
+      summary: message,
+      auditSummary: "Local assistant planned readonly network search guidance.",
+      auditDetail: `Readonly network search guidance task: ${message}`
+    };
+  }
+
+  if (
+    ragCapabilityPatterns.some((pattern) => pattern.test(message))
+    && capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
     return {
       kind: "capability-rag-overview",
       title: "OpenClaw RAG capability overview",
@@ -1066,7 +1265,10 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     };
   }
 
-  if (skillsCapabilityPatterns.some((pattern) => pattern.test(message))) {
+  if (
+    skillsCapabilityPatterns.some((pattern) => pattern.test(message))
+    && capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
     return {
       kind: "capability-skills-overview",
       title: "OpenClaw Skills capability overview",
@@ -1076,7 +1278,10 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     };
   }
 
-  if (npcCapabilityPatterns.some((pattern) => pattern.test(message))) {
+  if (
+    npcCapabilityPatterns.some((pattern) => pattern.test(message))
+    && capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
     return {
       kind: "capability-npc-overview",
       title: "OpenClaw NPC capability overview",
@@ -1164,16 +1369,21 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       };
     }
 
-    return {
-      kind: "capability-mcp-overview",
-      title: "OpenClaw MCP capability overview",
-      summary: "Inspect local OpenClaw MCP package foundations before external tool server wiring expands.",
-      auditSummary: "Local assistant planned an OpenClaw MCP capability overview.",
-      auditDetail: `Readonly capability catalog task: mcp | request=${message}`
-    };
+    if (capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))) {
+      return {
+        kind: "capability-mcp-overview",
+        title: "OpenClaw MCP capability overview",
+        summary: "Inspect local OpenClaw MCP package foundations before external tool server wiring expands.",
+        auditSummary: "Local assistant planned an OpenClaw MCP capability overview.",
+        auditDetail: `Readonly capability catalog task: mcp | request=${message}`
+      };
+    }
   }
 
-  if (configOverviewPatterns.some((pattern) => pattern.test(message))) {
+  if (
+    configOverviewPatterns.some((pattern) => pattern.test(message))
+    && configOverviewIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
     return {
       kind: "workspace-config-overview",
       title: "Workspace config overview",
@@ -1183,7 +1393,10 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     };
   }
 
-  if (packagesOverviewPatterns.some((pattern) => pattern.test(message))) {
+  if (
+    packagesOverviewPatterns.some((pattern) => pattern.test(message))
+    && packagesOverviewIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
     return {
       kind: "packages-overview",
       title: "Workspace packages overview",
@@ -1194,10 +1407,10 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   return {
-    kind: "assistant-help-overview",
-    title: "Assistant help overview",
-    summary: "Summarize the local desktop assistant's current core capabilities and the safest next-step suggestions for the user.",
-    auditSummary: "Local assistant planned a default user-facing help overview.",
-    auditDetail: `Default user-facing assistant help overview task: ${message}`
+    kind: "local-model-chat",
+    title: "本地模型对话",
+    summary: message,
+    auditSummary: "Local assistant planned an ordinary local model chat response.",
+    auditDetail: `Local model chat task: ${message}`
   };
 }
