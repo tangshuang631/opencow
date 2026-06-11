@@ -18,5 +18,5 @@ Quick desktop test startup:
 Notes:
 
 - Docker is not required for the current desktop-first local testing path.
-- The launcher is a plain static `.bat` file, uses UTF-8 console output, checks `npm` and `cargo`, installs npm dependencies when needed, verifies Ollama reachability, and then launches the desktop Tauri dev app.
+- The launcher is a plain static `.bat` file, uses UTF-8 console output, checks `npm` and `cargo`, refreshes the OpenClaw adapter build, verifies Ollama reachability, and then launches a fresh desktop Tauri dev session.
 - For safety and antivirus compatibility, the launcher does not generate dynamic scripts and does not auto-start Ollama in the background. If Ollama is not running, it exits with a clear hint.

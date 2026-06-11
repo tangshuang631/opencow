@@ -5,6 +5,7 @@
   "description": "Local-first Windows desktop AI assistant based on OpenClaw.",
   "scripts": {
     "dev": "npm --workspace apps/desktop run dev",
+    "predesktop:dev": "npm --workspace packages/openclaw-adapter run build",
     "desktop:dev": "npm --workspace apps/desktop run tauri:dev",
     "desktop:test:start": "start-opencow-test.bat",
     "desktop:test:check": "start-opencow-test.bat check",
