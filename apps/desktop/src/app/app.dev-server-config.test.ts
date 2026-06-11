@@ -70,8 +70,8 @@ describe("desktop dev server contract", () => {
   it("refreshes the OpenClaw adapter build before launching the desktop runtime", () => {
     const launcher = readRepoFile("start-opencow-test.bat");
 
-    expect(launcher).toContain("npm --workspace packages/openclaw-adapter run build");
-    expect(launcher.indexOf("npm --workspace packages/openclaw-adapter run build")).toBeLessThan(
+    expect(launcher).toContain("npm run predesktop:dev");
+    expect(launcher.indexOf("npm run predesktop:dev")).toBeLessThan(
       launcher.indexOf("npm run desktop:dev")
     );
   });
