@@ -106,6 +106,7 @@ export type LocalTaskExecutionKind =
   | "npc-local-project-showcase-publish-preview"
   | "npc-local-project-showcase-git-confirmation-preview"
   | "npc-local-shell-plan-preview"
+  | "npc-course-assistant-config"
   | "capability-npc-overview"
   | "capability-mcp-overview"
   | "mcp-local-plugin-scan"

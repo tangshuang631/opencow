@@ -266,6 +266,18 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
+  it("plans a Chinese course assistant NPC configuration instead of a generic capability overview", () => {
+    const plan = planLocalAssistantTask({
+      message: "你能帮我配置一个课程助手npc吗",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-course-assistant-config",
+      title: "课程助手 NPC 配置方案"
+    });
+  });
+
   it("plans a readonly npc collaboration preview for explicit npc planning requests", () => {
     const plan = planLocalAssistantTask({
       message: "preview an npc collaboration plan for local shell permission rules",

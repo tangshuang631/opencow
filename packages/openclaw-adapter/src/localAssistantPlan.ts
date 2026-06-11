@@ -115,6 +115,28 @@ const localSkillInstallPatterns = [/\binstall\b/i, /\badd\b/i, /安装/];
 const localSkillEnablePatterns = [/\benable\b/i, /\bactivate\b/i, /\bturn on\b/i];
 const localSkillDisablePatterns = [/\bdisable\b/i, /\bdeactivate\b/i, /\bturn off\b/i];
 const npcCapabilityPatterns = [/\bnpc\b/i, /agent team/i, /collaboration/i];
+const npcCourseAssistantConfigPatterns = [
+  /课程/,
+  /课表/,
+  /学习/,
+  /助教/,
+  /课程助手/,
+  /\bcourse\b/i,
+  /\bclass\b/i,
+  /\bstudy\b/i,
+  /\btutor\b/i
+];
+const npcConfigurationIntentPatterns = [
+  /配置/,
+  /创建/,
+  /设定/,
+  /设置/,
+  /帮我/,
+  /\bconfig/i,
+  /\bcreate\b/i,
+  /\bsetup\b/i,
+  /\bset up\b/i
+];
 const npcPreviewPatterns = [/\bpreview\b/i, /\bplan\b/i, /\bworkflow\b/i];
 const npcShowcaseProjectPatterns = [/\bcattle\b/i, /\bproject\b/i, /项目/];
 const npcShowcaseOutputPatterns = [/\bshowcase\b/i, /\bportfolio\b/i, /\bresume\b/i, /简历/];
@@ -1275,6 +1297,20 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Inspect local OpenClaw Skills package foundations before enablement and audit wiring expand.",
       auditSummary: "Local assistant planned an OpenClaw Skills capability overview.",
       auditDetail: `Readonly capability catalog task: skills | request=${message}`
+    };
+  }
+
+  if (
+    npcCapabilityPatterns.some((pattern) => pattern.test(message))
+    && npcCourseAssistantConfigPatterns.some((pattern) => pattern.test(message))
+    && npcConfigurationIntentPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "npc-course-assistant-config",
+      title: "课程助手 NPC 配置方案",
+      summary: message,
+      auditSummary: "Local assistant planned a Chinese course assistant NPC configuration proposal.",
+      auditDetail: `Readonly course assistant NPC configuration task: ${message}`
     };
   }
 

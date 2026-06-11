@@ -17,6 +17,7 @@ function Invoke-Checked {
 }
 
 Invoke-Checked "Running desktop unit tests" {
+  npm --workspace packages/openclaw-adapter run build
   npm --workspace apps/desktop run test:unit
 }
 

@@ -28,6 +28,34 @@ describe("assistantTaskService npc collaboration preview", () => {
     });
   });
 
+  it("plans and executes a Chinese course assistant NPC configuration proposal", async () => {
+    const plan = planAssistantTask("你能帮我配置一个课程助手npc吗", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "npc-course-assistant-config",
+      title: "课程助手 NPC 配置方案"
+    });
+
+    loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
+      capability_id: "npc",
+      title: "OpenClaw NPC capability overview",
+      status: "ready-foundation",
+      required_package_count: 3,
+      available_package_count: 3,
+      available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/tool-call-repair"],
+      missing_packages: [],
+      summary: "NPC foundation packages are available for local collaboration preview."
+    });
+
+    const result = await executeAssistantTask(plan);
+
+    expect(result.resultTitle).toBe("课程助手 NPC 配置方案");
+    expect(result.resultSummary).toContain("底层 NPC 基础包已就绪");
+    expect(result.resultSummary).toContain("名称=课程助手");
+    expect(result.resultSummary).toContain("课程表");
+    expect(result.resultSummary).toContain("下一步");
+  });
+
   it("executes an npc collaboration preview by combining npc readiness, enabled skills, and local docs", async () => {
     loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
       capability_id: "npc",

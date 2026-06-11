@@ -311,6 +311,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "npc-course-assistant-config";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "capability-npc-overview";
       title: string;
       summary: string;
@@ -656,6 +663,10 @@ export async function executeAssistantTask(
     return executeNpcShellPlanPreview(plan.title, plan.summary);
   }
 
+  if (plan.kind === "npc-course-assistant-config") {
+    return executeNpcCourseAssistantConfigPlan(plan.title, plan.summary);
+  }
+
   if (plan.kind === "capability-npc-overview") {
     return executeCapabilityOverviewPlan("npc");
   }
@@ -734,6 +745,30 @@ async function executeNetworkSearchGuidancePlan(
       "Provider status: not configured. Network call skipped. " +
       "Network-assisted retrieval is recognized as a controlled assistant capability, but this readonly slice only records the request and explains the safe next step. " +
       "Next repair step: configure a search provider in advanced settings, approve network search capability, then retry the request; use local RAG when the answer should come from workspace documents."
+  };
+}
+
+async function executeNpcCourseAssistantConfigPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const overview = await loadOpenClawCapabilityOverview("npc");
+  const readiness =
+    overview.status === "ready-foundation"
+      ? "底层 NPC 基础包已就绪，可以先按只读方式配置课程助手。"
+      : `NPC 基础状态为 ${overview.status}，建议先补齐缺失依赖后再启用自动化。`;
+
+  return {
+    resultTitle,
+    resultSummary: [
+      readiness,
+      `我会把“${query}”理解为创建一个课程管理型 NPC，而不是只检查 NPC 依赖。`,
+      "建议配置：名称=课程助手；角色=课程规划、作业提醒、资料整理、复习节奏建议；语气=中文、简洁、先问缺失信息再行动。",
+      "资料入口：课程表、作业截止日期、教材/课件路径、考试时间、个人可用学习时段；没有资料时先生成导入模板，不编造课程安排。",
+      "工作流：每日列出今天课程和待办；每周汇总进度与风险；临近截止日前给出优先级；需要写文件、改日程或联网搜索前必须先确认。",
+      "安全边界：默认只读规划；写入本地课程配置、创建提醒文件或清理资料时走 workspace-write 权限；任何外部网络查询都单独确认。",
+      "下一步：把课程表或一段课程信息发给我，我可以继续生成课程助手配置草案和待确认的本地保存方案。"
+    ].join(" ")
   };
 }
 
