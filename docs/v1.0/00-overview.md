@@ -133,10 +133,10 @@ Current self-repair landing state:
 
 - readonly preview is already available through `opencow-self-repair-preview`
 - the first permission-backed mutation is already available through `opencow-self-repair-enabled-skills-registry`
-- the current landed mutation remains intentionally narrow and only repairs `.opencow/skills/enabled-skills.json`
+- the second permission-backed mutation is already available through `opencow-self-repair-workspace-project-runtime-registry`
+- the current landed mutations remain intentionally narrow and only repair `.opencow/skills/enabled-skills.json` or `.opencow/runtime/workspace-project-runs.json`
 
 Current non-goals for this stage:
 
 - no broad assistant-owned config rewrite flow yet
-- no runtime-registry self-repair flow yet
 - no destructive or process-restart self-repair flow yet

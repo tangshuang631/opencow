@@ -1018,18 +1018,19 @@ cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_jso
 
 ## 6.23b Current adapter boundary for self-repair mutation
 
-The adapter side of self-repair is no longer preview-only, but it still intentionally exposes only one narrow writable repair target.
+The adapter side of self-repair is no longer preview-only, but it still intentionally exposes only narrow writable repair targets.
 
 Current landed adapter scope:
 
 - readonly preview planning through `opencow-self-repair-preview`
 - permission-backed continuation planning through `opencow-self-repair-enabled-skills-registry`
-- fixed repair targeting for `.opencow/skills/enabled-skills.json` only
+- permission-backed continuation planning through `opencow-self-repair-workspace-project-runtime-registry`
+- fixed repair targeting for `.opencow/skills/enabled-skills.json`
+- fixed repair targeting for `.opencow/runtime/workspace-project-runs.json`
 
 Current non-goals at this stage:
 
 - no broad assistant-owned config rewrite planning
-- no runtime-registry self-repair planning
 - no destructive or process-restart self-repair planning
 - no free-form guessed repair target selected from arbitrary user text
 

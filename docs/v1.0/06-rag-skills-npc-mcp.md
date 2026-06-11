@@ -1004,15 +1004,15 @@ Current landed state:
 
 - readonly self-repair preview is available through `opencow-self-repair-preview`
 - the first permission-backed mutation is available through `opencow-self-repair-enabled-skills-registry`
+- the second permission-backed mutation is available through `opencow-self-repair-workspace-project-runtime-registry`
 - app-level conversation coverage now proves both:
   - readonly preview from composer submit to final preview result
-  - preview -> explicit continue -> permission approval -> final repaired result
+  - preview -> explicit continue -> permission approval -> final repaired result for both narrow registry targets
 
 Current remaining gap:
 
 - opencow still does not expose a broader assistant-owned config repair path
-- opencow still does not expose a runtime-registry repair path through the same self-repair chain
-- destructive or higher-impact self-repair actions still do not exist and must not be implied by the first narrow registry repair
+- destructive or higher-impact self-repair actions still do not exist and must not be implied by these narrow registry repairs
 
 Recommended rule for the next self-repair slice:
 
