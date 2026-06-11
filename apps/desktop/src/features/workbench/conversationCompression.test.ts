@@ -49,4 +49,21 @@ describe("conversation auto compression", () => {
     expect(compressedEntry?.summary).toContain("Compressed");
     expect(compressedEntry?.detailLines?.[0]).toContain("Older user messages:");
   });
+
+  it("keeps readable snippets from compressed older messages", () => {
+    let state = createInitialWorkbenchState();
+
+    for (let index = 0; index < 16; index += 1) {
+      state = createUserTaskSubmittedState(state, {
+        message: index === 0
+          ? "preserve workspace root repair context in the compressed summary"
+          : `routine long conversation message ${index}`
+      });
+    }
+
+    const compressedEntry = state.conversation.entries.find((entry) => entry.id === "conversation-auto-summary");
+    const detail = compressedEntry?.detailLines?.join("\n") ?? "";
+
+    expect(detail).toContain("preserve workspace root repair context in the compressed summary");
+  });
 });

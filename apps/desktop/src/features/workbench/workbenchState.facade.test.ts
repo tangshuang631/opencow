@@ -4,6 +4,7 @@ import * as workbenchState from "./workbenchState";
 describe("workbenchState facade", () => {
   it("keeps the public state transition api available from the main module", () => {
     expect(workbenchState.createInitialWorkbenchState).toBeTypeOf("function");
+    expect(workbenchState.createNewConversationState).toBeTypeOf("function");
     expect(workbenchState.mergeOllamaOverview).toBeTypeOf("function");
     expect(workbenchState.createOllamaLoadErrorState).toBeTypeOf("function");
     expect(workbenchState.createCommandPolicyBlockedState).toBeTypeOf("function");
@@ -24,10 +25,12 @@ describe("workbenchState facade", () => {
     expect(workbenchState.createStorageCleanupState).toBeTypeOf("function");
     expect(workbenchState.createToolExecutionState).toBeTypeOf("function");
     expect(workbenchState.createToolExecutionErrorState).toBeTypeOf("function");
+    expect(workbenchState.createToolExecutionRecoveredState).toBeTypeOf("function");
     expect(workbenchState.createUserTaskSubmittedState).toBeTypeOf("function");
     expect(workbenchState.createTaskExecutionStartedState).toBeTypeOf("function");
     expect(workbenchState.createTaskExecutionSucceededState).toBeTypeOf("function");
     expect(workbenchState.createTaskExecutionFailedState).toBeTypeOf("function");
+    expect(workbenchState.createTaskExecutionProgressState).toBeTypeOf("function");
     expect(workbenchState.createTaskExecutionRetriedState).toBeTypeOf("function");
     expect(workbenchState.createTaskExecutionCancelledState).toBeTypeOf("function");
   });

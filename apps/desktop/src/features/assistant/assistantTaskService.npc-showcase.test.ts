@@ -9,7 +9,8 @@ const {
   runWorkspaceProjectMock,
   captureNpcLocalProjectScreenshotMock,
   writeNpcLocalProjectShowcaseSiteMock,
-  loadNpcLocalProjectShowcasePublishPreviewMock
+  loadNpcLocalProjectShowcasePublishPreviewMock,
+  loadNpcLocalProjectShowcaseGitConfirmationPreviewMock
 } = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
@@ -18,7 +19,8 @@ const {
   runWorkspaceProjectMock: vi.fn(),
   captureNpcLocalProjectScreenshotMock: vi.fn(),
   writeNpcLocalProjectShowcaseSiteMock: vi.fn(),
-  loadNpcLocalProjectShowcasePublishPreviewMock: vi.fn()
+  loadNpcLocalProjectShowcasePublishPreviewMock: vi.fn(),
+  loadNpcLocalProjectShowcaseGitConfirmationPreviewMock: vi.fn()
 }));
 
 vi.mock("./localAssistantService", async () => {
@@ -33,7 +35,8 @@ vi.mock("./localAssistantService", async () => {
     runWorkspaceProject: runWorkspaceProjectMock,
     captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock,
     writeNpcLocalProjectShowcaseSite: writeNpcLocalProjectShowcaseSiteMock,
-    loadNpcLocalProjectShowcasePublishPreview: loadNpcLocalProjectShowcasePublishPreviewMock
+    loadNpcLocalProjectShowcasePublishPreview: loadNpcLocalProjectShowcasePublishPreviewMock,
+    loadNpcLocalProjectShowcaseGitConfirmationPreview: loadNpcLocalProjectShowcaseGitConfirmationPreviewMock
   };
 });
 
@@ -289,5 +292,49 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
     expect(result.resultSummary).toContain("Git commit or push is still separate");
     expect(result.resultSummary).toContain("readonly publish-preview stage");
+  });
+
+  it("plans a readonly npc showcase git confirmation preview without collapsing into publish preview", () => {
+    const plan = planAssistantTask(
+      "use npc collaboration to prepare the showcase changes for commit for the matched cattle project",
+      "readonly"
+    );
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-project-showcase-git-confirmation-preview",
+      title: "NPC local project showcase git confirmation preview"
+    });
+  });
+
+  it("loads the matched local project showcase git confirmation preview with npc-specific identity", async () => {
+    loadNpcLocalProjectShowcaseGitConfirmationPreviewMock.mockResolvedValueOnce({
+      project_name: "cattle",
+      project_path: "apps/cattle",
+      site_root: ".opencow/artifacts/npc-showcase/sites/cattle",
+      entry_file: ".opencow/artifacts/npc-showcase/sites/cattle/index.html",
+      changed_paths: [".opencow/artifacts/npc-showcase/sites/cattle/index.html"],
+      source_screenshot_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
+      recommended_git_action: "commit",
+      required_confirmation_stage: "Git commit or push still requires its own explicit confirmation and execution stage.",
+      summary: "NPC local project showcase git confirmation preview summarized the current showcase-related changes without executing git."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "npc-local-project-showcase-git-confirmation-preview",
+      title: "NPC local project showcase git confirmation preview",
+      summary: "use npc collaboration to prepare the showcase changes for commit for the matched cattle project",
+      auditSummary: "Local assistant planned a readonly NPC local project showcase git confirmation preview.",
+      auditDetail: "Readonly NPC local project showcase git confirmation preview task."
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC local project showcase git confirmation preview");
+    expect(result.resultSummary).toContain("cattle");
+    expect(result.resultSummary).toContain("apps/cattle");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/sites/cattle");
+    expect(result.resultSummary).toContain("index.html");
+    expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
+    expect(result.resultSummary).toContain("commit");
+    expect(result.resultSummary).toContain("explicit confirmation");
+    expect(result.resultSummary).toContain("readonly git-confirmation-preview stage");
   });
 });

@@ -34,6 +34,11 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 const INSPECTOR_PANEL_NAME = "右侧面板";
 const PERMISSION_HEADING_NAME = "权限确认";
 const APPROVE_PERMISSION_NAME = "批准提权";
+const SELECTED_LOCAL_MODEL_NAME = "\u9009\u62e9\u6a21\u578b\uff1aqwen2.5-coder:7b";
+
+async function waitForSelectedLocalModel() {
+  await screen.findByRole("button", { name: SELECTED_LOCAL_MODEL_NAME });
+}
 
 describe("App project run flow", () => {
   it("runs a matched local project through permission approval and final assistant output", async () => {
@@ -57,7 +62,7 @@ describe("App project run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -110,7 +115,7 @@ describe("App project run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -152,7 +157,7 @@ describe("App project run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");

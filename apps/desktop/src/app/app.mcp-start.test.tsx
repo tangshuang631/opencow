@@ -14,6 +14,11 @@ const INSPECTOR_PANEL_NAME = "\u53f3\u4fa7\u9762\u677f";
 const PERMISSION_HEADING_NAME = "\u6743\u9650\u786e\u8ba4";
 const APPROVE_PERMISSION_NAME = "\u6279\u51c6\u63d0\u6743";
 const APPROVE_DANGER_NAME = "\u6279\u51c6\u9ad8\u98ce\u9669\u64cd\u4f5c";
+const SELECTED_LOCAL_MODEL_NAME = "\u9009\u62e9\u6a21\u578b\uff1aqwen2.5-coder:7b";
+
+async function waitForSelectedLocalModel() {
+  await screen.findByRole("button", { name: SELECTED_LOCAL_MODEL_NAME });
+}
 
 describe("App MCP start flow", () => {
   it("runs the controlled MCP browser plugin start chain through permission and dangerous confirmation", async () => {
@@ -27,7 +32,7 @@ describe("App MCP start flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");

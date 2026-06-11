@@ -1,4 +1,4 @@
-import { ArrowUp, Paperclip, Shield, Square } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Cpu, Paperclip, Square } from "lucide-react";
 import { useState } from "react";
 import type { WorkbenchState } from "../workbenchState";
 import { normalizeWorkbenchText } from "../workbenchText";
@@ -7,21 +7,64 @@ type ComposerProps = {
   state: WorkbenchState;
   onSubmitTask: (message: string) => void;
   onCancelActiveTask: () => void;
+  onSelectModel: (modelName: string) => void;
+  onOpenModelSettings?: (target: "ollama" | "remote-api") => void;
 };
 
 const TEXT = {
-  permission: "\u5f53\u524d\u6743\u9650",
-  rollbackPoints: "\u56de\u9000\u70b9",
+  rollbackPoints: "\u56de\u9000",
   addAttachment: "\u6dfb\u52a0\u9644\u4ef6",
   inputTask: "\u8f93\u5165\u4efb\u52a1",
   inputPlaceholder: "\u8f93\u5165\u4efb\u52a1\uff0c\u9ed8\u8ba4\u4f7f\u7528\u672c\u5730 Ollama...",
+  modelMenu: "\u6a21\u578b",
+  selectModel: "\u9009\u62e9\u6a21\u578b",
+  configureOllama: "\u914d\u7f6e Ollama",
+  configureRemoteApi: "\u914d\u7f6e\u5927\u6a21\u578b API",
   stopTask: "\u505c\u6b62\u4efb\u52a1",
   send: "\u53d1\u9001"
 } as const;
 
-export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerProps) {
+function getComposerStatusLine(state: WorkbenchState) {
+  const modelMode = state.model.remoteApiEnabled ? "远程 API" : "本地优先";
+
+  return `${modelMode} · ${normalizeWorkbenchText(state.permission.label)} · ${TEXT.rollbackPoints} ${state.rollback.activeLimit}/${state.rollback.maxLimit}`;
+}
+
+function getModelSetupPrompt(state: WorkbenchState): string | null {
+  if (state.error?.module === "ollama") {
+    return "默认使用本地 Ollama，当前未检测到可用服务。";
+  }
+
+  if (state.model.status === "Ollama 已连接" && state.model.availableModels.length === 0) {
+    return "默认使用本地 Ollama，当前未检测到可用模型。";
+  }
+
+  if (
+    state.model.status === "Ollama 已连接"
+    && state.model.availableModels.length > 0
+    && !state.model.availableModels.some((model) => model.name === state.model.activeModel)
+  ) {
+    return "默认使用本地 Ollama，请先选择一个可用模型。";
+  }
+
+  return null;
+}
+
+export function Composer({
+  state,
+  onSubmitTask,
+  onCancelActiveTask,
+  onSelectModel,
+  onOpenModelSettings
+}: ComposerProps) {
   const [draft, setDraft] = useState("");
-  const hasActiveTask = state.tasks.activeTaskId !== null;
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const hasActiveTask = Boolean(
+    state.tasks.activeTaskId
+      && state.tasks.items.some((item) => item.id === state.tasks.activeTaskId && item.status === "running")
+  );
+  const hasModels = state.model.availableModels.length > 0;
+  const modelSetupPrompt = getModelSetupPrompt(state);
 
   function submitTask() {
     const message = draft.trim();
@@ -37,15 +80,19 @@ export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerPr
   return (
     <footer className="composer-shell">
       <div className="composer-meta">
-        <span>{normalizeWorkbenchText(state.model.label)}</span>
-        <span>{normalizeWorkbenchText(state.model.activeModel)}</span>
-        <span aria-label={TEXT.permission}>
-          <Shield aria-hidden="true" size={14} />
-          {normalizeWorkbenchText(state.permission.label)}
-        </span>
-        <span>{normalizeWorkbenchText(state.permission.summary)}</span>
-        <span>{TEXT.rollbackPoints} {state.rollback.activeLimit}/{state.rollback.maxLimit}</span>
+        <span>{getComposerStatusLine(state)}</span>
       </div>
+      {modelSetupPrompt ? (
+        <div className="composer-setup-prompt">
+          <span>{modelSetupPrompt}</span>
+          <button type="button" onClick={() => onOpenModelSettings?.("ollama")}>
+            {TEXT.configureOllama}
+          </button>
+          <button type="button" onClick={() => onOpenModelSettings?.("remote-api")}>
+            {TEXT.configureRemoteApi}
+          </button>
+        </div>
+      ) : null}
       <div className="composer">
         <button className="icon-button" type="button" aria-label={TEXT.addAttachment}>
           <Paperclip aria-hidden="true" size={18} />
@@ -63,6 +110,46 @@ export function Composer({ state, onSubmitTask, onCancelActiveTask }: ComposerPr
             }
           }}
         />
+        {hasModels ? (
+          <div className="model-picker">
+            <button
+              aria-expanded={modelMenuOpen}
+              aria-haspopup="menu"
+              aria-label={`${TEXT.selectModel}\uff1a${state.model.activeModel}`}
+              className="model-picker-button"
+              type="button"
+              onClick={() => setModelMenuOpen((open) => !open)}
+            >
+              <Cpu aria-hidden="true" size={16} />
+              <ChevronDown aria-hidden="true" size={15} />
+            </button>
+            {modelMenuOpen ? (
+              <div aria-label={TEXT.modelMenu} className="model-picker-menu" role="menu">
+                {state.model.availableModels.map((model) => {
+                  const selected = model.name === state.model.activeModel;
+
+                  return (
+                    <button
+                      aria-checked={selected}
+                      className={`model-picker-item ${selected ? "model-picker-item-selected" : ""}`}
+                      key={model.name}
+                      role="menuitemradio"
+                      type="button"
+                      onClick={() => {
+                        onSelectModel(model.name);
+                        setModelMenuOpen(false);
+                      }}
+                    >
+                      <span>{normalizeWorkbenchText(model.name)}</span>
+                      <span>{normalizeWorkbenchText(model.sizeLabel)}</span>
+                      {selected ? <Check aria-hidden="true" size={17} /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {hasActiveTask ? (
           <button className="send-button" type="button" aria-label={TEXT.stopTask} onClick={onCancelActiveTask}>
             <Square aria-hidden="true" size={18} />

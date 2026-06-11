@@ -82,4 +82,38 @@ describe("assistantTaskService skill-assisted readonly RAG execution", () => {
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("Indexed documents: 7");
   });
+
+  it("keeps matched skill diagnostics when the skill-assisted local RAG search fails", async () => {
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "use the enabled docs skill to summarize pptx docx md workspace docs",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "docs-helper",
+          path: "skills/docs-helper/SKILL.md",
+          source: "workspace-skill",
+          description: "Help search local docs, rules, and knowledge files.",
+          content_preview: "Use this skill when the task needs local document lookup and rule retrieval."
+        }
+      ]
+    });
+    searchLocalKnowledgeMock.mockRejectedValueOnce(
+      new Error("document parsers for pptx/docx/md are unavailable")
+    );
+
+    await expect(
+      executeAssistantTask({
+        kind: "skills-local-enabled-rag-doc-search",
+        title: "Skill-assisted local RAG document search",
+        summary: "use the enabled docs skill to summarize pptx docx md workspace docs",
+        auditSummary: "Local assistant planned a skill-assisted readonly local RAG document search.",
+        auditDetail: "Skill-assisted readonly local RAG search task"
+      } as const)
+    ).rejects.toThrow(
+      /Skill-assisted local RAG search failed in assistantTaskService\. Recommended skill: docs-helper\. Registry: \.opencow\/skills\/enabled-skills\.json\. Underlying RAG failure: Local RAG search failed in assistantTaskService\..*document parsers for pptx\/docx\/md are unavailable.*Next step: verify the matched skill, local RAG index, document parsers, workspace root discovery, and retry with a narrower document query before continuing\./i
+    );
+  });
 });

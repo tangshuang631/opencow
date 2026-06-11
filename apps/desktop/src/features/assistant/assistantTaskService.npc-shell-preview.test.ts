@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { executeAssistantTask, planAssistantTask } from "./assistantTaskService";
 
-const { loadOpenClawCapabilityOverviewMock, matchEnabledLocalSkillsMock, searchLocalKnowledgeMock } = vi.hoisted(() => ({
+const {
+  loadOpenClawCapabilityOverviewMock,
+  loadWorkspaceOverviewMock,
+  matchEnabledLocalSkillsMock,
+  searchLocalKnowledgeMock
+} = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn(),
+  loadWorkspaceOverviewMock: vi.fn(),
   matchEnabledLocalSkillsMock: vi.fn(),
   searchLocalKnowledgeMock: vi.fn()
 }));
@@ -13,6 +19,7 @@ vi.mock("./localAssistantService", async () => {
   return {
     ...actual,
     loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
+    loadWorkspaceOverview: loadWorkspaceOverviewMock,
     matchEnabledLocalSkills: matchEnabledLocalSkillsMock,
     searchLocalKnowledge: searchLocalKnowledgeMock
   };
@@ -55,6 +62,14 @@ describe("assistantTaskService npc shell plan preview", () => {
         }
       ]
     });
+    loadWorkspaceOverviewMock.mockResolvedValueOnce({
+      root_name: "other-opencow",
+      root_path: "D:\\other-opencow",
+      entry_count: 7,
+      package_count: 3,
+      package_names: ["openclaw-adapter", "permission-engine", "shell-runtime"],
+      summary: "Workspace other-opencow currently contains 7 root entries and 3 local packages."
+    });
 
     const result = await executeAssistantTask({
       kind: "npc-local-shell-plan-preview",
@@ -69,6 +84,7 @@ describe("assistantTaskService npc shell plan preview", () => {
     expect(result.resultSummary).toContain("shell-automation");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("Remove-Item");
+    expect(result.resultSummary).toContain("Workspace root: D:\\other-opencow");
     expect(result.resultSummary).toContain("controlled-full");
     expect(result.resultSummary).toContain("requires-snapshot");
   });
@@ -119,6 +135,14 @@ describe("assistantTaskService npc shell plan preview", () => {
           score: 27
         }
       ]
+    });
+    loadWorkspaceOverviewMock.mockResolvedValueOnce({
+      root_name: "opencow",
+      root_path: "E:\\2026\\opencow",
+      entry_count: 7,
+      package_count: 3,
+      package_names: ["openclaw-adapter", "permission-engine", "shell-runtime"],
+      summary: "Workspace opencow currently contains 7 root entries and 3 local packages."
     });
 
     const result = await executeAssistantTask({

@@ -50,19 +50,13 @@ describe("assistantTaskService", () => {
     expect(result.resultSummary).toContain("3 local packages");
   });
 
-  it("executes an assistant help overview through the desktop service with a concise capability summary", async () => {
-    const result = await executeAssistantTask({
+  it("rejects legacy fixed assistant help overview tasks so user questions go through the model", async () => {
+    await expect(executeAssistantTask({
       kind: "assistant-help-overview",
       title: "Assistant help overview",
       summary: "Summarize the assistant's current core local capabilities in direct user-facing language.",
       auditSummary: "Local assistant planned a user-facing help overview.",
       auditDetail: "User-facing assistant help overview task."
-    });
-
-    expect(result.resultTitle).toBe("本地助手能力说明");
-    expect(result.resultSummary).toContain("local chat");
-    expect(result.resultSummary).toContain("project run/status/stop");
-    expect(result.resultSummary).toContain("controlled self-repair");
-    expect(result.resultSummary).not.toContain("1.");
+    } as never)).rejects.toThrow(/Unsupported assistant task execution plan: assistant-help-overview/i);
   });
 });

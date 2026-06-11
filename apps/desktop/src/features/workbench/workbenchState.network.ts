@@ -1,5 +1,5 @@
 import { recordRollbackEntry } from "./workbenchState.rollback";
-import { prependConversationEntry } from "./workbenchState.shared";
+import { createWorkbenchEventId, prependConversationEntry } from "./workbenchState.shared";
 import type { WorkbenchState } from "./workbenchState.types";
 
 export function createRemoteApiToggleState(state: WorkbenchState, enabled: boolean): WorkbenchState {
@@ -120,7 +120,62 @@ export function createSearchToggleState(
     providerLabel?: string;
   }
 ): WorkbenchState {
-  const nextProvider = payload.enabled ? payload.providerLabel || state.search.providerLabel || "Tavily" : "";
+  const requestedProvider = payload.providerLabel?.trim();
+  const existingProvider = state.search.providerLabel.trim();
+  const nextProvider = payload.enabled ? requestedProvider || existingProvider : "";
+
+  if (payload.enabled && !nextProvider) {
+    const missingProviderId = createWorkbenchEventId(state, "search-provider-config", "missing");
+
+    return recordRollbackEntry(
+      {
+        ...state,
+        search: {
+          enabled: true,
+          providerLabel: ""
+        },
+        conversation: {
+          entries: prependConversationEntry(state.conversation.entries, {
+            id: missingProviderId,
+            kind: "system",
+            title: "Search provider is not configured",
+            summary:
+              "Provider status: not configured. Network search remains enabled, but live retrieval cannot run until a provider is configured.",
+            detailLines: [
+              "Module: search",
+              "Source: search_provider_config_missing",
+              "Suggestion: Configure a search provider in advanced settings before retrying live web retrieval."
+            ],
+            actionLabel: "Configure a search provider in advanced settings",
+            rollbackTargetId: missingProviderId
+          })
+        },
+        audit: {
+          summary: "Search provider is not configured",
+          lastEvent: {
+            module: "search",
+            detail:
+              "Provider status: not configured. Network call skipped until a search provider is configured.",
+            timestamp: "blocked",
+            source: "search_provider_config_missing"
+          }
+        },
+        error: {
+          module: "search",
+          summary: "Search provider is not configured",
+          detail:
+            "Provider status: not configured. Network search remains enabled, but live retrieval cannot run until a provider is configured.",
+          actionLabel: "Configure a search provider in advanced settings before retrying live web retrieval.",
+          timestamp: "blocked",
+          source: "search_provider_config_missing"
+        }
+      },
+      missingProviderId,
+      "Search provider missing",
+      "Search provider configuration is empty; live network retrieval is blocked until the provider is configured.",
+      "session"
+    );
+  }
 
   if (state.search.enabled === payload.enabled && state.search.providerLabel === nextProvider) {
     return state;
@@ -173,10 +228,63 @@ export function createSearchProviderConfigState(
     providerLabel: string;
   }
 ): WorkbenchState {
-  const nextProviderLabel = payload.providerLabel.trim() || "Tavily";
+  const nextProviderLabel = payload.providerLabel.trim();
 
   if (state.search.providerLabel === nextProviderLabel) {
     return state;
+  }
+
+  if (!nextProviderLabel) {
+    const missingProviderId = createWorkbenchEventId(state, "search-provider-config", "missing");
+
+    return recordRollbackEntry(
+      {
+        ...state,
+        search: {
+          ...state.search,
+          providerLabel: ""
+        },
+        conversation: {
+          entries: prependConversationEntry(state.conversation.entries, {
+            id: missingProviderId,
+            kind: "system",
+            title: "Search provider is not configured",
+            summary:
+              "Provider status: not configured. Network search remains enabled, but live retrieval cannot run until a provider is configured.",
+            detailLines: [
+              "Module: search",
+              "Source: search_provider_config_missing",
+              "Suggestion: Configure a search provider in advanced settings before retrying live web retrieval."
+            ],
+            actionLabel: "Configure a search provider in advanced settings",
+            rollbackTargetId: missingProviderId
+          })
+        },
+        audit: {
+          summary: "Search provider is not configured",
+          lastEvent: {
+            module: "search",
+            detail:
+              "Provider status: not configured. Network call skipped until a search provider is configured.",
+            timestamp: "blocked",
+            source: "search_provider_config_missing"
+          }
+        },
+        error: {
+          module: "search",
+          summary: "Search provider is not configured",
+          detail:
+            "Provider status: not configured. Network search remains enabled, but live retrieval cannot run until a provider is configured.",
+          actionLabel: "Configure a search provider in advanced settings before retrying live web retrieval.",
+          timestamp: "blocked",
+          source: "search_provider_config_missing"
+        }
+      },
+      missingProviderId,
+      "Search provider missing",
+      "Search provider configuration is empty; live network retrieval is blocked until the provider is configured.",
+      "session"
+    );
   }
 
   return recordRollbackEntry(

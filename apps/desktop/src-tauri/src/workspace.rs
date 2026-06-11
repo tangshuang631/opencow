@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[derive(Serialize)]
 pub struct WorkspaceOverview {
     root_name: String,
+    root_path: String,
     entry_count: usize,
     package_count: usize,
     package_names: Vec<String>,
@@ -335,6 +336,18 @@ pub struct OpencowSelfRepairEnabledSkillsRegistryResult {
 }
 
 #[derive(Serialize)]
+pub struct OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult {
+    query: String,
+    repair_target: String,
+    repaired_path: String,
+    status: String,
+    preserved_entry_count: usize,
+    verified_version: usize,
+    verified_run_count: usize,
+    summary: String,
+}
+
+#[derive(Serialize)]
 pub struct EnabledLocalSkillsResult {
     summary: String,
     total_count: usize,
@@ -437,6 +450,7 @@ pub fn workspace_overview() -> Result<WorkspaceOverview, String> {
 
     Ok(WorkspaceOverview {
         root_name,
+        root_path: root.display().to_string(),
         entry_count,
         package_count,
         package_names,
@@ -502,7 +516,8 @@ pub fn workspace_config_overview() -> Result<WorkspaceConfigOverview, String> {
             "tsconfig.json",
         ],
     );
-    let package_manager_files = collect_existing_paths(&root, &["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]);
+    let package_manager_files =
+        collect_existing_paths(&root, &["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]);
     let root_script_names = read_package_script_names(&root.join("package.json"))?;
     let root_script_count = root_script_names.len();
     let summary = format!(
@@ -526,18 +541,21 @@ pub fn workspace_project_run_preview(query: String) -> Result<WorkspaceProjectRu
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let inspected_project_count = candidates.len();
     let normalized_query = query.to_lowercase();
-    let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")));
+    let matched = select_project_run_candidate(&normalized_query, &candidates).or_else(|| {
+        candidates
+            .iter()
+            .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+    });
 
     let matched_project_name = matched.map(|candidate| candidate.name.clone());
     let matched_project_path = matched.map(|candidate| candidate.relative_path.clone());
     let matched_project_source = matched.map(|candidate| candidate.source.clone());
-    let dev_command = matched
-        .and_then(|candidate| build_npm_script_command(&candidate.script_names, "dev"));
-    let start_command = matched
-        .and_then(|candidate| build_npm_script_command(&candidate.script_names, "start"));
-    let build_command = matched
-        .and_then(|candidate| build_npm_script_command(&candidate.script_names, "build"));
+    let dev_command =
+        matched.and_then(|candidate| build_npm_script_command(&candidate.script_names, "dev"));
+    let start_command =
+        matched.and_then(|candidate| build_npm_script_command(&candidate.script_names, "start"));
+    let build_command =
+        matched.and_then(|candidate| build_npm_script_command(&candidate.script_names, "build"));
     let preferred_command = dev_command
         .clone()
         .or_else(|| start_command.clone())
@@ -582,13 +600,22 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
     let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+        })
         .ok_or_else(|| "no runnable local workspace project matched the request".to_string())?;
-    let command_label = build_project_run_command_label(matched)
-        .ok_or_else(|| format!("matched project {} does not expose a supported run script", matched.name))?;
+    let command_label = build_project_run_command_label(matched).ok_or_else(|| {
+        format!(
+            "matched project {} does not expose a supported run script",
+            matched.name
+        )
+    })?;
     let expected_url = infer_project_expected_url(Some(matched));
     let working_directory = root.join(&matched.relative_path);
-    let escaped_working_directory = escape_powershell_single_quote(&working_directory.display().to_string());
+    let escaped_working_directory =
+        escape_powershell_single_quote(&working_directory.display().to_string());
     let escaped_command_label = escape_powershell_single_quote(&command_label);
     let powershell_command = format!(
         "$process = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', '{0}' -WorkingDirectory '{1}' -WindowStyle Hidden -PassThru; \"pid:$($process.Id)\"",
@@ -607,8 +634,7 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!(
             "workspace project run failed with status {}: {}",
-            output.status,
-            stderr
+            output.status, stderr
         ));
     }
 
@@ -642,7 +668,9 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
         expected_url,
         pid,
         stdout_preview,
-        summary: "Workspace project run started successfully and returned a live local process handle.".to_string(),
+        summary:
+            "Workspace project run started successfully and returned a live local process handle."
+                .to_string(),
     })
 }
 
@@ -652,10 +680,18 @@ pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusR
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
     let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+        })
         .ok_or_else(|| "no runnable local workspace project matched the request".to_string())?;
-    let command_label = build_project_run_command_label(matched)
-        .ok_or_else(|| format!("matched project {} does not expose a supported run script", matched.name))?;
+    let command_label = build_project_run_command_label(matched).ok_or_else(|| {
+        format!(
+            "matched project {} does not expose a supported run script",
+            matched.name
+        )
+    })?;
     let expected_url = infer_project_expected_url(Some(matched));
     let working_directory = root.join(&matched.relative_path);
     let record = find_workspace_project_runtime_record(&root, &matched.relative_path)?;
@@ -671,14 +707,15 @@ pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusR
             .arg(powershell_command)
             .current_dir(&root)
             .output()
-            .map_err(|error| format!("failed to execute workspace project status command: {error}"))?;
+            .map_err(|error| {
+                format!("failed to execute workspace project status command: {error}")
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             return Err(format!(
                 "workspace project status failed with status {}: {}",
-                output.status,
-                stderr
+                output.status, stderr
             ));
         }
 
@@ -733,7 +770,9 @@ pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusR
         pid: None,
         status: "stopped".to_string(),
         stdout_preview: "no recorded runtime handle".to_string(),
-        summary: "Workspace project status found no active local process handle for the matched project.".to_string(),
+        summary:
+            "Workspace project status found no active local process handle for the matched project."
+                .to_string(),
     })
 }
 
@@ -743,10 +782,19 @@ pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResul
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
     let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+        })
         .ok_or_else(|| "no runnable local workspace project matched the request".to_string())?;
-    let record = find_workspace_project_runtime_record(&root, &matched.relative_path)?
-        .ok_or_else(|| format!("no running workspace project handle was recorded for {}", matched.relative_path))?;
+    let record =
+        find_workspace_project_runtime_record(&root, &matched.relative_path)?.ok_or_else(|| {
+            format!(
+                "no running workspace project handle was recorded for {}",
+                matched.relative_path
+            )
+        })?;
     let powershell_command = format!(
         "if (Get-Process -Id {0} -ErrorAction SilentlyContinue) {{ Stop-Process -Id {0} -Force; \"stopped:{0}\" }} else {{ \"stopped:{0}\" }}",
         record.pid
@@ -763,8 +811,7 @@ pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResul
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!(
             "workspace project stop failed with status {}: {}",
-            output.status,
-            stderr
+            output.status, stderr
         ));
     }
 
@@ -781,7 +828,9 @@ pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResul
         pid: record.pid,
         status: "stopped".to_string(),
         stdout_preview,
-        summary: "Workspace project stop completed successfully and released the local process handle.".to_string(),
+        summary:
+            "Workspace project stop completed successfully and released the local process handle."
+                .to_string(),
     })
 }
 
@@ -793,16 +842,33 @@ pub fn workspace_project_npc_screenshot_capture(
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
     let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
-        .ok_or_else(|| "no runnable local workspace project matched the screenshot capture request".to_string())?;
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+        })
+        .ok_or_else(|| {
+            "no runnable local workspace project matched the screenshot capture request".to_string()
+        })?;
     let runtime = find_workspace_project_runtime_record(&root, &matched.relative_path)?
-        .ok_or_else(|| format!("No active matched local project run is available for NPC screenshot capture: {}", matched.relative_path))?;
+        .ok_or_else(|| {
+            format!(
+                "No active matched local project run is available for NPC screenshot capture: {}",
+                matched.relative_path
+            )
+        })?;
     let expected_url = infer_project_expected_url(Some(matched));
-    let capture_target = expected_url
-        .clone()
-        .ok_or_else(|| format!("no local capture target URL could be inferred for {}", matched.relative_path))?;
-    let artifact_path =
-        build_npc_showcase_screenshot_artifact_path(&root, &matched.name, &current_unix_timestamp_string());
+    let capture_target = expected_url.clone().ok_or_else(|| {
+        format!(
+            "no local capture target URL could be inferred for {}",
+            matched.relative_path
+        )
+    })?;
+    let artifact_path = build_npc_showcase_screenshot_artifact_path(
+        &root,
+        &matched.name,
+        &current_unix_timestamp_string(),
+    );
 
     capture_url_to_png_via_edge(&capture_target, &artifact_path)?;
 
@@ -825,12 +891,29 @@ pub fn workspace_project_npc_showcase_site_write(
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
     let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
-        .ok_or_else(|| "no runnable local workspace project matched the showcase-site write request".to_string())?;
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+        })
+        .ok_or_else(|| {
+            "no runnable local workspace project matched the showcase-site write request"
+                .to_string()
+        })?;
     let runtime = find_workspace_project_runtime_record(&root, &matched.relative_path)?
-        .ok_or_else(|| format!("No active matched local project run is available for NPC showcase-site write: {}", matched.relative_path))?;
+        .ok_or_else(|| {
+            format!(
+                "No active matched local project run is available for NPC showcase-site write: {}",
+                matched.relative_path
+            )
+        })?;
     let screenshot_artifact = find_latest_npc_showcase_screenshot_artifact(&root, &matched.name)?
-        .ok_or_else(|| format!("No screenshot artifact is available for NPC showcase-site write: {}", matched.name))?;
+        .ok_or_else(|| {
+        format!(
+            "No screenshot artifact is available for NPC showcase-site write: {}",
+            matched.name
+        )
+    })?;
     let expected_url = infer_project_expected_url(Some(matched));
     let site_root = build_npc_showcase_site_root(&root, &matched.name);
     let entry_file = site_root.join("index.html");
@@ -862,8 +945,15 @@ pub fn workspace_project_npc_showcase_publish_preview(
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
     let matched = select_project_run_candidate(&normalized_query, &candidates)
-        .or_else(|| candidates.iter().find(|candidate| candidate.script_names.iter().any(|name| name == "dev")))
-        .ok_or_else(|| "no runnable local workspace project matched the NPC showcase publish preview request".to_string())?;
+        .or_else(|| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.script_names.iter().any(|name| name == "dev"))
+        })
+        .ok_or_else(|| {
+            "no runnable local workspace project matched the NPC showcase publish preview request"
+                .to_string()
+        })?;
     let site_root = build_npc_showcase_site_root(&root, &matched.name);
     let entry_file = site_root.join("index.html");
     if !entry_file.exists() {
@@ -874,7 +964,12 @@ pub fn workspace_project_npc_showcase_publish_preview(
     }
 
     let screenshot_artifact = find_latest_npc_showcase_screenshot_artifact(&root, &matched.name)?
-        .ok_or_else(|| format!("No screenshot artifact is available for NPC showcase publish preview: {}", matched.name))?;
+        .ok_or_else(|| {
+        format!(
+            "No screenshot artifact is available for NPC showcase publish preview: {}",
+            matched.name
+        )
+    })?;
 
     Ok(WorkspaceProjectNpcShowcasePublishPreviewResult {
         project_name: matched.name.clone(),
@@ -889,7 +984,9 @@ pub fn workspace_project_npc_showcase_publish_preview(
 }
 
 #[tauri::command]
-pub fn openclaw_capability_overview(capability_id: String) -> Result<OpenClawCapabilityOverview, String> {
+pub fn openclaw_capability_overview(
+    capability_id: String,
+) -> Result<OpenClawCapabilityOverview, String> {
     let root = resolve_workspace_root()?;
     let packages_root = root.join("vendor").join("openclaw").join("packages");
     let spec = build_openclaw_capability_spec(&capability_id)?;
@@ -939,8 +1036,8 @@ pub fn local_knowledge_search(query: String) -> Result<LocalKnowledgeSearchResul
     let mut items = Vec::new();
 
     for path in candidates {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
         let normalized = raw.replace("\r\n", "\n");
         let segments = split_knowledge_segments(&normalized);
 
@@ -970,7 +1067,12 @@ pub fn local_knowledge_search(query: String) -> Result<LocalKnowledgeSearchResul
         }
     }
 
-    items.sort_by(|left, right| right.score.cmp(&left.score).then(left.path.cmp(&right.path)));
+    items.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then(left.path.cmp(&right.path))
+    });
     items.truncate(3);
 
     let match_count = items.len();
@@ -997,10 +1099,10 @@ pub fn local_mcp_plugin_scan() -> Result<LocalMcpPluginScanResult, String> {
     let mut items = Vec::new();
 
     for path in plugin_files {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let parsed: Value =
-            serde_json::from_str(&raw).map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let parsed: Value = serde_json::from_str(&raw)
+            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
         let relative_path = to_workspace_relative_path(&root, &path);
         let id = parsed
             .get("id")
@@ -1061,10 +1163,10 @@ pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectRe
     let mut items = Vec::new();
 
     for path in plugin_files {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let parsed: Value =
-            serde_json::from_str(&raw).map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let parsed: Value = serde_json::from_str(&raw)
+            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
         let relative_path = to_workspace_relative_path(&root, &path);
         let id = parsed
             .get("id")
@@ -1107,7 +1209,15 @@ pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectRe
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        let score = score_mcp_plugin_match(&query, &tokens, &id, &description, &tool_names, &skill_paths, &path);
+        let score = score_mcp_plugin_match(
+            &query,
+            &tokens,
+            &id,
+            &description,
+            &tool_names,
+            &skill_paths,
+            &path,
+        );
 
         if score == 0 {
             continue;
@@ -1130,7 +1240,11 @@ pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectRe
     }
 
     items.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.path.cmp(&right.1.path)));
-    let items = items.into_iter().map(|(_, item)| item).take(3).collect::<Vec<_>>();
+    let items = items
+        .into_iter()
+        .map(|(_, item)| item)
+        .take(3)
+        .collect::<Vec<_>>();
     let match_count = items.len();
     let summary = if match_count > 0 {
         format!("Local MCP plugin detail lookup found {match_count} matching plugin across {scanned_root_count} scanned roots.")
@@ -1148,7 +1262,9 @@ pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectRe
 }
 
 #[tauri::command]
-pub fn local_mcp_plugin_start_preview(query: String) -> Result<LocalMcpPluginStartPreviewResult, String> {
+pub fn local_mcp_plugin_start_preview(
+    query: String,
+) -> Result<LocalMcpPluginStartPreviewResult, String> {
     let root = resolve_workspace_root()?;
     let plugin_files = collect_local_mcp_plugin_files(&root)?;
     let scanned_root_count = count_existing_mcp_plugin_roots(&root);
@@ -1156,10 +1272,10 @@ pub fn local_mcp_plugin_start_preview(query: String) -> Result<LocalMcpPluginSta
     let mut items = Vec::new();
 
     for path in plugin_files {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let parsed: Value =
-            serde_json::from_str(&raw).map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let parsed: Value = serde_json::from_str(&raw)
+            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
         let relative_path = to_workspace_relative_path(&root, &path);
         let id = parsed
             .get("id")
@@ -1202,7 +1318,15 @@ pub fn local_mcp_plugin_start_preview(query: String) -> Result<LocalMcpPluginSta
         } else {
             "manual".to_string()
         };
-        let score = score_mcp_plugin_match(&query, &tokens, &id, &description, &tool_names, &skill_paths, &path);
+        let score = score_mcp_plugin_match(
+            &query,
+            &tokens,
+            &id,
+            &description,
+            &tool_names,
+            &skill_paths,
+            &path,
+        );
 
         if score == 0 {
             continue;
@@ -1224,7 +1348,9 @@ pub fn local_mcp_plugin_start_preview(query: String) -> Result<LocalMcpPluginSta
                 startup_allowed: activation == "startup",
                 command_preview: format!("npx openclaw-extension-{id}"),
                 working_directory,
-                risk_summary: "Preview only. Actual MCP plugin launch is not enabled in this slice.".to_string(),
+                risk_summary:
+                    "Preview only. Actual MCP plugin launch is not enabled in this slice."
+                        .to_string(),
                 requires_config,
                 config_hint,
             },
@@ -1232,7 +1358,11 @@ pub fn local_mcp_plugin_start_preview(query: String) -> Result<LocalMcpPluginSta
     }
 
     items.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.path.cmp(&right.1.path)));
-    let items = items.into_iter().map(|(_, item)| item).take(3).collect::<Vec<_>>();
+    let items = items
+        .into_iter()
+        .map(|(_, item)| item)
+        .take(3)
+        .collect::<Vec<_>>();
     let match_count = items.len();
     let summary = if match_count > 0 {
         format!("Local MCP plugin start preview found {match_count} matching plugin across {scanned_root_count} scanned roots.")
@@ -1258,10 +1388,18 @@ pub fn local_mcp_plugin_start(query: String) -> Result<LocalMcpPluginStartResult
         return Err("only the browser MCP plugin start path is enabled in this slice".to_string());
     }
 
-    let plugin_manifest = root.join("vendor").join("openclaw").join("extensions").join("browser").join("openclaw.plugin.json");
+    let plugin_manifest = root
+        .join("vendor")
+        .join("openclaw")
+        .join("extensions")
+        .join("browser")
+        .join("openclaw.plugin.json");
 
     if !plugin_manifest.exists() {
-        return Err(format!("failed to find browser MCP plugin manifest at {}", plugin_manifest.display()));
+        return Err(format!(
+            "failed to find browser MCP plugin manifest at {}",
+            plugin_manifest.display()
+        ));
     }
 
     Ok(LocalMcpPluginStartResult {
@@ -1270,7 +1408,8 @@ pub fn local_mcp_plugin_start(query: String) -> Result<LocalMcpPluginStartResult
         working_directory: "vendor/openclaw/extensions/browser".to_string(),
         stdout_preview: "browser plugin start simulated".to_string(),
         line_count: 1,
-        summary: "Local MCP plugin start executed through the controlled desktop runner.".to_string(),
+        summary: "Local MCP plugin start executed through the controlled desktop runner."
+            .to_string(),
     })
 }
 
@@ -1279,19 +1418,32 @@ pub fn local_skill_scan() -> Result<LocalSkillScanResult, String> {
     let root = resolve_workspace_root()?;
     let skill_files = collect_local_skill_files(&root)?;
     let scanned_root_count = count_existing_skill_roots(&root);
-    let enabled_skills = read_enabled_skill_registry(&root.join(".opencow").join("skills").join("enabled-skills.json"))?;
+    let enabled_skills = read_enabled_skill_registry(
+        &root
+            .join(".opencow")
+            .join("skills")
+            .join("enabled-skills.json"),
+    )?;
     let mut items = Vec::new();
 
     for path in skill_files {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let name = parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let name =
+            parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
-            format!("Local skill discovered at {}.", to_workspace_relative_path(&root, &path))
+            format!(
+                "Local skill discovered at {}.",
+                to_workspace_relative_path(&root, &path)
+            )
         });
 
         items.push(LocalSkillScanItem {
-            enabled: is_skill_enabled(&enabled_skills, &name, &to_workspace_relative_path(&root, &path)),
+            enabled: is_skill_enabled(
+                &enabled_skills,
+                &name,
+                &to_workspace_relative_path(&root, &path),
+            ),
             name,
             path: to_workspace_relative_path(&root, &path),
             source: classify_skill_source(&root, &path),
@@ -1301,7 +1453,9 @@ pub fn local_skill_scan() -> Result<LocalSkillScanResult, String> {
 
     items.sort_by(|left, right| left.name.cmp(&right.name).then(left.path.cmp(&right.path)));
     let total_count = items.len();
-    let summary = format!("Local skills scan found {total_count} skills across {scanned_root_count} scanned roots.");
+    let summary = format!(
+        "Local skills scan found {total_count} skills across {scanned_root_count} scanned roots."
+    );
 
     Ok(LocalSkillScanResult {
         summary,
@@ -1316,19 +1470,35 @@ pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, Str
     let root = resolve_workspace_root()?;
     let skill_files = collect_local_skill_files(&root)?;
     let scanned_root_count = count_existing_skill_roots(&root);
-    let enabled_skills = read_enabled_skill_registry(&root.join(".opencow").join("skills").join("enabled-skills.json"))?;
+    let enabled_skills = read_enabled_skill_registry(
+        &root
+            .join(".opencow")
+            .join("skills")
+            .join("enabled-skills.json"),
+    )?;
     let tokens = tokenize_query(&query);
     let mut items = Vec::new();
 
     for path in skill_files {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let name = parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let name =
+            parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
-            format!("Local skill discovered at {}.", to_workspace_relative_path(&root, &path))
+            format!(
+                "Local skill discovered at {}.",
+                to_workspace_relative_path(&root, &path)
+            )
         });
         let content_preview = extract_skill_content_preview(&raw);
-        let score = score_skill_match(&query, &tokens, &name, &description, &content_preview, &path);
+        let score = score_skill_match(
+            &query,
+            &tokens,
+            &name,
+            &description,
+            &content_preview,
+            &path,
+        );
 
         if score == 0 {
             continue;
@@ -1336,18 +1506,25 @@ pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, Str
 
         let relative_path = to_workspace_relative_path(&root, &path);
 
-        items.push((score, LocalSkillInspectItem {
-            enabled: is_skill_enabled(&enabled_skills, &name, &relative_path),
-            name,
-            path: relative_path,
-            source: classify_skill_source(&root, &path),
-            description,
-            content_preview,
-        }));
+        items.push((
+            score,
+            LocalSkillInspectItem {
+                enabled: is_skill_enabled(&enabled_skills, &name, &relative_path),
+                name,
+                path: relative_path,
+                source: classify_skill_source(&root, &path),
+                description,
+                content_preview,
+            },
+        ));
     }
 
     items.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.path.cmp(&right.1.path)));
-    let items = items.into_iter().map(|(_, item)| item).take(3).collect::<Vec<_>>();
+    let items = items
+        .into_iter()
+        .map(|(_, item)| item)
+        .take(3)
+        .collect::<Vec<_>>();
     let match_count = items.len();
     let summary = if match_count > 0 {
         format!("Local skill detail lookup found {match_count} matching skill across {scanned_root_count} scanned roots.")
@@ -1372,14 +1549,25 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
     let mut best_match: Option<(usize, LocalSkillScanItem)> = None;
 
     for path in skill_files {
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let name = parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let name =
+            parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
-            format!("Local skill discovered at {}.", to_workspace_relative_path(&root, &path))
+            format!(
+                "Local skill discovered at {}.",
+                to_workspace_relative_path(&root, &path)
+            )
         });
         let content_preview = extract_skill_content_preview(&raw);
-        let score = score_skill_match(&query, &tokens, &name, &description, &content_preview, &path);
+        let score = score_skill_match(
+            &query,
+            &tokens,
+            &name,
+            &description,
+            &content_preview,
+            &path,
+        );
 
         if score == 0 {
             continue;
@@ -1408,7 +1596,10 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
     };
 
     let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root.join(".opencow").join("skills").join("enabled-skills.json");
+    let registry_path = root
+        .join(".opencow")
+        .join("skills")
+        .join("enabled-skills.json");
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve skill registry directory".to_string())?;
@@ -1436,7 +1627,11 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
             .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))?;
     }
 
-    let status = if already_enabled { "already-enabled" } else { "enabled" };
+    let status = if already_enabled {
+        "already-enabled"
+    } else {
+        "enabled"
+    };
     let summary = if already_enabled {
         format!(
             "Local skill enablement confirmed {} is already present in the workspace skill registry.",
@@ -1472,14 +1667,25 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
             continue;
         }
 
-        let raw =
-            fs::read_to_string(&path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-        let name = parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let name =
+            parse_skill_frontmatter_name(&raw).unwrap_or_else(|| infer_skill_name_from_path(&path));
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
-            format!("Local skill discovered at {}.", to_workspace_relative_path(&root, &path))
+            format!(
+                "Local skill discovered at {}.",
+                to_workspace_relative_path(&root, &path)
+            )
         });
         let content_preview = extract_skill_content_preview(&raw);
-        let score = score_skill_match(&query, &tokens, &name, &description, &content_preview, &path);
+        let score = score_skill_match(
+            &query,
+            &tokens,
+            &name,
+            &description,
+            &content_preview,
+            &path,
+        );
 
         if score == 0 {
             continue;
@@ -1547,7 +1753,10 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
 pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root.join(".opencow").join("skills").join("enabled-skills.json");
+    let registry_path = root
+        .join(".opencow")
+        .join("skills")
+        .join("enabled-skills.json");
     let enabled_skills = read_enabled_skill_registry(&registry_path)?;
     let enabled_items = build_enabled_local_skill_items(enabled_skills.clone());
     let tokens = tokenize_query(&query);
@@ -1577,7 +1786,8 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
 
         match &best_match {
             Some((best_score, best_item))
-                if *best_score > score || (*best_score == score && best_item.path <= item.path) => {}
+                if *best_score > score || (*best_score == score && best_item.path <= item.path) => {
+            }
             _ => {
                 best_match = Some((score, item));
             }
@@ -1585,14 +1795,18 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
     }
 
     let Some((_, matched_skill)) = best_match else {
-        return Err(format!("no enabled local skill matched disable request: {query}"));
+        return Err(format!(
+            "no enabled local skill matched disable request: {query}"
+        ));
     };
 
     let remaining_entries = enabled_skills
         .into_iter()
         .filter(|entry| {
-            let name_matches = entry.get("name").and_then(Value::as_str) == Some(&matched_skill.name);
-            let path_matches = entry.get("path").and_then(Value::as_str) == Some(&matched_skill.path);
+            let name_matches =
+                entry.get("name").and_then(Value::as_str) == Some(&matched_skill.name);
+            let path_matches =
+                entry.get("path").and_then(Value::as_str) == Some(&matched_skill.path);
 
             !(name_matches && path_matches)
         })
@@ -1628,7 +1842,10 @@ pub fn opencow_self_repair_enabled_skills_registry(
 ) -> Result<OpencowSelfRepairEnabledSkillsRegistryResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root.join(".opencow").join("skills").join("enabled-skills.json");
+    let registry_path = root
+        .join(".opencow")
+        .join("skills")
+        .join("enabled-skills.json");
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve enabled skills registry directory".to_string())?;
@@ -1645,19 +1862,32 @@ pub fn opencow_self_repair_enabled_skills_registry(
     fs::write(&registry_path, format!("{pretty}\n"))
         .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))?;
 
-    let verified_raw =
-        fs::read_to_string(&registry_path).map_err(|error| format!("failed to re-read {}: {error}", registry_path.display()))?;
-    let verified_parsed: Value = serde_json::from_str(&verified_raw)
-        .map_err(|error| format!("failed to verify repaired registry {}: {error}", registry_path.display()))?;
+    let verified_raw = fs::read_to_string(&registry_path)
+        .map_err(|error| format!("failed to re-read {}: {error}", registry_path.display()))?;
+    let verified_parsed: Value = serde_json::from_str(&verified_raw).map_err(|error| {
+        format!(
+            "failed to verify repaired registry {}: {error}",
+            registry_path.display()
+        )
+    })?;
     let verified_version = verified_parsed
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| format!("repaired registry {} is missing numeric version", registry_path.display()))?
-        as usize;
+        .ok_or_else(|| {
+            format!(
+                "repaired registry {} is missing numeric version",
+                registry_path.display()
+            )
+        })? as usize;
     let verified_entry_count = verified_parsed
         .get("enabled_skills")
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("repaired registry {} is missing enabled_skills array", registry_path.display()))?
+        .ok_or_else(|| {
+            format!(
+                "repaired registry {} is missing enabled_skills array",
+                registry_path.display()
+            )
+        })?
         .len();
 
     Ok(OpencowSelfRepairEnabledSkillsRegistryResult {
@@ -1668,7 +1898,67 @@ pub fn opencow_self_repair_enabled_skills_registry(
         preserved_entry_count,
         verified_version,
         verified_entry_count,
-        summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
+        summary:
+            "Opencow self-repair restored the enabled skills registry to a verified default schema."
+                .to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn opencow_self_repair_workspace_project_runtime_registry(
+    query: String,
+) -> Result<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult, String> {
+    let root = resolve_workspace_root()?;
+    let registry_relative_path = ".opencow/runtime/workspace-project-runs.json";
+    let registry_path = workspace_project_runtime_registry_path(&root);
+    let preserved_runs = read_workspace_project_runtime_records(&root).unwrap_or_default();
+    let preserved_entry_count = preserved_runs.len();
+
+    write_workspace_project_runtime_registry(
+        &root,
+        &WorkspaceProjectRuntimeRegistry {
+            version: 1,
+            runs: preserved_runs,
+        },
+    )?;
+
+    let verified_raw = fs::read_to_string(&registry_path)
+        .map_err(|error| format!("failed to re-read {}: {error}", registry_path.display()))?;
+    let verified_parsed: Value = serde_json::from_str(&verified_raw).map_err(|error| {
+        format!(
+            "failed to verify repaired runtime registry {}: {error}",
+            registry_path.display()
+        )
+    })?;
+    let verified_version = verified_parsed
+        .get("version")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| {
+            format!(
+                "repaired runtime registry {} is missing numeric version",
+                registry_path.display()
+            )
+        })? as usize;
+    let verified_run_count = verified_parsed
+        .get("runs")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            format!(
+                "repaired runtime registry {} is missing runs array",
+                registry_path.display()
+            )
+        })?
+        .len();
+
+    Ok(OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult {
+        query,
+        repair_target: "workspace-project-runtime-registry".to_string(),
+        repaired_path: registry_relative_path.to_string(),
+        status: "repaired".to_string(),
+        preserved_entry_count,
+        verified_version,
+        verified_run_count,
+        summary: "Opencow self-repair restored the workspace project runtime registry to a verified default schema."
             .to_string(),
     })
 }
@@ -1677,7 +1967,10 @@ pub fn opencow_self_repair_enabled_skills_registry(
 pub fn local_enabled_skill_list() -> Result<EnabledLocalSkillsResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root.join(".opencow").join("skills").join("enabled-skills.json");
+    let registry_path = root
+        .join(".opencow")
+        .join("skills")
+        .join("enabled-skills.json");
     let enabled_skills = read_enabled_skill_registry(&registry_path)?;
     let mut items = build_enabled_local_skill_items(enabled_skills);
 
@@ -1704,7 +1997,10 @@ pub fn local_enabled_skill_list() -> Result<EnabledLocalSkillsResult, String> {
 pub fn local_enabled_skill_match(query: String) -> Result<EnabledLocalSkillMatchResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root.join(".opencow").join("skills").join("enabled-skills.json");
+    let registry_path = root
+        .join(".opencow")
+        .join("skills")
+        .join("enabled-skills.json");
     let enabled_skills = read_enabled_skill_registry(&registry_path)?;
     let enabled_skill_count = enabled_skills.len();
     let tokens = tokenize_query(&query);
@@ -1732,7 +2028,14 @@ pub fn local_enabled_skill_match(query: String) -> Result<EnabledLocalSkillMatch
         } else {
             "Enabled skill content preview is unavailable because the local skill file was not found.".to_string()
         };
-        let score = score_skill_match(&query, &tokens, name, description, &content_preview, &absolute_path);
+        let score = score_skill_match(
+            &query,
+            &tokens,
+            name,
+            description,
+            &content_preview,
+            &absolute_path,
+        );
 
         if score == 0 {
             continue;
@@ -1751,14 +2054,19 @@ pub fn local_enabled_skill_match(query: String) -> Result<EnabledLocalSkillMatch
     }
 
     items.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.path.cmp(&right.1.path)));
-    let items = items.into_iter().map(|(_, item)| item).take(3).collect::<Vec<_>>();
+    let items = items
+        .into_iter()
+        .map(|(_, item)| item)
+        .take(3)
+        .collect::<Vec<_>>();
     let match_count = items.len();
     let summary = if match_count > 0 {
         format!("Enabled local skill matching found {match_count} recommended skill across {enabled_skill_count} enabled entr{}.", if enabled_skill_count == 1 { "y" } else { "ies" })
     } else if enabled_skill_count > 0 {
         format!("Enabled local skill matching found no recommended skills across {enabled_skill_count} enabled entr{}.", if enabled_skill_count == 1 { "y" } else { "ies" })
     } else {
-        "Enabled local skills registry is currently empty, so no recommendation is available.".to_string()
+        "Enabled local skills registry is currently empty, so no recommendation is available."
+            .to_string()
     };
 
     Ok(EnabledLocalSkillMatchResult {
@@ -1807,7 +2115,9 @@ fn is_skill_enabled(enabled_skills: &[Value], name: &str, path: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn workspace_readonly_command(command_id: String) -> Result<ReadonlyShellCommandResult, String> {
+pub fn workspace_readonly_command(
+    command_id: String,
+) -> Result<ReadonlyShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_readonly_shell_command(&command_id, &root)?;
     let output = Command::new("powershell")
@@ -1816,23 +2126,26 @@ pub fn workspace_readonly_command(command_id: String) -> Result<ReadonlyShellCom
         .args(&spec.args)
         .current_dir(&root)
         .output()
-        .map_err(|error| format!("failed to execute readonly shell command {command_id}: {error}"))?;
+        .map_err(|error| {
+            format!("failed to execute readonly shell command {command_id}: {error}")
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!(
             "readonly shell command {command_id} failed with status {}: {}",
-            output.status,
-            stderr
+            output.status, stderr
         ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
     let stdout_preview = truncate_preview(stdout.trim(), 20);
-    let line_count = stdout.lines().filter(|line| !line.trim().is_empty()).count();
-    let summary = format!(
-        "Readonly shell command completed successfully with {line_count} output lines."
-    );
+    let line_count = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
+    let summary =
+        format!("Readonly shell command completed successfully with {line_count} output lines.");
 
     Ok(ReadonlyShellCommandResult {
         command_id: spec.command_id.to_string(),
@@ -1844,7 +2157,9 @@ pub fn workspace_readonly_command(command_id: String) -> Result<ReadonlyShellCom
 }
 
 #[tauri::command]
-pub fn workspace_write_command(command_id: String) -> Result<WorkspaceWriteShellCommandResult, String> {
+pub fn workspace_write_command(
+    command_id: String,
+) -> Result<WorkspaceWriteShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_workspace_write_shell_command(&command_id, &root)?;
     let output = Command::new("powershell")
@@ -1853,20 +2168,24 @@ pub fn workspace_write_command(command_id: String) -> Result<WorkspaceWriteShell
         .args(&spec.args)
         .current_dir(&root)
         .output()
-        .map_err(|error| format!("failed to execute workspace-write shell command {command_id}: {error}"))?;
+        .map_err(|error| {
+            format!("failed to execute workspace-write shell command {command_id}: {error}")
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!(
             "workspace-write shell command {command_id} failed with status {}: {}",
-            output.status,
-            stderr
+            output.status, stderr
         ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
     let stdout_preview = truncate_preview(stdout.trim(), 20);
-    let line_count = stdout.lines().filter(|line| !line.trim().is_empty()).count();
+    let line_count = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
     let summary = format!(
         "Workspace write shell command completed successfully with {line_count} output lines."
     );
@@ -1881,7 +2200,9 @@ pub fn workspace_write_command(command_id: String) -> Result<WorkspaceWriteShell
 }
 
 #[tauri::command]
-pub fn controlled_full_command(command_id: String) -> Result<ControlledFullShellCommandResult, String> {
+pub fn controlled_full_command(
+    command_id: String,
+) -> Result<ControlledFullShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_controlled_full_shell_command(&command_id, &root)?;
     let output = Command::new("powershell")
@@ -1890,20 +2211,24 @@ pub fn controlled_full_command(command_id: String) -> Result<ControlledFullShell
         .args(&spec.args)
         .current_dir(&root)
         .output()
-        .map_err(|error| format!("failed to execute controlled-full shell command {command_id}: {error}"))?;
+        .map_err(|error| {
+            format!("failed to execute controlled-full shell command {command_id}: {error}")
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(format!(
             "controlled-full shell command {command_id} failed with status {}: {}",
-            output.status,
-            stderr
+            output.status, stderr
         ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
     let stdout_preview = truncate_preview(stdout.trim(), 20);
-    let line_count = stdout.lines().filter(|line| !line.trim().is_empty()).count();
+    let line_count = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .count();
     let summary = format!(
         "Controlled full shell command completed successfully with {line_count} output lines."
     );
@@ -1918,8 +2243,8 @@ pub fn controlled_full_command(command_id: String) -> Result<ControlledFullShell
 }
 
 fn resolve_workspace_root() -> Result<PathBuf, String> {
-    let current_dir =
-        std::env::current_dir().map_err(|error| format!("failed to resolve current directory: {error}"))?;
+    let current_dir = std::env::current_dir()
+        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
 
     for candidate in current_dir.ancestors() {
         if looks_like_workspace_root(candidate) {
@@ -1947,14 +2272,12 @@ fn workspace_root_name(root: &Path) -> String {
 fn read_workspace_package_names(root: &Path) -> Result<Vec<String>, String> {
     let packages_root = root.join("packages");
 
-    Ok(
-        fs::read_dir(&packages_root)
-            .map_err(|error| format!("failed to read packages directory: {error}"))?
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
-            .filter_map(|entry| entry.file_name().into_string().ok())
-            .collect::<Vec<_>>(),
-    )
+    Ok(fs::read_dir(&packages_root)
+        .map_err(|error| format!("failed to read packages directory: {error}"))?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect::<Vec<_>>())
 }
 
 fn read_package_script_count(package_json_path: &Path) -> Result<Option<usize>, String> {
@@ -1997,10 +2320,17 @@ fn read_package_name(package_json_path: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("missing package name in {}", package_json_path.display()))
 }
 
-fn collect_workspace_project_run_candidates(root: &Path) -> Result<Vec<WorkspaceProjectRunCandidateInternal>, String> {
+fn collect_workspace_project_run_candidates(
+    root: &Path,
+) -> Result<Vec<WorkspaceProjectRunCandidateInternal>, String> {
     let mut candidates = Vec::new();
     collect_project_candidates_from_directory(root, &root.join("apps"), "apps", &mut candidates)?;
-    collect_project_candidates_from_directory(root, &root.join("packages"), "packages", &mut candidates)?;
+    collect_project_candidates_from_directory(
+        root,
+        &root.join("packages"),
+        "packages",
+        &mut candidates,
+    )?;
 
     let root_script_names = read_package_script_names(&root.join("package.json"))?;
     if !root_script_names.is_empty() {
@@ -2107,7 +2437,9 @@ fn select_project_run_candidate<'a>(
     best_match.map(|(_, candidate)| candidate)
 }
 
-fn build_project_run_command_label(candidate: &WorkspaceProjectRunCandidateInternal) -> Option<String> {
+fn build_project_run_command_label(
+    candidate: &WorkspaceProjectRunCandidateInternal,
+) -> Option<String> {
     build_npm_script_command(&candidate.script_names, "dev")
         .or_else(|| build_npm_script_command(&candidate.script_names, "start"))
         .or_else(|| build_npm_script_command(&candidate.script_names, "build"))
@@ -2120,7 +2452,9 @@ fn build_npm_script_command(script_names: &[String], script_name: &str) -> Optio
         .map(|name| format!("npm run {name}"))
 }
 
-fn infer_project_expected_url(candidate: Option<&WorkspaceProjectRunCandidateInternal>) -> Option<String> {
+fn infer_project_expected_url(
+    candidate: Option<&WorkspaceProjectRunCandidateInternal>,
+) -> Option<String> {
     let candidate = candidate?;
     let normalized_name = candidate.name.to_lowercase();
     let normalized_path = candidate.relative_path.to_lowercase();
@@ -2136,7 +2470,11 @@ fn infer_project_expected_url(candidate: Option<&WorkspaceProjectRunCandidateInt
     None
 }
 
-fn build_npc_showcase_screenshot_artifact_path(root: &Path, project_name: &str, timestamp: &str) -> PathBuf {
+fn build_npc_showcase_screenshot_artifact_path(
+    root: &Path,
+    project_name: &str,
+    timestamp: &str,
+) -> PathBuf {
     root.join(".opencow")
         .join("artifacts")
         .join("npc-showcase")
@@ -2175,9 +2513,12 @@ fn sanitize_artifact_segment(value: &str) -> String {
 }
 
 fn capture_url_to_png_via_edge(url: &str, artifact_path: &Path) -> Result<(), String> {
-    let artifact_parent = artifact_path
-        .parent()
-        .ok_or_else(|| format!("failed to resolve screenshot artifact parent for {}", artifact_path.display()))?;
+    let artifact_parent = artifact_path.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve screenshot artifact parent for {}",
+            artifact_path.display()
+        )
+    })?;
     fs::create_dir_all(artifact_parent)
         .map_err(|error| format!("failed to create {}: {error}", artifact_parent.display()))?;
 
@@ -2201,7 +2542,10 @@ fn capture_url_to_png_via_edge(url: &str, artifact_path: &Path) -> Result<(), St
     Ok(())
 }
 
-fn find_latest_npc_showcase_screenshot_artifact(root: &Path, project_name: &str) -> Result<Option<PathBuf>, String> {
+fn find_latest_npc_showcase_screenshot_artifact(
+    root: &Path,
+    project_name: &str,
+) -> Result<Option<PathBuf>, String> {
     let artifact_root = root.join(".opencow").join("artifacts").join("npc-showcase");
     if !artifact_root.exists() {
         return Ok(None);
@@ -2210,8 +2554,12 @@ fn find_latest_npc_showcase_screenshot_artifact(root: &Path, project_name: &str)
     let prefix = format!("{}-screenshot-", sanitize_artifact_segment(project_name));
     let mut matches = Vec::new();
 
-    for entry in fs::read_dir(&artifact_root).map_err(|error| format!("failed to read {}: {error}", artifact_root.display()))? {
-        let entry = entry.map_err(|error| format!("failed to read {} entry: {error}", artifact_root.display()))?;
+    for entry in fs::read_dir(&artifact_root)
+        .map_err(|error| format!("failed to read {}: {error}", artifact_root.display()))?
+    {
+        let entry = entry.map_err(|error| {
+            format!("failed to read {} entry: {error}", artifact_root.display())
+        })?;
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -2237,10 +2585,14 @@ fn write_npc_showcase_site_html(
     expected_url: Option<&str>,
     screenshot_artifact: &Path,
 ) -> Result<(), String> {
-    let parent = entry_file
-        .parent()
-        .ok_or_else(|| format!("failed to resolve showcase-site parent for {}", entry_file.display()))?;
-    fs::create_dir_all(parent).map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let parent = entry_file.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve showcase-site parent for {}",
+            entry_file.display()
+        )
+    })?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
 
     let screenshot_file_name = screenshot_artifact
         .file_name()
@@ -2264,12 +2616,15 @@ fn write_npc_showcase_site_html(
         project_name, project_name, project_path, expected_url_line, screenshot_file_name
     );
 
-    fs::write(entry_file, html).map_err(|error| format!("failed to write {}: {error}", entry_file.display()))?;
+    fs::write(entry_file, html)
+        .map_err(|error| format!("failed to write {}: {error}", entry_file.display()))?;
     Ok(())
 }
 
 fn workspace_project_runtime_registry_path(root: &Path) -> PathBuf {
-    root.join(".opencow").join("runtime").join("workspace-project-runs.json")
+    root.join(".opencow")
+        .join("runtime")
+        .join("workspace-project-runs.json")
 }
 
 fn default_workspace_project_runtime_registry() -> WorkspaceProjectRuntimeRegistry {
@@ -2279,7 +2634,9 @@ fn default_workspace_project_runtime_registry() -> WorkspaceProjectRuntimeRegist
     }
 }
 
-fn read_workspace_project_runtime_records(root: &Path) -> Result<Vec<WorkspaceProjectRuntimeRecord>, String> {
+fn read_workspace_project_runtime_records(
+    root: &Path,
+) -> Result<Vec<WorkspaceProjectRuntimeRecord>, String> {
     let registry_path = workspace_project_runtime_registry_path(root);
 
     if !registry_path.exists() {
@@ -2340,13 +2697,17 @@ fn write_workspace_project_runtime_registry(
     registry: &WorkspaceProjectRuntimeRegistry,
 ) -> Result<(), String> {
     let registry_path = workspace_project_runtime_registry_path(root);
-    let parent = registry_path
-        .parent()
-        .ok_or_else(|| format!("failed to resolve runtime registry parent for {}", registry_path.display()))?;
+    let parent = registry_path.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve runtime registry parent for {}",
+            registry_path.display()
+        )
+    })?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
-    let serialized = serde_json::to_string_pretty(registry)
-        .map_err(|error| format!("failed to serialize workspace project runtime registry: {error}"))?;
+    let serialized = serde_json::to_string_pretty(registry).map_err(|error| {
+        format!("failed to serialize workspace project runtime registry: {error}")
+    })?;
     fs::write(&registry_path, format!("{serialized}\n"))
         .map_err(|error| format!("failed to write {}: {error}", registry_path.display()))
 }
@@ -2372,7 +2733,9 @@ fn find_workspace_project_runtime_record(
     project_path: &str,
 ) -> Result<Option<WorkspaceProjectRuntimeRecord>, String> {
     let records = read_workspace_project_runtime_records(root)?;
-    Ok(records.into_iter().find(|entry| entry.project_path == project_path))
+    Ok(records
+        .into_iter()
+        .find(|entry| entry.project_path == project_path))
 }
 
 fn remove_workspace_project_runtime_record(root: &Path, project_path: &str) -> Result<(), String> {
@@ -2427,11 +2790,19 @@ fn collect_existing_paths(root: &Path, candidates: &[&str]) -> Vec<String> {
 fn collect_local_knowledge_candidates(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut candidates = Vec::new();
 
-    for entry in fs::read_dir(root).map_err(|error| format!("failed to read workspace root: {error}"))? {
-        let entry = entry.map_err(|error| format!("failed to inspect workspace root entry: {error}"))?;
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("failed to read workspace root: {error}"))?
+    {
+        let entry =
+            entry.map_err(|error| format!("failed to inspect workspace root entry: {error}"))?;
         let path = entry.path();
 
-        if entry.file_type().map(|kind| kind.is_file()).unwrap_or(false) && is_local_knowledge_file(&path) {
+        if entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false)
+            && is_local_knowledge_file(&path)
+        {
             candidates.push(path);
         }
     }
@@ -2501,9 +2872,10 @@ fn read_enabled_skill_registry(path: &Path) -> Result<Vec<Value>, String> {
         return Ok(Vec::new());
     }
 
-    let raw = fs::read_to_string(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    let parsed: Value =
-        serde_json::from_str(&raw).map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+    let raw = fs::read_to_string(path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let parsed: Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
 
     Ok(parsed
         .get("enabled_skills")
@@ -2512,9 +2884,15 @@ fn read_enabled_skill_registry(path: &Path) -> Result<Vec<Value>, String> {
         .unwrap_or_default())
 }
 
-fn collect_local_skill_files_recursive(root: &Path, candidates: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))? {
-        let entry = entry.map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
+fn collect_local_skill_files_recursive(
+    root: &Path,
+    candidates: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))?
+    {
+        let entry = entry
+            .map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
         let path = entry.path();
         let file_type = entry
             .file_type()
@@ -2533,9 +2911,15 @@ fn collect_local_skill_files_recursive(root: &Path, candidates: &mut Vec<PathBuf
     Ok(())
 }
 
-fn collect_local_mcp_plugin_files_recursive(root: &Path, candidates: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))? {
-        let entry = entry.map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
+fn collect_local_mcp_plugin_files_recursive(
+    root: &Path,
+    candidates: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))?
+    {
+        let entry = entry
+            .map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
         let path = entry.path();
         let file_type = entry
             .file_type()
@@ -2546,7 +2930,10 @@ fn collect_local_mcp_plugin_files_recursive(root: &Path, candidates: &mut Vec<Pa
             continue;
         }
 
-        if file_type.is_file() && is_local_mcp_plugin_file(&path) && !is_ignored_mcp_plugin_path(&path) {
+        if file_type.is_file()
+            && is_local_mcp_plugin_file(&path)
+            && !is_ignored_mcp_plugin_path(&path)
+        {
             candidates.push(path);
         }
     }
@@ -2555,8 +2942,11 @@ fn collect_local_mcp_plugin_files_recursive(root: &Path, candidates: &mut Vec<Pa
 }
 
 fn collect_extension_skill_files(root: &Path, candidates: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))? {
-        let entry = entry.map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))?
+    {
+        let entry = entry
+            .map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
         let path = entry.path();
         let file_type = entry
             .file_type()
@@ -2603,9 +2993,15 @@ fn count_existing_mcp_plugin_roots(root: &Path) -> usize {
     .count()
 }
 
-fn collect_local_knowledge_candidates_recursive(root: &Path, candidates: &mut Vec<PathBuf>) -> Result<(), String> {
-    for entry in fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))? {
-        let entry = entry.map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
+fn collect_local_knowledge_candidates_recursive(
+    root: &Path,
+    candidates: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("failed to read {}: {error}", root.display()))?
+    {
+        let entry = entry
+            .map_err(|error| format!("failed to inspect {} entry: {error}", root.display()))?;
         let path = entry.path();
         let file_type = entry
             .file_type()
@@ -2646,7 +3042,10 @@ fn is_local_mcp_plugin_file(path: &Path) -> bool {
 }
 
 fn is_ignored_skill_path(path: &Path) -> bool {
-    let normalized = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
 
     normalized.contains("/test/")
         || normalized.contains("/tests/")
@@ -2655,7 +3054,10 @@ fn is_ignored_skill_path(path: &Path) -> bool {
 }
 
 fn is_ignored_mcp_plugin_path(path: &Path) -> bool {
-    let normalized = path.to_string_lossy().replace('\\', "/").to_ascii_lowercase();
+    let normalized = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .to_ascii_lowercase();
 
     normalized.contains("/test/")
         || normalized.contains("/tests/")
@@ -2667,7 +3069,14 @@ fn is_ignored_mcp_plugin_path(path: &Path) -> bool {
 fn split_knowledge_segments(content: &str) -> Vec<String> {
     content
         .split("\n\n")
-        .map(|segment| segment.lines().map(str::trim).filter(|line| !line.is_empty()).collect::<Vec<_>>().join(" "))
+        .map(|segment| {
+            segment
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
         .filter(|segment| !segment.is_empty())
         .collect()
 }
@@ -2744,7 +3153,10 @@ fn strip_skill_frontmatter(content: &str) -> &str {
 
         if separator_count == 2 {
             let body_start = index + 3;
-            return content.get(body_start..).unwrap_or(content).trim_start_matches(['\r', '\n']);
+            return content
+                .get(body_start..)
+                .unwrap_or(content)
+                .trim_start_matches(['\r', '\n']);
         }
     }
 
@@ -2755,7 +3167,7 @@ fn parse_skill_frontmatter_field(content: &str, field: &str) -> Option<String> {
     let mut lines = content.lines();
 
     if lines.next()?.trim() != "---" {
-      return None;
+        return None;
     }
 
     for line in lines {
@@ -2770,7 +3182,11 @@ fn parse_skill_frontmatter_field(content: &str, field: &str) -> Option<String> {
         };
 
         if key.trim() == field {
-            let normalized = value.trim().trim_matches('"').trim_matches('\'').to_string();
+            let normalized = value
+                .trim()
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
 
             if !normalized.is_empty() {
                 return Some(normalized);
@@ -2952,7 +3368,10 @@ fn analyze_mcp_plugin_config_schema(parsed: &Value) -> (bool, String) {
         .unwrap_or(0);
 
     if property_count == 0 && required_count == 0 {
-        return (false, "No required config schema fields were detected.".to_string());
+        return (
+            false,
+            "No required config schema fields were detected.".to_string(),
+        );
     }
 
     if required_count > 0 {
@@ -2976,7 +3395,10 @@ fn to_workspace_relative_path(root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
-fn build_readonly_shell_command(command_id: &str, root: &Path) -> Result<ReadonlyShellCommandSpec, String> {
+fn build_readonly_shell_command(
+    command_id: &str,
+    root: &Path,
+) -> Result<ReadonlyShellCommandSpec, String> {
     let root_arg = root.display().to_string();
     let packages_arg = root.join("packages").display().to_string();
 
@@ -2989,7 +3411,10 @@ fn build_readonly_shell_command(command_id: &str, root: &Path) -> Result<Readonl
         "workspace-root-list" => Ok(ReadonlyShellCommandSpec {
             command_id: "workspace-root-list",
             command_label: "Get-ChildItem -Name",
-            args: vec![format!("Get-ChildItem -LiteralPath '{}' -Name", escape_powershell_single_quote(&root_arg))],
+            args: vec![format!(
+                "Get-ChildItem -LiteralPath '{}' -Name",
+                escape_powershell_single_quote(&root_arg)
+            )],
         }),
         "packages-dir-list" => Ok(ReadonlyShellCommandSpec {
             command_id: "packages-dir-list",
@@ -2999,7 +3424,9 @@ fn build_readonly_shell_command(command_id: &str, root: &Path) -> Result<Readonl
                 escape_powershell_single_quote(&packages_arg)
             )],
         }),
-        _ => Err(format!("unsupported readonly shell command id: {command_id}")),
+        _ => Err(format!(
+            "unsupported readonly shell command id: {command_id}"
+        )),
     }
 }
 
@@ -3063,7 +3490,9 @@ fn build_openclaw_capability_spec(capability_id: &str) -> Result<OpenClawCapabil
             label: "MCP",
             required_directories: &["plugin-sdk", "terminal-core", "tool-call-repair"],
         }),
-        _ => Err(format!("unsupported OpenClaw capability id: {capability_id}")),
+        _ => Err(format!(
+            "unsupported OpenClaw capability id: {capability_id}"
+        )),
     }
 }
 
@@ -3082,19 +3511,26 @@ fn escape_powershell_single_quote(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_controlled_full_shell_command, build_enabled_local_skill_items, build_openclaw_capability_spec,
-        build_npc_showcase_screenshot_artifact_path, build_npc_showcase_site_root, build_readonly_shell_command,
-        build_workspace_write_shell_command, classify_mcp_plugin_source, extract_skill_content_preview,
-        is_local_knowledge_file, is_local_mcp_plugin_file, local_mcp_plugin_inspect, local_mcp_plugin_scan,
-        local_mcp_plugin_start_preview, local_skill_disable, local_skill_install, looks_like_workspace_root,
-        opencow_self_repair_enabled_skills_registry, parse_skill_frontmatter_name, read_enabled_skill_registry,
-        read_workspace_project_runtime_records, resolve_workspace_root, score_mcp_plugin_match, score_skill_match,
-        score_snippet, split_knowledge_segments, tokenize_query, truncate_preview,
+        build_controlled_full_shell_command, build_enabled_local_skill_items,
+        build_npc_showcase_screenshot_artifact_path, build_npc_showcase_site_root,
+        build_openclaw_capability_spec, build_readonly_shell_command,
+        build_workspace_write_shell_command, classify_mcp_plugin_source,
+        controlled_full_command,
+        extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file,
+        local_mcp_plugin_inspect, local_mcp_plugin_scan, local_mcp_plugin_start_preview,
+        local_skill_disable, local_skill_install, looks_like_workspace_root,
+        opencow_self_repair_enabled_skills_registry,
+        opencow_self_repair_workspace_project_runtime_registry, parse_skill_frontmatter_name,
+        read_enabled_skill_registry, read_workspace_project_runtime_records,
+        resolve_workspace_root, score_mcp_plugin_match, score_skill_match, score_snippet,
+        split_knowledge_segments, tokenize_query, truncate_preview,
+        workspace_readonly_command,
         workspace_project_npc_screenshot_capture, workspace_project_npc_showcase_publish_preview,
-        workspace_project_npc_showcase_site_write, workspace_project_run, workspace_project_run_preview,
-        workspace_project_status, workspace_project_stop,
+        workspace_project_npc_showcase_site_write, workspace_project_run,
+        workspace_project_run_preview, workspace_project_status, workspace_project_stop,
+        workspace_write_command,
     };
-    use serde_json::{Value, json};
+    use serde_json::{json, Value};
     use std::{
         env, fs,
         path::Path,
@@ -3108,12 +3544,15 @@ mod tests {
     }
 
     fn lock_workspace_test_guard() -> std::sync::MutexGuard<'static, ()> {
-        workspace_test_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        workspace_test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     #[test]
     fn builds_git_status_readonly_command() {
-        let spec = build_readonly_shell_command("git-status", Path::new("E:\\2026\\opencow")).unwrap();
+        let spec =
+            build_readonly_shell_command("git-status", Path::new("E:\\2026\\opencow")).unwrap();
 
         assert_eq!(spec.command_id, "git-status");
         assert_eq!(spec.command_label, "git status --short");
@@ -3122,7 +3561,9 @@ mod tests {
 
     #[test]
     fn builds_packages_directory_readonly_command() {
-        let spec = build_readonly_shell_command("packages-dir-list", Path::new("E:\\2026\\opencow")).unwrap();
+        let spec =
+            build_readonly_shell_command("packages-dir-list", Path::new("E:\\2026\\opencow"))
+                .unwrap();
 
         assert_eq!(spec.command_id, "packages-dir-list");
         assert_eq!(spec.command_label, "Get-ChildItem packages -Name");
@@ -3138,23 +3579,192 @@ mod tests {
 
     #[test]
     fn builds_workspace_write_temp_output_command() {
-        let spec =
-            build_workspace_write_shell_command("create-temp-output-dir", Path::new("E:\\2026\\opencow")).unwrap();
+        let spec = build_workspace_write_shell_command(
+            "create-temp-output-dir",
+            Path::new("E:\\2026\\opencow"),
+        )
+        .unwrap();
 
         assert_eq!(spec.command_id, "create-temp-output-dir");
-        assert_eq!(spec.command_label, "New-Item -ItemType Directory -Force temp-output");
+        assert_eq!(
+            spec.command_label,
+            "New-Item -ItemType Directory -Force temp-output"
+        );
         assert!(spec.args[0].contains("temp-output"));
     }
 
     #[test]
     fn builds_controlled_full_temp_output_remove_command() {
-        let spec =
-            build_controlled_full_shell_command("remove-temp-output-dir", Path::new("E:\\2026\\opencow")).unwrap();
+        let spec = build_controlled_full_shell_command(
+            "remove-temp-output-dir",
+            Path::new("E:\\2026\\opencow"),
+        )
+        .unwrap();
 
         assert_eq!(spec.command_id, "remove-temp-output-dir");
-        assert_eq!(spec.command_label, "Remove-Item -LiteralPath temp-output -Recurse -Force");
+        assert_eq!(
+            spec.command_label,
+            "Remove-Item -LiteralPath temp-output -Recurse -Force"
+        );
         assert!(spec.args[0].contains("temp-output"));
         assert!(spec.args[0].contains("Remove-Item"));
+    }
+
+    #[test]
+    fn rejects_unknown_readonly_shell_command_id() {
+        let error =
+            match build_readonly_shell_command("unknown-readonly-command", Path::new("E:\\2026\\opencow"))
+            {
+                Ok(_) => panic!("expected unsupported readonly shell command id error"),
+                Err(error) => error,
+            };
+
+        assert_eq!(
+            error,
+            "unsupported readonly shell command id: unknown-readonly-command"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_workspace_write_shell_command_id() {
+        let error = match build_workspace_write_shell_command(
+            "unknown-workspace-write-command",
+            Path::new("E:\\2026\\opencow"),
+        ) {
+            Ok(_) => panic!("expected unsupported workspace-write shell command id error"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            "unsupported workspace-write shell command id: unknown-workspace-write-command"
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_controlled_full_shell_command_id() {
+        let error = match build_controlled_full_shell_command(
+            "unknown-controlled-full-command",
+            Path::new("E:\\2026\\opencow"),
+        ) {
+            Ok(_) => panic!("expected unsupported controlled-full shell command id error"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            "unsupported controlled-full shell command id: unknown-controlled-full-command"
+        );
+    }
+
+    #[test]
+    fn workspace_readonly_command_lists_workspace_root_entries() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-readonly-command-{unique}"));
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let result = workspace_readonly_command("workspace-root-list".to_string()).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(result.command_id, "workspace-root-list".to_string());
+        assert_eq!(result.command_label, "Get-ChildItem -Name".to_string());
+        assert!(result.stdout_preview.contains("apps"));
+        assert!(result.stdout_preview.contains("docs"));
+        assert!(result.line_count >= 3);
+    }
+
+    #[test]
+    fn workspace_write_command_creates_temp_output_directory_inside_workspace() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-write-command-{unique}"));
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let result = workspace_write_command("create-temp-output-dir".to_string()).unwrap();
+        let temp_output_exists = workspace_root.join("temp-output").exists();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(result.command_id, "create-temp-output-dir".to_string());
+        assert_eq!(
+            result.command_label,
+            "New-Item -ItemType Directory -Force temp-output".to_string()
+        );
+        assert!(temp_output_exists);
+        assert!(result.stdout_preview.contains("temp-output"));
+        assert!(result.line_count >= 1);
+    }
+
+    #[test]
+    fn controlled_full_command_removes_temp_output_directory_inside_workspace() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-controlled-full-command-{unique}"));
+        let temp_output = workspace_root.join("temp-output");
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::create_dir_all(&temp_output).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+        fs::write(temp_output.join("note.txt"), "temporary").unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let result = controlled_full_command("remove-temp-output-dir".to_string()).unwrap();
+        let temp_output_exists = temp_output.exists();
+
+        env::set_current_dir(&original_dir).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(result.command_id, "remove-temp-output-dir".to_string());
+        assert_eq!(
+            result.command_label,
+            "Remove-Item -LiteralPath temp-output -Recurse -Force".to_string()
+        );
+        assert!(!temp_output_exists);
+        assert!(result.stdout_preview.contains("temp-output removed"));
+        assert!(result.line_count >= 1);
     }
 
     #[test]
@@ -3162,7 +3772,10 @@ mod tests {
         let spec = build_openclaw_capability_spec("rag").unwrap();
 
         assert_eq!(spec.title, "OpenClaw RAG capability overview");
-        assert_eq!(spec.required_directories, &["llm-core", "llm-runtime", "model-catalog-core"]);
+        assert_eq!(
+            spec.required_directories,
+            &["llm-core", "llm-runtime", "model-catalog-core"]
+        );
     }
 
     #[test]
@@ -3182,31 +3795,52 @@ mod tests {
     fn splits_knowledge_content_by_paragraph() {
         let segments = split_knowledge_segments("# Title\nline one\n\nline two\nline three");
 
-        assert_eq!(segments, vec!["# Title line one".to_string(), "line two line three".to_string()]);
+        assert_eq!(
+            segments,
+            vec![
+                "# Title line one".to_string(),
+                "line two line three".to_string()
+            ]
+        );
     }
 
     #[test]
     fn recognizes_markdown_knowledge_files() {
-        assert!(is_local_knowledge_file(Path::new("docs/v1.0/06-rag-skills-npc-mcp.md")));
+        assert!(is_local_knowledge_file(Path::new(
+            "docs/v1.0/06-rag-skills-npc-mcp.md"
+        )));
         assert!(!is_local_knowledge_file(Path::new("package.json")));
     }
 
     #[test]
     fn recognizes_openclaw_plugin_manifest_files() {
-        assert!(is_local_mcp_plugin_file(Path::new("vendor/openclaw/extensions/browser/openclaw.plugin.json")));
-        assert!(!is_local_mcp_plugin_file(Path::new("vendor/openclaw/extensions/browser/package.json")));
+        assert!(is_local_mcp_plugin_file(Path::new(
+            "vendor/openclaw/extensions/browser/openclaw.plugin.json"
+        )));
+        assert!(!is_local_mcp_plugin_file(Path::new(
+            "vendor/openclaw/extensions/browser/package.json"
+        )));
     }
 
     #[test]
     fn recognizes_workspace_root_markers() {
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-root-markers-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-root-markers-{unique}"));
 
         fs::create_dir_all(workspace_root.join("apps/desktop/src-tauri")).unwrap();
         fs::create_dir_all(workspace_root.join("packages")).unwrap();
         fs::create_dir_all(workspace_root.join("docs")).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
 
         let detected = looks_like_workspace_root(&workspace_root);
 
@@ -3218,15 +3852,24 @@ mod tests {
 
     #[test]
     fn resolves_workspace_root_from_nested_tauri_directory() {
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-root-resolve-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-root-resolve-{unique}"));
         let tauri_dir = workspace_root.join("apps/desktop/src-tauri");
 
         fs::create_dir_all(&tauri_dir).unwrap();
         fs::create_dir_all(workspace_root.join("packages")).unwrap();
         fs::create_dir_all(workspace_root.join("docs")).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
 
         env::set_current_dir(&tauri_dir).unwrap();
 
@@ -3241,7 +3884,9 @@ mod tests {
     #[test]
     fn classifies_vendor_extension_plugin_source() {
         let root = Path::new("E:\\2026\\opencow");
-        let path = Path::new("E:\\2026\\opencow\\vendor\\openclaw\\extensions\\browser\\openclaw.plugin.json");
+        let path = Path::new(
+            "E:\\2026\\opencow\\vendor\\openclaw\\extensions\\browser\\openclaw.plugin.json",
+        );
 
         assert_eq!(
             classify_mcp_plugin_source(root, path),
@@ -3253,7 +3898,10 @@ mod tests {
     fn parses_skill_name_from_frontmatter() {
         let content = "---\nname: coding-agent\ndescription: Writes code\n---\nbody";
 
-        assert_eq!(parse_skill_frontmatter_name(content), Some("coding-agent".to_string()));
+        assert_eq!(
+            parse_skill_frontmatter_name(content),
+            Some("coding-agent".to_string())
+        );
     }
 
     #[test]
@@ -3313,7 +3961,10 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "coding-agent");
-        assert_eq!(items[0].path, "vendor/openclaw/skills/coding-agent/SKILL.md");
+        assert_eq!(
+            items[0].path,
+            "vendor/openclaw/skills/coding-agent/SKILL.md"
+        );
     }
 
     #[test]
@@ -3341,8 +3992,12 @@ mod tests {
 
     #[test]
     fn local_skill_disable_removes_only_the_exact_matched_registry_entry() {
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-local-skill-disable-{unique}"));
         let vendor_skill_path = workspace_root.join("vendor/openclaw/skills/coding-agent/SKILL.md");
         let workspace_skill_path = workspace_root.join("skills/coding-agent/SKILL.md");
@@ -3387,7 +4042,8 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = local_skill_disable("disable the vendor coding-agent skill".to_string()).unwrap();
+        let result =
+            local_skill_disable("disable the vendor coding-agent skill".to_string()).unwrap();
         let remaining_entries = read_enabled_skill_registry(&registry_path).unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
@@ -3396,18 +4052,27 @@ mod tests {
         assert_eq!(result.disabled_skill_name, "coding-agent");
         assert_eq!(remaining_entries.len(), 1);
         assert_eq!(
-            remaining_entries[0].get("path").and_then(|value| value.as_str()),
+            remaining_entries[0]
+                .get("path")
+                .and_then(|value| value.as_str()),
             Some("skills/coding-agent/SKILL.md")
         );
     }
 
     #[test]
     fn local_mcp_plugin_scan_reads_vendor_plugin_manifests() {
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-local-mcp-plugin-scan-{unique}"));
-        let browser_plugin = workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
-        let supervisor_plugin = workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-local-mcp-plugin-scan-{unique}"));
+        let browser_plugin =
+            workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
+        let supervisor_plugin =
+            workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
 
         fs::create_dir_all(browser_plugin.parent().unwrap()).unwrap();
         fs::create_dir_all(supervisor_plugin.parent().unwrap()).unwrap();
@@ -3455,11 +4120,18 @@ mod tests {
 
     #[test]
     fn local_mcp_plugin_inspect_reads_matching_vendor_plugin_manifest_details() {
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-local-mcp-plugin-inspect-{unique}"));
-        let browser_plugin = workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
-        let supervisor_plugin = workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-local-mcp-plugin-inspect-{unique}"));
+        let browser_plugin =
+            workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
+        let supervisor_plugin =
+            workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
 
         fs::create_dir_all(browser_plugin.parent().unwrap()).unwrap();
         fs::create_dir_all(supervisor_plugin.parent().unwrap()).unwrap();
@@ -3491,7 +4163,9 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = local_mcp_plugin_inspect("show details for the browser mcp plugin".to_string()).unwrap();
+        let result =
+            local_mcp_plugin_inspect("show details for the browser mcp plugin".to_string())
+                .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
@@ -3500,18 +4174,28 @@ mod tests {
         assert_eq!(result.scanned_root_count, 1);
         assert_eq!(result.items[0].id, "browser");
         assert_eq!(result.items[0].activation, "startup");
-        assert_eq!(result.items[0].description, "Browser automation plugin entry.".to_string());
+        assert_eq!(
+            result.items[0].description,
+            "Browser automation plugin entry.".to_string()
+        );
         assert_eq!(result.items[0].tool_names, vec!["browser".to_string()]);
         assert_eq!(result.items[0].skill_paths, vec!["./skills".to_string()]);
     }
 
     #[test]
     fn local_mcp_plugin_start_preview_reads_matching_vendor_plugin_preview_fields() {
+        let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-local-mcp-plugin-start-preview-{unique}"));
-        let browser_plugin = workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
-        let supervisor_plugin = workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-local-mcp-plugin-start-preview-{unique}"));
+        let browser_plugin =
+            workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
+        let supervisor_plugin =
+            workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
 
         fs::create_dir_all(browser_plugin.parent().unwrap()).unwrap();
         fs::create_dir_all(supervisor_plugin.parent().unwrap()).unwrap();
@@ -3541,7 +4225,10 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = local_mcp_plugin_start_preview("preview starting the browser mcp plugin locally".to_string()).unwrap();
+        let result = local_mcp_plugin_start_preview(
+            "preview starting the browser mcp plugin locally".to_string(),
+        )
+        .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
@@ -3550,8 +4237,14 @@ mod tests {
         assert_eq!(result.items[0].id, "browser");
         assert!(result.items[0].startup_allowed);
         assert_eq!(result.items[0].activation, "startup");
-        assert_eq!(result.items[0].command_preview, "npx openclaw-extension-browser".to_string());
-        assert_eq!(result.items[0].working_directory, "vendor/openclaw/extensions/browser".to_string());
+        assert_eq!(
+            result.items[0].command_preview,
+            "npx openclaw-extension-browser".to_string()
+        );
+        assert_eq!(
+            result.items[0].working_directory,
+            "vendor/openclaw/extensions/browser".to_string()
+        );
         assert!(!result.items[0].requires_config);
         assert_eq!(
             result.items[0].config_hint,
@@ -3563,7 +4256,10 @@ mod tests {
     fn local_skill_install_copies_vendor_skill_into_workspace_skills_directory() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-local-skill-install-{unique}"));
         let vendor_skill_path = workspace_root.join("vendor/openclaw/skills/gpt-taste/SKILL.md");
 
@@ -3571,7 +4267,11 @@ mod tests {
         fs::create_dir_all(workspace_root.join("apps")).unwrap();
         fs::create_dir_all(workspace_root.join("packages")).unwrap();
         fs::create_dir_all(workspace_root.join("docs")).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             &vendor_skill_path,
             "---\nname: gpt-taste\ndescription: Elite UX/UI and motion skill\n---\nUse this skill for advanced UX and motion refinement.\n",
@@ -3580,7 +4280,10 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = local_skill_install("install the gpt-taste skill into this workspace skills folder".to_string()).unwrap();
+        let result = local_skill_install(
+            "install the gpt-taste skill into this workspace skills folder".to_string(),
+        )
+        .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
 
@@ -3589,8 +4292,14 @@ mod tests {
         let _ = fs::remove_dir_all(&workspace_root);
 
         assert_eq!(result.installed_skill_name, "gpt-taste".to_string());
-        assert_eq!(result.installed_skill_path, "skills/gpt-taste/SKILL.md".to_string());
-        assert_eq!(result.source_skill_path, "vendor/openclaw/skills/gpt-taste/SKILL.md".to_string());
+        assert_eq!(
+            result.installed_skill_path,
+            "skills/gpt-taste/SKILL.md".to_string()
+        );
+        assert_eq!(
+            result.source_skill_path,
+            "vendor/openclaw/skills/gpt-taste/SKILL.md".to_string()
+        );
         assert_eq!(result.status, "installed".to_string());
         assert!(installed_contents.contains("Elite UX/UI and motion skill"));
     }
@@ -3599,15 +4308,23 @@ mod tests {
     fn opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-self-repair-enabled-skills-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-self-repair-enabled-skills-{unique}"));
         let registry_path = workspace_root.join(".opencow/skills/enabled-skills.json");
 
         fs::create_dir_all(workspace_root.join("apps")).unwrap();
         fs::create_dir_all(workspace_root.join("packages")).unwrap();
         fs::create_dir_all(workspace_root.join("docs")).unwrap();
         fs::create_dir_all(registry_path.parent().unwrap()).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(&registry_path, "{ invalid json").unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
@@ -3624,21 +4341,87 @@ mod tests {
         let _ = fs::remove_dir_all(&workspace_root);
 
         assert_eq!(result.repair_target, "enabled-skills-registry".to_string());
-        assert_eq!(result.repaired_path, ".opencow/skills/enabled-skills.json".to_string());
+        assert_eq!(
+            result.repaired_path,
+            ".opencow/skills/enabled-skills.json".to_string()
+        );
         assert_eq!(result.status, "repaired".to_string());
         assert_eq!(result.preserved_entry_count, 0);
         assert_eq!(result.verified_version, 1);
         assert_eq!(result.verified_entry_count, 0);
         assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
-        assert!(parsed.get("enabled_skills").and_then(Value::as_array).is_some());
+        assert!(parsed
+            .get("enabled_skills")
+            .and_then(Value::as_array)
+            .is_some());
+    }
+
+    #[test]
+    fn opencow_self_repair_workspace_project_runtime_registry_recovers_from_invalid_json() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-self-repair-runtime-registry-{unique}"));
+        let registry_path = workspace_root
+            .join(".opencow")
+            .join("runtime")
+            .join("workspace-project-runs.json");
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("packages")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::create_dir_all(registry_path.parent().unwrap()).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+        fs::write(&registry_path, "{ invalid json").unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+
+        let result = opencow_self_repair_workspace_project_runtime_registry(
+            "diagnose opencow and continue repairing its workspace project runtime registry"
+                .to_string(),
+        )
+        .unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+
+        let repaired = fs::read_to_string(&registry_path).unwrap();
+        let parsed: Value = serde_json::from_str(&repaired).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(
+            result.repair_target,
+            "workspace-project-runtime-registry".to_string()
+        );
+        assert_eq!(
+            result.repaired_path,
+            ".opencow/runtime/workspace-project-runs.json".to_string()
+        );
+        assert_eq!(result.status, "repaired".to_string());
+        assert_eq!(result.preserved_entry_count, 0);
+        assert_eq!(result.verified_version, 1);
+        assert_eq!(result.verified_run_count, 0);
+        assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
+        assert!(parsed.get("runs").and_then(Value::as_array).is_some());
     }
 
     #[test]
     fn workspace_project_run_preview_matches_app_with_dev_script_and_expected_url() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-preview-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-run-preview-{unique}"));
         let app_dir = workspace_root.join("apps/desktop");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
@@ -3687,26 +4470,39 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = workspace_project_run_preview("run the desktop app locally".to_string()).unwrap();
+        let result =
+            workspace_project_run_preview("run the desktop app locally".to_string()).unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
 
         assert_eq!(result.inspected_project_count, 3);
         assert_eq!(result.matched_project_name, Some("desktop".to_string()));
-        assert_eq!(result.matched_project_path, Some("apps/desktop".to_string()));
+        assert_eq!(
+            result.matched_project_path,
+            Some("apps/desktop".to_string())
+        );
         assert_eq!(result.matched_project_source, Some("apps".to_string()));
         assert_eq!(result.dev_command, Some("npm run dev".to_string()));
         assert_eq!(result.build_command, Some("npm run build".to_string()));
-        assert_eq!(result.expected_url, Some("http://127.0.0.1:1420".to_string()));
-        assert_eq!(result.next_required_permission, "workspace-write".to_string());
+        assert_eq!(
+            result.expected_url,
+            Some("http://127.0.0.1:1420".to_string())
+        );
+        assert_eq!(
+            result.next_required_permission,
+            "workspace-write".to_string()
+        );
     }
 
     #[test]
     fn workspace_project_run_starts_matched_app_and_returns_handle() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-run-{unique}"));
         let app_dir = workspace_root.join("apps/desktop");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
@@ -3715,7 +4511,11 @@ mod tests {
         fs::create_dir_all(&app_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             app_dir.join("package.json"),
             concat!(
@@ -3752,7 +4552,10 @@ mod tests {
         assert_eq!(result.project_path, "apps/desktop".to_string());
         assert_eq!(result.command_label, "npm run dev".to_string());
         assert_eq!(result.working_directory, "apps/desktop".to_string());
-        assert_eq!(result.expected_url, Some("http://127.0.0.1:1420".to_string()));
+        assert_eq!(
+            result.expected_url,
+            Some("http://127.0.0.1:1420".to_string())
+        );
         assert!(result.pid > 0);
         assert!(result.stdout_preview.contains("pid:"));
     }
@@ -3761,7 +4564,10 @@ mod tests {
     fn workspace_project_status_reports_active_runtime_handle_for_matched_app() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-{unique}"));
         let app_dir = workspace_root.join("apps/desktop");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
@@ -3770,7 +4576,11 @@ mod tests {
         fs::create_dir_all(&app_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             app_dir.join("package.json"),
             concat!(
@@ -3799,14 +4609,20 @@ mod tests {
         env::set_current_dir(&workspace_root).unwrap();
 
         let run_result = workspace_project_run("run the desktop app locally".to_string()).unwrap();
-        let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+        let status_result =
+            workspace_project_status("show the status of the desktop app local run".to_string())
+                .unwrap();
         let runtime_registry_path = workspace_root
             .join(".opencow")
             .join("runtime")
             .join("workspace-project-runs.json");
         let persisted = fs::read_to_string(&runtime_registry_path).unwrap();
         let parsed: Value = serde_json::from_str(&persisted).unwrap();
-        let runs = parsed.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
+        let runs = parsed
+            .get("runs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
@@ -3815,23 +4631,36 @@ mod tests {
         assert_eq!(status_result.project_path, "apps/desktop".to_string());
         assert_eq!(status_result.command_label, "npm run dev".to_string());
         assert_eq!(status_result.working_directory, "apps/desktop".to_string());
-        assert_eq!(status_result.expected_url, Some("http://127.0.0.1:1420".to_string()));
+        assert_eq!(
+            status_result.expected_url,
+            Some("http://127.0.0.1:1420".to_string())
+        );
         assert_eq!(status_result.pid, Some(run_result.pid));
         assert_eq!(status_result.status, "running".to_string());
         assert!(status_result.stdout_preview.contains("running:"));
 
         assert_eq!(runs.len(), 1);
         assert!(runs[0].get("launched_at").and_then(Value::as_str).is_some());
-        assert_eq!(runs[0].get("last_status").and_then(Value::as_str), Some("running"));
-        assert!(runs[0].get("last_checked_at").and_then(Value::as_str).is_some());
+        assert_eq!(
+            runs[0].get("last_status").and_then(Value::as_str),
+            Some("running")
+        );
+        assert!(runs[0]
+            .get("last_checked_at")
+            .and_then(Value::as_str)
+            .is_some());
     }
 
     #[test]
     fn workspace_project_status_recovers_runtime_registry_from_invalid_json() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-repair-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-status-repair-{unique}"));
         let app_dir = workspace_root.join("apps/desktop");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
@@ -3844,7 +4673,11 @@ mod tests {
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
         fs::create_dir_all(runtime_registry_path.parent().unwrap()).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             app_dir.join("package.json"),
             concat!(
@@ -3873,7 +4706,9 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+        let status_result =
+            workspace_project_status("show the status of the desktop app local run".to_string())
+                .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
 
@@ -3892,8 +4727,12 @@ mod tests {
     fn workspace_project_status_migrates_legacy_runtime_registry_records() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-status-migrate-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-status-migrate-{unique}"));
         let app_dir = workspace_root.join("apps/desktop");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
@@ -3906,7 +4745,11 @@ mod tests {
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
         fs::create_dir_all(runtime_registry_path.parent().unwrap()).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             app_dir.join("package.json"),
             concat!(
@@ -3957,13 +4800,19 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let status_result = workspace_project_status("show the status of the desktop app local run".to_string()).unwrap();
+        let status_result =
+            workspace_project_status("show the status of the desktop app local run".to_string())
+                .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
 
         let repaired = fs::read_to_string(&runtime_registry_path).unwrap();
         let parsed: Value = serde_json::from_str(&repaired).unwrap();
-        let runs = parsed.get("runs").and_then(Value::as_array).cloned().unwrap_or_default();
+        let runs = parsed
+            .get("runs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let _ = fs::remove_dir_all(&workspace_root);
 
         assert_eq!(status_result.project_name, "desktop".to_string());
@@ -3971,17 +4820,32 @@ mod tests {
         assert_eq!(status_result.status, "running".to_string());
         assert_eq!(parsed.get("version").and_then(Value::as_u64), Some(1));
         assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].get("project_path").and_then(Value::as_str), Some("apps/desktop"));
-        assert_eq!(runs[0].get("launched_at").and_then(Value::as_str), Some("legacy-migrated"));
-        assert_eq!(runs[0].get("last_status").and_then(Value::as_str), Some("running"));
-        assert!(runs[0].get("last_checked_at").and_then(Value::as_str).is_some());
+        assert_eq!(
+            runs[0].get("project_path").and_then(Value::as_str),
+            Some("apps/desktop")
+        );
+        assert_eq!(
+            runs[0].get("launched_at").and_then(Value::as_str),
+            Some("legacy-migrated")
+        );
+        assert_eq!(
+            runs[0].get("last_status").and_then(Value::as_str),
+            Some("running")
+        );
+        assert!(runs[0]
+            .get("last_checked_at")
+            .and_then(Value::as_str)
+            .is_some());
     }
 
     #[test]
     fn workspace_project_stop_stops_matched_app_and_clears_runtime_handle() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-workspace-stop-{unique}"));
         let app_dir = workspace_root.join("apps/desktop");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
@@ -3990,7 +4854,11 @@ mod tests {
         fs::create_dir_all(&app_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             app_dir.join("package.json"),
             concat!(
@@ -4019,7 +4887,8 @@ mod tests {
         env::set_current_dir(&workspace_root).unwrap();
 
         let run_result = workspace_project_run("run the desktop app locally".to_string()).unwrap();
-        let stop_result = workspace_project_stop("stop the desktop app local run".to_string()).unwrap();
+        let stop_result =
+            workspace_project_stop("stop the desktop app local run".to_string()).unwrap();
         let registry_records = read_workspace_project_runtime_records(&workspace_root).unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
@@ -4039,8 +4908,12 @@ mod tests {
     fn workspace_project_npc_screenshot_capture_returns_error_without_active_runtime_handle() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-npc-screenshot-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-npc-screenshot-{unique}"));
         let project_dir = workspace_root.join("apps/cattle");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
@@ -4048,7 +4921,11 @@ mod tests {
         fs::create_dir_all(&project_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             project_dir.join("package.json"),
             concat!(
@@ -4077,7 +4954,8 @@ mod tests {
         env::set_current_dir(&workspace_root).unwrap();
 
         let error = workspace_project_npc_screenshot_capture(
-            "use npc collaboration to capture a screenshot from the matched cattle project now".to_string(),
+            "use npc collaboration to capture a screenshot from the matched cattle project now"
+                .to_string(),
         )
         .unwrap_err();
 
@@ -4088,7 +4966,8 @@ mod tests {
     }
 
     #[test]
-    fn workspace_project_npc_screenshot_capture_artifact_path_stays_inside_workspace_artifacts_root() {
+    fn workspace_project_npc_screenshot_capture_artifact_path_stays_inside_workspace_artifacts_root(
+    ) {
         let workspace_root = Path::new("E:/2026/opencow");
         let artifact_path =
             build_npc_showcase_screenshot_artifact_path(workspace_root, "cattle", "1700000000");
@@ -4102,8 +4981,12 @@ mod tests {
     fn workspace_project_npc_showcase_site_write_returns_error_without_screenshot_artifact() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-npc-showcase-site-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-npc-showcase-site-{unique}"));
         let project_dir = workspace_root.join("apps/cattle");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
@@ -4111,7 +4994,11 @@ mod tests {
         fs::create_dir_all(&project_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             project_dir.join("package.json"),
             concat!(
@@ -4154,7 +5041,8 @@ mod tests {
     }
 
     #[test]
-    fn workspace_project_npc_showcase_site_write_output_path_stays_inside_workspace_artifacts_root() {
+    fn workspace_project_npc_showcase_site_write_output_path_stays_inside_workspace_artifacts_root()
+    {
         let workspace_root = Path::new("E:/2026/opencow");
         let site_root = build_npc_showcase_site_root(workspace_root, "cattle");
 
@@ -4165,8 +5053,12 @@ mod tests {
     fn workspace_project_npc_showcase_publish_preview_returns_error_without_site_output() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-workspace-npc-publish-preview-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-npc-publish-preview-{unique}"));
         let project_dir = workspace_root.join("apps/cattle");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
@@ -4174,7 +5066,11 @@ mod tests {
         fs::create_dir_all(&project_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             project_dir.join("package.json"),
             concat!(
@@ -4221,20 +5117,31 @@ mod tests {
     fn workspace_project_npc_showcase_publish_preview_reads_deterministic_project_scoped_paths() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
-        let unique = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let workspace_root =
-            env::temp_dir().join(format!("opencow-workspace-npc-publish-preview-success-{unique}"));
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root = env::temp_dir().join(format!(
+            "opencow-workspace-npc-publish-preview-success-{unique}"
+        ));
         let project_dir = workspace_root.join("apps/cattle");
         let package_dir = workspace_root.join("packages/openclaw-adapter");
         let docs_dir = workspace_root.join("docs");
-        let artifacts_root = workspace_root.join(".opencow").join("artifacts").join("npc-showcase");
+        let artifacts_root = workspace_root
+            .join(".opencow")
+            .join("artifacts")
+            .join("npc-showcase");
         let site_root = artifacts_root.join("sites").join("cattle");
 
         fs::create_dir_all(&project_dir).unwrap();
         fs::create_dir_all(&package_dir).unwrap();
         fs::create_dir_all(&docs_dir).unwrap();
         fs::create_dir_all(&site_root).unwrap();
-        fs::write(workspace_root.join("package.json"), "{\n  \"name\": \"opencow\"\n}\n").unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
         fs::write(
             project_dir.join("package.json"),
             concat!(

@@ -51,7 +51,8 @@ export function createToolExecutionState(
         }
       },
       {
-        cacheCount: state.storage.cacheCount + 1
+        cacheCount: state.storage.cacheCount + 1,
+        logCount: state.storage.logCount + 1
       }
     ),
     rollbackEntryId,
@@ -112,12 +113,68 @@ export function createToolExecutionErrorState(
         }
       },
       {
-        cacheCount: state.storage.cacheCount + 1
+        cacheCount: state.storage.cacheCount + 1,
+        logCount: state.storage.logCount + 1
       }
     ),
     rollbackEntryId,
     "工具执行失败",
     `${payload.toolLabel} 失败，已写入修复建议与审计日志。`,
+    "tool"
+  );
+}
+
+export function createToolExecutionRecoveredState(state: WorkbenchState): WorkbenchState {
+  if (state.error?.module !== "tools") {
+    return state;
+  }
+
+  const rollbackEntryId = createWorkbenchEventId(state, "tool-error", "recovered");
+  const toolLabel = state.tools.lastResult?.toolLabel ?? "Tool";
+  const recoveryDetail = [
+    `Previous tool error: ${state.error.summary}`,
+    `Previous tool source: ${state.error.source}`,
+    `Previous tool detail: ${state.error.detail}`,
+    `Recovery hint: ${state.error.actionLabel}`
+  ].join(" ");
+
+  return recordRollbackEntry(
+    withStorageDelta(
+      {
+        ...state,
+        output: {
+          title: "工具错误已处理",
+          summary: `已保留 ${toolLabel} 的失败记录，并清除当前错误提示。完整恢复建议已保留在日志和展开详情中。`
+        },
+        conversation: {
+          entries: prependConversationEntry(state.conversation.entries, {
+            id: rollbackEntryId,
+            kind: "system",
+            title: "工具错误已处理",
+            summary: state.error.summary,
+            actionLabel: "预览回退到工具错误处理前",
+            rollbackTargetId: rollbackEntryId,
+            detailLines: ["模块: tools", "来源: tool_error_recovered", recoveryDetail]
+          })
+        },
+        audit: {
+          summary: "工具错误已处理",
+          lastEvent: {
+            module: "tools",
+            detail: recoveryDetail,
+            timestamp: "recovered",
+            source: "tool_error_recovered"
+          }
+        },
+        error: null
+      },
+      {
+        logCount: state.storage.logCount + 1
+      }
+    ),
+    rollbackEntryId,
+    "工具错误已处理",
+    recoveryDetail,
     "tool"
   );
 }

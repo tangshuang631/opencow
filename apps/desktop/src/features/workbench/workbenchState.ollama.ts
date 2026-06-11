@@ -1,7 +1,8 @@
 import type { OllamaOverview } from "../ollama/ollamaService";
 import { recordRollbackEntry } from "./workbenchState.rollback";
-import { prependConversationEntry } from "./workbenchState.shared";
 import type { WorkbenchState } from "./workbenchState.types";
+
+const PREFERRED_DEFAULT_CHAT_MODELS = ["gemma:26b", "gemma4:26b"];
 
 function getReachableOllamaDiagnostic(overview: OllamaOverview): string {
   if (overview.diagnostic) {
@@ -12,7 +13,30 @@ function getReachableOllamaDiagnostic(overview: OllamaOverview): string {
     return "No local Ollama models were found. Pull a model before starting chat.";
   }
 
+  if (
+    overview.selectedModel
+    && !overview.models.some((model) => model.name === overview.selectedModel)
+  ) {
+    return `Selected Ollama model is unavailable: ${overview.selectedModel}. Choose one of the detected local models before retrying.`;
+  }
+
   return "";
+}
+
+function getReachableOllamaActiveModel(overview: OllamaOverview): string {
+  const selectedModel = overview.selectedModel.trim();
+
+  if (selectedModel && overview.models.some((model) => model.name === selectedModel)) {
+    return selectedModel;
+  }
+
+  if (overview.models.length > 0) {
+    return overview.models.find((model) => PREFERRED_DEFAULT_CHAT_MODELS.includes(model.name))?.name
+      ?? overview.models[0]?.name
+      ?? "未选择模型";
+  }
+
+  return "未选择模型";
 }
 
 export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverview): WorkbenchState {
@@ -27,16 +51,6 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
           activeModel: overview.selectedModel || "未选择模型",
           diagnostic: overview.diagnostic,
           availableModels: overview.models
-        },
-        conversation: {
-          entries: prependConversationEntry(state.conversation.entries, {
-            id: "ollama-offline",
-            kind: "system",
-            title: "Ollama 检查失败",
-            summary: overview.diagnostic,
-            actionLabel: "预览回退到 启动基线",
-            rollbackTargetId: "startup-baseline"
-          })
         },
         audit: {
           summary: "Ollama 离线，等待本地服务恢复",
@@ -63,6 +77,22 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
     );
   }
 
+  const diagnostic = getReachableOllamaDiagnostic(overview);
+  const selectedModelUnavailable = Boolean(
+    overview.selectedModel.trim()
+      && !overview.models.some((model) => model.name === overview.selectedModel.trim())
+  );
+  const auditSummary = selectedModelUnavailable
+    ? "Ollama 模型需要重新选择"
+    : `已读取 ${overview.models.length} 个本地模型`;
+  const auditDetail = selectedModelUnavailable
+    ? diagnostic
+    : `${overview.endpoint} 已返回模型列表。`;
+  const rollbackLabel = selectedModelUnavailable ? auditSummary : "Ollama 检查";
+  const rollbackSummary = selectedModelUnavailable
+    ? diagnostic
+    : `已完成 ${overview.models.length} 个本地模型的读取检查。`;
+
   return recordRollbackEntry(
     {
       ...state,
@@ -70,25 +100,15 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         ...state.model,
         status: "Ollama 已连接",
         endpoint: overview.endpoint,
-        activeModel: overview.selectedModel || "未选择模型",
-        diagnostic: getReachableOllamaDiagnostic(overview),
+        activeModel: getReachableOllamaActiveModel(overview),
+        diagnostic,
         availableModels: overview.models
       },
-      conversation: {
-        entries: prependConversationEntry(state.conversation.entries, {
-          id: "ollama-ready",
-          kind: "system",
-          title: "本地模型读取完成",
-          summary: `已读取 ${overview.models.length} 个本地模型，当前模型 ${overview.selectedModel || "未选择模型"}。`,
-          actionLabel: "预览回退到 启动基线",
-          rollbackTargetId: "startup-baseline"
-        })
-      },
       audit: {
-        summary: `已读取 ${overview.models.length} 个本地模型`,
+        summary: auditSummary,
         lastEvent: {
           module: "ollama",
-          detail: `${overview.endpoint} 已返回模型列表。`,
+          detail: auditDetail,
           timestamp: "本地最近一次检查",
           source: "ollama_overview"
         }
@@ -96,8 +116,8 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
       error: null
     },
     "ollama-check-ready",
-    "Ollama 检查",
-    `已完成 ${overview.models.length} 个本地模型的读取检查。`,
+    rollbackLabel,
+    rollbackSummary,
     "session"
   );
 }
@@ -110,17 +130,6 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
         ...state.model,
         status: "等待 Ollama",
         diagnostic: detail
-      },
-      conversation: {
-        entries: prependConversationEntry(state.conversation.entries, {
-          id: "ollama-load-error",
-          kind: "system",
-          title: "Ollama 状态读取异常",
-          summary: detail,
-          detailLines: ["模块: ollama", "来源: ollama_overview", "建议: 检查 Ollama 服务"],
-          actionLabel: "预览回退到 启动基线",
-          rollbackTargetId: "startup-baseline"
-        })
       },
       audit: {
         summary: "Ollama 状态读取失败，工作台保持可用",
@@ -143,6 +152,42 @@ export function createOllamaLoadErrorState(state: WorkbenchState, detail: string
     "ollama-load-error",
     "异常保护",
     "Ollama 状态读取异常，工作台保留在最近一次安全状态。",
+    "session"
+  );
+}
+
+export function createModelSelectedState(state: WorkbenchState, modelName: string): WorkbenchState {
+  const selectedModel = state.model.availableModels.find((model) => model.name === modelName);
+
+  if (!selectedModel) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      model: {
+        ...state.model,
+        activeModel: selectedModel.name
+      },
+      output: {
+        title: "本地模型已切换",
+        summary: `当前使用 ${selectedModel.name}。`
+      },
+      audit: {
+        summary: `已选择本地模型 ${selectedModel.name}`,
+        lastEvent: {
+          module: "ollama",
+          detail: `Selected local Ollama model: ${selectedModel.name}. Size: ${selectedModel.sizeLabel}.`,
+          timestamp: "本地最近一次选择",
+          source: "ollama_model_selected"
+        }
+      },
+      error: state.error?.module === "ollama" ? null : state.error
+    },
+    "ollama-model-selected",
+    "模型选择",
+    `已选择本地模型 ${selectedModel.name}。`,
     "session"
   );
 }

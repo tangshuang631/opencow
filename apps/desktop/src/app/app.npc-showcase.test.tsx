@@ -7,13 +7,15 @@ const {
   runWorkspaceProjectMock,
   captureNpcLocalProjectScreenshotMock,
   writeNpcLocalProjectShowcaseSiteMock,
-  loadNpcLocalProjectShowcasePublishPreviewMock
+  loadNpcLocalProjectShowcasePublishPreviewMock,
+  loadNpcLocalProjectShowcaseGitConfirmationPreviewMock
 } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
   runWorkspaceProjectMock: vi.fn(),
   captureNpcLocalProjectScreenshotMock: vi.fn(),
   writeNpcLocalProjectShowcaseSiteMock: vi.fn(),
-  loadNpcLocalProjectShowcasePublishPreviewMock: vi.fn()
+  loadNpcLocalProjectShowcasePublishPreviewMock: vi.fn(),
+  loadNpcLocalProjectShowcaseGitConfirmationPreviewMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -30,9 +32,16 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     runWorkspaceProject: runWorkspaceProjectMock,
     captureNpcLocalProjectScreenshot: captureNpcLocalProjectScreenshotMock,
     writeNpcLocalProjectShowcaseSite: writeNpcLocalProjectShowcaseSiteMock,
-    loadNpcLocalProjectShowcasePublishPreview: loadNpcLocalProjectShowcasePublishPreviewMock
+    loadNpcLocalProjectShowcasePublishPreview: loadNpcLocalProjectShowcasePublishPreviewMock,
+    loadNpcLocalProjectShowcaseGitConfirmationPreview: loadNpcLocalProjectShowcaseGitConfirmationPreviewMock
   };
 });
+
+const SELECTED_LOCAL_MODEL_NAME = "\u9009\u62e9\u6a21\u578b\uff1aqwen2.5-coder:7b";
+
+async function waitForSelectedLocalModel() {
+  await screen.findByRole("button", { name: SELECTED_LOCAL_MODEL_NAME });
+}
 
 describe("App npc local run flow", () => {
   it("continues from npc showcase run permission approval into the final run result", async () => {
@@ -56,7 +65,7 @@ describe("App npc local run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -107,7 +116,7 @@ describe("App npc local run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -159,7 +168,7 @@ describe("App npc local run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -212,7 +221,7 @@ describe("App npc local run flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -237,6 +246,58 @@ describe("App npc local run flow", () => {
       expect(
         screen.getAllByText(
           /NPC local project showcase publish preview|cattle|apps\/cattle|\.opencow\/artifacts\/npc-showcase\/sites\/cattle|index\.html|Git commit or push is still separate/i
+        ).length
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  it("continues from readonly npc showcase git confirmation preview into the final result without permission prompts", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcLocalProjectShowcaseGitConfirmationPreviewMock.mockResolvedValueOnce({
+      project_name: "cattle",
+      project_path: "apps/cattle",
+      site_root: ".opencow/artifacts/npc-showcase/sites/cattle",
+      entry_file: ".opencow/artifacts/npc-showcase/sites/cattle/index.html",
+      changed_paths: [".opencow/artifacts/npc-showcase/sites/cattle/index.html"],
+      source_screenshot_path: ".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png",
+      recommended_git_action: "commit",
+      required_confirmation_stage: "Git commit or push still requires its own explicit confirmation and execution stage.",
+      summary: "NPC local project showcase git confirmation preview summarized the current showcase-related changes without executing git."
+    });
+
+    const { container } = render(<App />);
+
+    await waitForSelectedLocalModel();
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "use npc collaboration to prepare the showcase changes for commit for the matched cattle project" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(
+          /Workspace write permission is required before NPC collaboration can|需要权限|dangerous confirmation/i
+        )
+      ).toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(
+          /NPC local project showcase git confirmation preview|cattle|apps\/cattle|\.opencow\/artifacts\/npc-showcase\/sites\/cattle|index\.html|commit|explicit confirmation/i
         ).length
       ).toBeGreaterThan(0);
     });

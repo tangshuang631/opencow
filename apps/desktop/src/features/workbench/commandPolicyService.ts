@@ -3,7 +3,7 @@ import { guardExecutionPlan } from "@opencow/safety-engine";
 import { planControlledCommand } from "@opencow/shell-runtime";
 import type { WorkbenchState } from "./workbenchState";
 
-const desktopWorkspaceRoot = "E:\\2026\\opencow";
+const fallbackDesktopWorkspaceRoot = "E:\\2026\\opencow";
 
 export type DangerousCommandPolicyResult =
   | {
@@ -29,13 +29,19 @@ export type DangerousCommandPolicyResult =
       source: string;
     };
 
-export function evaluateDangerousCommandPolicy(state: WorkbenchState): DangerousCommandPolicyResult {
+export function evaluateDangerousCommandPolicy(
+  state: WorkbenchState,
+  options: { snapshotAvailable?: boolean; workspaceRoot?: string; commandCwd?: string } = {}
+): DangerousCommandPolicyResult {
   const command = "Remove-Item .\\temp-output -Recurse";
+  const snapshotAvailable = options.snapshotAvailable ?? true;
+  const workspaceRoot = options.workspaceRoot?.trim() || fallbackDesktopWorkspaceRoot;
+  const commandCwd = options.commandCwd?.trim() || workspaceRoot;
 
   const plan = planControlledCommand({
     command,
-    cwd: desktopWorkspaceRoot,
-    allowedRoots: [desktopWorkspaceRoot],
+    cwd: commandCwd,
+    allowedRoots: [workspaceRoot],
     permissionMode: state.permission.mode,
     timeoutMs: 20_000
   });
@@ -52,7 +58,17 @@ export function evaluateDangerousCommandPolicy(state: WorkbenchState): Dangerous
   }
 
   if (plan.status === "needs-confirmation") {
-    const safety = guardExecutionPlan(plan, { snapshotAvailable: true });
+    const safety = guardExecutionPlan(plan, { snapshotAvailable });
+
+    if (safety.status === "blocked") {
+      return {
+        kind: "blocked",
+        summary: "高风险命令已阻断",
+        detail: "无法创建回退快照，安全链路已阻断高风险删除命令。",
+        actionLabel: "不要执行删除命令；请先恢复快照能力，或改为只读预览。",
+        source: "safety_snapshot_unavailable"
+      };
+    }
 
     return {
       kind: "confirmation",

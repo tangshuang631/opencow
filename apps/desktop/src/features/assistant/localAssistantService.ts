@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type WorkspaceOverview = {
   root_name: string;
+  root_path: string;
   entry_count: number;
   package_count: number;
   package_names: string[];
@@ -144,6 +145,17 @@ export type OpencowSelfRepairEnabledSkillsRegistryResult = {
   preserved_entry_count: number;
   verified_version: number;
   verified_entry_count: number;
+  summary: string;
+};
+
+export type OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult = {
+  query: string;
+  repair_target: "workspace-project-runtime-registry";
+  repaired_path: string;
+  status: "repaired";
+  preserved_entry_count: number;
+  verified_version: number;
+  verified_run_count: number;
   summary: string;
 };
 
@@ -295,6 +307,18 @@ export type WorkspaceProjectNpcShowcasePublishPreviewResult = {
   summary: string;
 };
 
+export type WorkspaceProjectNpcShowcaseGitConfirmationPreviewResult = {
+  project_name: string;
+  project_path: string;
+  site_root: string;
+  entry_file: string;
+  changed_paths: string[];
+  source_screenshot_path: string;
+  recommended_git_action: "commit" | "push";
+  required_confirmation_stage: string;
+  summary: string;
+};
+
 export type ReadonlyShellCommandResult = {
   command_id: ReadonlyShellCommandId;
   command_label: string;
@@ -387,6 +411,21 @@ export async function repairOpencowEnabledSkillsRegistry(
   return invoke<OpencowSelfRepairEnabledSkillsRegistryResult>("opencow_self_repair_enabled_skills_registry", {
     query
   });
+}
+
+export async function repairOpencowWorkspaceProjectRuntimeRegistry(
+  query: string
+): Promise<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewOpencowWorkspaceProjectRuntimeRegistryRepair(query);
+  }
+
+  return invoke<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult>(
+    "opencow_self_repair_workspace_project_runtime_registry",
+    {
+      query
+    }
+  );
 }
 
 export async function listEnabledLocalSkills(): Promise<EnabledLocalSkillsResult> {
@@ -582,6 +621,21 @@ export async function loadNpcLocalProjectShowcasePublishPreview(
   );
 }
 
+export async function loadNpcLocalProjectShowcaseGitConfirmationPreview(
+  query: string
+): Promise<WorkspaceProjectNpcShowcaseGitConfirmationPreviewResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcProjectShowcaseGitConfirmationPreview(query);
+  }
+
+  return invoke<WorkspaceProjectNpcShowcaseGitConfirmationPreviewResult>(
+    "workspace_project_npc_showcase_git_confirmation_preview",
+    {
+      query
+    }
+  );
+}
+
 export async function runControlledFullShellCommand(
   commandId: ControlledFullShellCommandId
 ): Promise<ControlledFullShellCommandResult> {
@@ -601,6 +655,7 @@ function hasTauriInvoke(): boolean {
 function createBrowserPreviewOverview(): WorkspaceOverview {
   return {
     root_name: "opencow",
+    root_path: "E:\\2026\\opencow",
     entry_count: 7,
     package_count: 0,
     package_names: [],
@@ -834,6 +889,30 @@ function createBrowserPreviewNpcProjectShowcasePublishPreview(
   };
 }
 
+function createBrowserPreviewNpcProjectShowcaseGitConfirmationPreview(
+  query: string
+): WorkspaceProjectNpcShowcaseGitConfirmationPreviewResult {
+  const prefersCattle = /\bcattle\b/i.test(query);
+  const projectName = prefersCattle ? "cattle" : "desktop";
+  const siteRoot = `.opencow/artifacts/npc-showcase/sites/${projectName}`;
+  const entryFile = `${siteRoot}/index.html`;
+  const recommended_git_action = /\bpush\b/i.test(query) ? "push" : "commit";
+
+  return {
+    project_name: projectName,
+    project_path: prefersCattle ? "apps/cattle" : "apps/desktop",
+    site_root: siteRoot,
+    entry_file: entryFile,
+    changed_paths: [entryFile],
+    source_screenshot_path: prefersCattle
+      ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
+      : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
+    recommended_git_action,
+    required_confirmation_stage: "Git commit or push still requires its own explicit confirmation and execution stage.",
+    summary: "Browser preview mode returned a mock NPC local project showcase git confirmation preview result."
+  };
+}
+
 function createBrowserPreviewCapabilityOverview(capabilityId: OpenClawCapabilityId): OpenClawCapabilityOverview {
   const previews: Record<OpenClawCapabilityId, Omit<OpenClawCapabilityOverview, "capability_id">> = {
     rag: {
@@ -996,6 +1075,21 @@ function createBrowserPreviewOpencowEnabledSkillsRegistryRepair(
     verified_version: 1,
     verified_entry_count: 0,
     summary: "Browser preview mode rewrote the workspace enabled skills registry to the default verified schema."
+  };
+}
+
+function createBrowserPreviewOpencowWorkspaceProjectRuntimeRegistryRepair(
+  query: string
+): OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult {
+  return {
+    query,
+    repair_target: "workspace-project-runtime-registry",
+    repaired_path: ".opencow/runtime/workspace-project-runs.json",
+    status: "repaired",
+    preserved_entry_count: 0,
+    verified_version: 1,
+    verified_run_count: 0,
+    summary: "Browser preview mode rewrote the workspace project runtime registry to the default verified schema."
   };
 }
 

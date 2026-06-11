@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeAssistantTask, planAssistantTask } from "./assistantTaskService";
 
 const { searchLocalKnowledgeMock } = vi.hoisted(() => ({
@@ -15,12 +15,38 @@ vi.mock("./localAssistantService", async () => {
 });
 
 describe("assistantTaskService local rag search", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("plans a local RAG search task from knowledge retrieval requests", () => {
     const plan = planAssistantTask("search local knowledge for shell permission rules", "readonly");
 
     expect(plan).toMatchObject({
       kind: "rag-local-doc-search",
       title: "Local RAG document search"
+    });
+  });
+
+  it("plans a local RAG search task for long pptx docx and markdown document requests", () => {
+    const message = "summarize the long pptx docx and md documents in this workspace";
+    const plan = planAssistantTask(message, "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "rag-local-doc-search",
+      title: "Local RAG document search",
+      summary: message
+    });
+  });
+
+  it("plans a local RAG search task for Chinese long document requests", () => {
+    const message = "\u603b\u7ed3\u8fd9\u4e2a\u5de5\u4f5c\u533a\u91cc\u7684 pptx docx md \u957f\u6587\u6863";
+    const plan = planAssistantTask(message, "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "rag-local-doc-search",
+      title: "Local RAG document search",
+      summary: message
     });
   });
 
@@ -58,5 +84,108 @@ describe("assistantTaskService local rag search", () => {
     expect(result.resultSummary).toContain("2 matching passages across 7 indexed documents");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
+  });
+
+  it("executes long document RAG searches with the original user request as the query", async () => {
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: "summarize the long pptx docx and md documents in this workspace",
+      summary: "Local knowledge search found 3 matching passages across 9 indexed documents.",
+      match_count: 3,
+      indexed_document_count: 9,
+      items: [
+        {
+          path: "docs/overview.md",
+          title: "overview.md",
+          snippet: "Markdown workspace overview.",
+          score: 33
+        },
+        {
+          path: "docs/slides/product-roadmap.pptx",
+          title: "product-roadmap.pptx",
+          snippet: "PPTX roadmap content.",
+          score: 31
+        }
+      ]
+    });
+
+    const plan = planAssistantTask("summarize the long pptx docx and md documents in this workspace", "readonly");
+    const result = await executeAssistantTask(plan);
+
+    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith(
+      "summarize the long pptx docx and md documents in this workspace"
+    );
+    expect(result.resultTitle).toBe("Local RAG document search");
+    expect(result.resultSummary).toContain("overview.md");
+    expect(result.resultSummary).toContain("product-roadmap.pptx");
+  });
+
+  it("executes Chinese long document RAG searches with the original user request as the query", async () => {
+    const message = "\u603b\u7ed3\u8fd9\u4e2a\u5de5\u4f5c\u533a\u91cc\u7684 pptx docx md \u957f\u6587\u6863";
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: message,
+      summary: "Local knowledge search found 2 matching passages across 8 indexed documents.",
+      match_count: 2,
+      indexed_document_count: 8,
+      items: [
+        {
+          path: "docs/report.docx",
+          title: "report.docx",
+          snippet: "Docx report content.",
+          score: 30
+        },
+        {
+          path: "docs/notes.md",
+          title: "notes.md",
+          snippet: "Markdown notes content.",
+          score: 28
+        }
+      ]
+    });
+
+    const plan = planAssistantTask(message, "readonly");
+    const result = await executeAssistantTask(plan);
+
+    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith(message);
+    expect(result.resultTitle).toBe("Local RAG document search");
+    expect(result.resultSummary).toContain("report.docx");
+    expect(result.resultSummary).toContain("notes.md");
+  });
+
+  it("adds query and recovery context when local RAG document search fails", async () => {
+    searchLocalKnowledgeMock.mockRejectedValueOnce(
+      new Error("local knowledge index could not be opened.")
+    );
+
+    await expect(
+      executeAssistantTask({
+        kind: "rag-local-doc-search",
+        title: "Local RAG document search",
+        summary: "summarize the long pptx docx and md documents in this workspace",
+        auditSummary: "Local assistant planned a local RAG document search.",
+        auditDetail: "Readonly local RAG search task."
+      } as const)
+    ).rejects.toThrow(
+      /Local RAG search failed in assistantTaskService\. Query: summarize the long pptx docx and md documents in this workspace\. Underlying error: local knowledge index could not be opened\. Next step: verify the local RAG index, document parsers for pptx\/docx\/md, workspace root discovery, and retry with a narrower document query before continuing\./i
+    );
+  });
+
+  it("executes readonly network search guidance without making a network call", async () => {
+    const message = "search the web for latest local RAG indexing approaches";
+
+    const result = await executeAssistantTask({
+      kind: "network-search-guidance",
+      title: "Network search guidance",
+      summary: message,
+      auditSummary: "Local assistant planned readonly network search guidance.",
+      auditDetail: "Readonly network search guidance task."
+    } as const);
+
+    expect(searchLocalKnowledgeMock).not.toHaveBeenCalled();
+    expect(result.resultTitle).toBe("Network search guidance");
+    expect(result.resultSummary).toContain("No external network search was run");
+    expect(result.resultSummary).toContain("Provider status: not configured");
+    expect(result.resultSummary).toContain("Network call skipped");
+    expect(result.resultSummary).toContain("Next repair step");
+    expect(result.resultSummary).toContain(message);
   });
 });

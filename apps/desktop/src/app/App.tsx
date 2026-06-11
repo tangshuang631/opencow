@@ -1,7 +1,15 @@
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { executeAssistantTask, planAssistantTask } from "../features/assistant/assistantTaskService";
-import { loadOllamaOverview } from "../features/ollama/ollamaService";
+import {
+  createLocalModelFailureDiagnostics,
+  createLocalModelLengthRecoveryHint,
+  createLocalModelTimeoutRecoveryHint
+} from "../features/assistant/localRecoveryStrategy";
+import { cancelOllamaChat, chatWithOllamaModel, loadOllamaOverview } from "../features/ollama/ollamaService";
+import type { OllamaOverview } from "../features/ollama/ollamaService";
+import { resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { Workbench } from "../features/workbench/Workbench";
+import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapability";
 import {
   applyPendingRollbackState,
   approvePendingConfirmationState,
@@ -9,28 +17,39 @@ import {
   cancelPendingConfirmationState,
   cancelPendingRollbackState,
   cancelPermissionModeChangeState,
+  createAssistantPlanningFailedState,
   createCapabilityToggleRequestState,
+  createCommandPolicyBlockedState,
+  createDuplicatePlanningFailureSkippedState,
+  createDuplicatePendingApprovalSkippedState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
+  createNewConversationState,
+  createModelSelectedState,
   createOllamaLoadErrorState,
   createRemoteApiConfigState,
   createRemoteApiToggleState,
   createRollbackLimitUpdatedState,
   createSearchProviderConfigState,
   createSearchToggleState,
+  createStaleActiveTaskSlotRecoveredState,
   createStorageCleanupState,
   createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
+  createTaskMissingExecutionKindFailedState,
+  createTaskExecutionProgressState,
   createTaskExecutionRetriedState,
   createTaskExecutionStartedState,
+  createTaskExecutionStreamingChunkState,
   createTaskExecutionSucceededState,
+  createToolExecutionRecoveredState,
   createUserTaskSubmittedState,
   mergeOllamaOverview,
   requestPermissionModeChangeState,
   requestRollbackPreviewState
 } from "../features/workbench/workbenchState";
-import type { WorkbenchState } from "../features/workbench/workbenchState";
-import type { AssistantTaskPlanResult } from "../features/assistant/assistantTaskService";
+import type { PermissionMode, WorkbenchState } from "../features/workbench/workbenchState";
+import type { AssistantTaskExecutionResult, AssistantTaskPlanResult } from "../features/assistant/assistantTaskService";
 
 const CONTINUATION_PREVIEW_KINDS = new Set([
   "opencow-self-repair-preview",
@@ -38,8 +57,693 @@ const CONTINUATION_PREVIEW_KINDS = new Set([
   "skills-local-enabled-rag-shell-handoff-preview",
   "npc-local-enabled-rag-shell-handoff-preview"
 ]);
+const CONTINUATION_CANCELLED_SOURCES = new Set([
+  "permission_confirmation_cancelled",
+  "permission_mode_change_cancelled",
+  "capability_toggle_cancelled",
+  "permission_escalation_loop_guard",
+  "dangerous_confirmation_loop_guard",
+  "controlled_full_confirmation_required_guard"
+]);
 const MAX_LOCAL_TASK_ATTEMPTS = 3;
 const LOCAL_TASK_TIMEOUT_MS = 45_000;
+const LOCAL_MODEL_CHAT_TIMEOUT_MS = 480_000;
+const LONG_LOCAL_MODEL_CHAT_TIMEOUT_MS = 480_000;
+const LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT = createLocalModelLengthRecoveryHint();
+const LOCAL_MODEL_CONTINUATION_TAIL_LIMIT = 1200;
+const LOCAL_MODEL_PROGRESS_INTERVAL_MS = 15_000;
+const MAX_CHAT_SEARCH_CONTEXT_ITEMS = 3;
+const MAX_CHAT_SEARCH_FIELD_LENGTH = 240;
+const PREFERRED_DEFAULT_CHAT_MODELS = ["gemma:26b", "gemma4:26b"];
+const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
+  readonly: 0,
+  "workspace-write": 1,
+  "controlled-full": 2
+};
+const SUPPORTED_ASSISTANT_PLAN_KINDS = new Set<string>([
+  "local-model-chat",
+  "workspace-overview",
+  "packages-overview",
+  "workspace-config-overview",
+  "opencow-self-repair-preview",
+  "opencow-self-repair-target-guidance",
+  "opencow-self-repair-enabled-skills-registry",
+  "opencow-self-repair-workspace-project-runtime-registry",
+  "capability-rag-overview",
+  "capability-skills-overview",
+  "skills-local-scan",
+  "skills-local-inspect",
+  "skills-local-install",
+  "skills-local-enable",
+  "skills-local-disable",
+  "skills-local-enabled-list",
+  "skills-local-enabled-match",
+  "skills-local-enabled-shell-create-temp-output",
+  "skills-local-enabled-shell-remove-temp-output",
+  "npc-local-enabled-shell-create-temp-output",
+  "npc-local-enabled-shell-remove-temp-output",
+  "npc-local-enabled-rag-shell-create-temp-output",
+  "npc-local-enabled-rag-shell-remove-temp-output",
+  "skills-local-enabled-rag-doc-search",
+  "rag-local-shell-handoff-preview",
+  "skills-local-enabled-rag-shell-handoff-preview",
+  "npc-local-enabled-rag-shell-handoff-preview",
+  "rag-local-shell-create-temp-output",
+  "rag-local-shell-remove-temp-output",
+  "skills-local-enabled-rag-shell-create-temp-output",
+  "skills-local-enabled-rag-shell-remove-temp-output",
+  "npc-local-collaboration-preview",
+  "npc-local-project-showcase-preview",
+  "npc-local-project-run",
+  "npc-local-project-screenshot-capture",
+  "npc-local-project-showcase-site-write",
+  "npc-local-project-showcase-publish-preview",
+  "npc-local-project-showcase-git-confirmation-preview",
+  "npc-local-shell-plan-preview",
+  "capability-npc-overview",
+  "capability-mcp-overview",
+  "mcp-local-plugin-scan",
+  "mcp-local-plugin-inspect",
+  "mcp-local-plugin-start-preview",
+  "mcp-local-plugin-start",
+  "rag-local-doc-search",
+  "network-search-guidance",
+  "readonly-shell-git-status",
+  "readonly-shell-workspace-root",
+  "readonly-shell-packages-dir",
+  "workspace-write-create-temp-output",
+  "workspace-project-run",
+  "workspace-project-status",
+  "workspace-project-stop",
+  "controlled-full-remove-temp-output",
+  "permission-request",
+  "confirmation"
+]);
+
+function isRepeatedApprovedPermissionRequest(requestedMode: PermissionMode, approvedMode: PermissionMode): boolean {
+  return PERMISSION_MODE_RANK[requestedMode] <= PERMISSION_MODE_RANK[approvedMode];
+}
+
+function inferPermissionModeForExecutionKind(executionKind: string | undefined): PermissionMode {
+  if (!executionKind) {
+    return "readonly";
+  }
+
+  if (executionKind.includes("controlled-full")) {
+    return "controlled-full";
+  }
+
+  if (
+    executionKind.includes("workspace-write")
+    || executionKind.includes("site-write")
+    || executionKind.includes("install")
+    || executionKind.includes("enable")
+    || executionKind.includes("disable")
+    || executionKind.includes("repair")
+    || executionKind.includes("project-run")
+    || executionKind.includes("project-stop")
+    || executionKind.includes("screenshot-capture")
+  ) {
+    return "workspace-write";
+  }
+
+  return "readonly";
+}
+
+function isExecutionKindAllowedForPermission(
+  executionKind: string | undefined,
+  approvedMode: PermissionMode
+): boolean {
+  return PERMISSION_MODE_RANK[inferPermissionModeForExecutionKind(executionKind)] <= PERMISSION_MODE_RANK[approvedMode];
+}
+
+function isRepeatedApprovedDangerousConfirmation(
+  pending: NonNullable<WorkbenchState["confirmation"]["pending"]>,
+  next: Extract<AssistantTaskPlanResult, { kind: "confirmation" }>
+): boolean {
+  return pending.title === next.title
+    && pending.summary === next.summary
+    && pending.commandPreview === next.commandPreview
+    && pending.impact === next.impact
+    && pending.requiredMode === next.requiredMode
+    && pending.safetySummary === next.safetySummary
+    && pending.queuedMessage === next.queuedMessage;
+}
+
+function isOpencowSelfRepairExecutionKind(kind: string | undefined): boolean {
+  return typeof kind === "string" && kind.startsWith("opencow-self-repair-");
+}
+
+function createOpencowSelfRepairFailureActionLabel(
+  executionKind: string | undefined,
+  auditDetail: string | undefined
+): string {
+  const descriptor = resolveOpencowSelfRepairTargetDescriptor(auditDetail ?? "");
+
+  if (
+    (executionKind === "opencow-self-repair-preview"
+      || executionKind === "opencow-self-repair-enabled-skills-registry"
+      || executionKind === "opencow-self-repair-workspace-project-runtime-registry")
+    && descriptor.path
+    && descriptor.continueRequest
+  ) {
+    return `Automatic self-repair was stopped to avoid retry loops. Check ${descriptor.path} first. If you want opencow to try again after you review it, say: ${descriptor.continueRequest}.`;
+  }
+
+  if (executionKind === "opencow-self-repair-preview") {
+    return (
+      "Automatic self-repair was stopped to avoid retry loops. No specific repair target was confirmed yet. " +
+      "Choose a narrower next target and ask opencow to continue with either the enabled skills registry " +
+      "or the workspace project runtime registry. Example next requests: " +
+      "`diagnose opencow and continue repairing its enabled skills registry` or " +
+      "`diagnose opencow and continue repairing its workspace project runtime registry`."
+    );
+  }
+
+  return "Automatic self-repair was stopped to avoid retry loops. Review the failure detail and help opencow by fixing the target file, narrowing the request, or granting the next required permission only if it matches your intent.";
+}
+
+function createLocalTaskFailureActionLabel(detail: string, executionKind: string | undefined): string {
+  if (executionKind === "local-model-chat") {
+    return createLocalModelChatFailureActionLabel(detail);
+  }
+
+  const shellNextStep = detail.match(/Next(?: repair)? step:\s*(.+?)(?:\s*$)/i)?.[1]?.trim();
+
+  if (shellNextStep) {
+    return shellNextStep;
+  }
+
+  const shellRecoveryStep = createShellFailureRecoveryStep(detail, executionKind);
+
+  if (shellRecoveryStep) {
+    return shellRecoveryStep;
+  }
+
+  return `inspect assistantTaskService result mapping for ${executionKind ?? "unknown-task"} before retrying.`;
+}
+
+function createShellFailureRecoveryStep(detail: string, executionKind: string | undefined): string | null {
+  const normalizedRoute = `${executionKind ?? ""}\n${detail}`.toLowerCase();
+  const shellRecoveryNarrative = getShellDialogRecoveryNarrative();
+
+  if (normalizedRoute.includes("readonly-shell") || normalizedRoute.includes("required permission: readonly")) {
+    return [
+      "verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying.",
+      shellRecoveryNarrative
+    ].join("\n");
+  }
+
+  if (
+    normalizedRoute.includes("workspace-write")
+    || normalizedRoute.includes("workspace_write")
+    || normalizedRoute.includes("required permission: workspace-write")
+  ) {
+    return [
+      "verify the permission approval, workspace root, command whitelist, and audit trail before retrying.",
+      shellRecoveryNarrative
+    ].join("\n");
+  }
+
+  if (
+    normalizedRoute.includes("controlled-full")
+    || normalizedRoute.includes("controlled_full")
+    || normalizedRoute.includes("required permission: controlled-full")
+  ) {
+    return [
+      "verify the dangerous confirmation, rollback snapshot availability, workspace root, command whitelist, and audit trail before retrying.",
+      shellRecoveryNarrative
+    ].join("\n");
+  }
+
+  return null;
+}
+
+function getShellSelfCheckRetryMessage(task: WorkbenchState["tasks"]["items"][number] | undefined): string | null {
+  const recoveryHint = task?.lastFailureActionLabel?.trim();
+
+  if (!recoveryHint || !task?.lastFailureDetail) {
+    return null;
+  }
+
+  if (
+    !/\bshell\b/i.test(task.executionKind ?? "")
+    && !/\bshell execution (?:failed|blocked)/i.test(task.lastFailureDetail)
+  ) {
+    return null;
+  }
+
+  const shouldRunReadonlyShellSelfCheck =
+    /^verify .+ before retrying\.?$/i.test(recoveryHint)
+    || /\brun a readonly preview before retrying destructive execution\b/i.test(recoveryHint);
+
+  return shouldRunReadonlyShellSelfCheck
+    ? recoveryHint.endsWith(".")
+      ? recoveryHint
+      : `${recoveryHint}.`
+    : null;
+}
+
+function getRagSelfCheckRetryMessage(task: WorkbenchState["tasks"]["items"][number] | undefined): string | null {
+  if (!task?.lastFailureDetail) {
+    return null;
+  }
+
+  const normalizedRoute = `${task.executionKind ?? ""}\n${task.lastFailureDetail}`.toLowerCase();
+  const isLocalRagExecutionKind =
+    task.executionKind === "rag-local-doc-search"
+    || task.executionKind === "skills-local-enabled-rag-doc-search";
+
+  if (
+    !isLocalRagExecutionKind
+    && !normalizedRoute.includes("local rag search failed in assistanttaskservice")
+    && !normalizedRoute.includes("skill-assisted local rag search failed in assistanttaskservice")
+    && !normalizedRoute.includes("local knowledge index")
+    && !normalizedRoute.includes("document parsers for pptx/docx/md")
+  ) {
+    return null;
+  }
+
+  return (
+    "inspect local OpenClaw RAG capability wiring, local knowledge index availability, " +
+    "document parsers for pptx/docx/md, workspace root discovery, and audit trail before retrying."
+  );
+}
+
+function isLocalModelContextOverflowFailure(
+  task: WorkbenchState["tasks"]["items"][number] | undefined
+): task is WorkbenchState["tasks"]["items"][number] {
+  if (task?.executionKind !== "local-model-chat" || !task.lastFailureDetail) {
+    return false;
+  }
+
+  const normalizedDetail = task.lastFailureDetail.toLowerCase();
+
+  return normalizedDetail.includes("context length")
+    || normalizedDetail.includes("context window")
+    || normalizedDetail.includes("prompt too long")
+    || normalizedDetail.includes("input too long");
+}
+
+function createLocalModelContextOverflowRagRetryState(
+  state: WorkbenchState,
+  failedTask: WorkbenchState["tasks"]["items"][number]
+): WorkbenchState {
+  const retryMessage = [
+    "用本地 RAG/摘要分段处理这条过长输入。",
+    failedTask.summary
+  ].join(" ");
+
+  return createUserTaskSubmittedState(state, {
+    message: retryMessage,
+    executionKind: "rag-local-doc-search",
+    executionTitle: "Local RAG document search",
+    executionAuditSummary: "Local assistant routed a context-length local model retry into readonly local RAG.",
+    executionAuditDetail: [
+      "Readonly local RAG retry after local model context-length failure.",
+      `Original task: ${failedTask.summary}`,
+      failedTask.lastFailureDetail ? `Previous failure: ${failedTask.lastFailureDetail}` : null
+    ].filter((line): line is string => line !== null).join(" ")
+  });
+}
+
+function isReadonlyShellDiagnosticPlan(plan: AssistantTaskPlanResult): boolean {
+  return plan.kind.startsWith("readonly-shell-");
+}
+
+function isReadonlyRagSelfCheckPlan(plan: AssistantTaskPlanResult): boolean {
+  return plan.kind === "capability-rag-overview";
+}
+
+function getTaskExecutionMessage(task: WorkbenchState["tasks"]["items"][number]): string {
+  return task.executionMessage?.trim() || task.summary;
+}
+
+function createLocalModelChatFailureActionLabel(detail: string): string {
+  const normalizedDetail = detail.toLowerCase();
+
+  if (normalizedDetail.includes("maximum execution time") || normalizedDetail.includes("timed out")) {
+    return "本地模型响应超时：长回答保护已启用，OpenCow 会优先使用自动分段、缺题补写和显式重试；如果模型仍超时，请确认 Ollama 进程仍在运行，切换更快模型，或减少单次输入长度后重试。";
+  }
+
+  if (
+    normalizedDetail.includes("connection refused")
+    || normalizedDetail.includes("actively refused")
+    || normalizedDetail.includes("fetch failed")
+    || normalizedDetail.includes("error sending request")
+  ) {
+    return "无法连接本地 Ollama 服务：请启动 Ollama，确认 http://127.0.0.1:11434 可访问，然后点击重新检测 Ollama 或重试本地任务。";
+  }
+
+  if (normalizedDetail.includes("empty assistant message") || normalizedDetail.includes("empty")) {
+    return "Ollama 返回了空内容：请确认当前模型已完整拉取且可正常生成；如果连续出现，请切换模型或重启 Ollama 后重试。";
+  }
+
+  if (
+    normalizedDetail.includes("context length")
+    || normalizedDetail.includes("context window")
+    || normalizedDetail.includes("prompt too long")
+    || normalizedDetail.includes("input too long")
+  ) {
+    return "输入或上下文过长：请缩小单次输入范围、拆成长文档分段处理，或先让 OpenCow 用 RAG/摘要方式提取关键内容后再继续。";
+  }
+
+  if (normalizedDetail.includes("no usable local ollama model") || normalizedDetail.includes("未选择模型")) {
+    return "当前没有可用的本地 Ollama 模型：请拉取或选择一个模型，然后重新检测 Ollama 后重试。";
+  }
+
+  return "请检查 Ollama 是否正在运行、本地模型是否已拉取并已选中；如果仍失败，请重新检测 Ollama 或切换模型后重试。";
+}
+
+function hasUsableOllamaOverviewForRetry(overview: OllamaOverview): boolean {
+  const selectedModel = resolveUsableOllamaChatModel(overview.selectedModel, overview.models);
+
+  return overview.reachable
+    && selectedModel.length > 0
+    && overview.models.some((model) => model.name === selectedModel);
+}
+
+export function resolveUsableOllamaChatModel(
+  model: string,
+  availableModels: WorkbenchState["model"]["availableModels"]
+): string {
+  const selectedModel = model.trim();
+
+  if (selectedModel && availableModels.some((item) => item.name === selectedModel)) {
+    return selectedModel;
+  }
+
+  if (availableModels.length > 0) {
+    return availableModels.find((item) => PREFERRED_DEFAULT_CHAT_MODELS.includes(item.name))?.name?.trim()
+      || availableModels[0]?.name?.trim()
+      || "";
+  }
+
+  return "";
+}
+
+function createLocalModelChatFailureDetail(payload: {
+  detail: string;
+  model: string;
+  message: string;
+  timeoutMs: number;
+}): string {
+  const normalizedDetail = normalizeLocalModelTimeoutDetail(payload.detail, payload.timeoutMs);
+
+  return [
+    normalizedDetail,
+    `Local model chat diagnostics: model=${payload.model.trim() || "unselected"}; timeout=${formatTimeoutSeconds(payload.timeoutMs)}s; inputLength=${payload.message.trim().length}; longAnswerProtection=enabled.`
+  ].join(" ");
+}
+
+function normalizeLocalModelTimeoutDetail(detail: string, timeoutMs: number): string {
+  return detail.replace(
+    /maximum execution time of \d+ seconds/gi,
+    `maximum execution time of ${formatTimeoutSeconds(timeoutMs)} seconds`
+  );
+}
+
+function assertValidAssistantTaskExecutionResult(
+  result: unknown,
+  executionKind: string | undefined
+): AssistantTaskExecutionResult {
+  if (
+    typeof result === "object"
+    && result !== null
+    && typeof (result as AssistantTaskExecutionResult).resultTitle === "string"
+    && typeof (result as AssistantTaskExecutionResult).resultSummary === "string"
+  ) {
+    return result as AssistantTaskExecutionResult;
+  }
+
+  throw new Error(
+    "Invalid local assistant execution result: expected resultTitle and resultSummary strings. " +
+      `Next step: inspect assistantTaskService result mapping for ${executionKind ?? "unknown-task"} before retrying.`
+  );
+}
+
+function createAssistantPlanningFailedStateFromError(
+  state: WorkbenchState,
+  message: string,
+  error: unknown,
+  source?: string
+): WorkbenchState {
+  const detail = normalizeUnknownAssistantError(error, "Unknown local assistant planner error");
+
+  return createAssistantPlanningFailedState(state, {
+    message,
+    detail,
+    source
+  });
+}
+
+function normalizeUnknownAssistantError(error: unknown, fallback: string, depth = 0): string {
+  if (depth > 3) {
+    return fallback;
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.trim() || fallback;
+    const cause = (error as Error & { cause?: unknown }).cause;
+    const causeDetail = cause === undefined ? "" : normalizeAssistantErrorValue(cause, fallback, depth + 1);
+
+    return causeDetail ? `${message}; cause: ${causeDetail}` : message;
+  }
+
+  return normalizeAssistantErrorValue(error, fallback, depth);
+}
+
+function normalizeAssistantErrorValue(error: unknown, fallback: string, depth = 0): string {
+  if (depth > 3) {
+    return fallback;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    const fieldDetails = [
+      "code",
+      "message",
+      "summary",
+      "detail",
+      "route",
+      "source",
+      "stdout",
+      "stderr",
+      "statusCode",
+      "responseSummary"
+    ]
+      .map((field) => {
+        const value = record[field];
+        return value === undefined || value === null ? null : `${field}: ${String(value).trim()}`;
+      })
+      .filter((value): value is string => Boolean(value));
+    const causeDetail =
+      record.cause === undefined || record.cause === null
+        ? null
+        : `cause: ${normalizeUnknownAssistantError(record.cause, fallback, depth + 1)}`;
+    const details = [...fieldDetails, causeDetail].filter((value): value is string => Boolean(value));
+
+    if (details.length > 0) {
+      return details.join("; ");
+    }
+  }
+
+  return String(error ?? "").trim() || fallback;
+}
+
+function assertValidAssistantTaskPlanResult(result: unknown): AssistantTaskPlanResult {
+  if (
+    typeof result === "object"
+    && result !== null
+    && typeof (result as AssistantTaskPlanResult).kind === "string"
+  ) {
+    const kind = (result as AssistantTaskPlanResult).kind;
+
+    if (!SUPPORTED_ASSISTANT_PLAN_KINDS.has(kind)) {
+      throw new Error(`Unsupported local assistant plan kind: ${kind}.`);
+    }
+
+    return result as AssistantTaskPlanResult;
+  }
+
+  throw new Error("Invalid local assistant plan result: expected an object with a string kind before branching.");
+}
+
+function truncateChatSearchField(value: string, maxLength = MAX_CHAT_SEARCH_FIELD_LENGTH): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, maxLength - 1)}…`;
+}
+
+function createLocalModelChatMessage(payload: {
+  message: string;
+  searchEnabled: boolean;
+  searchProviderLabel: string;
+  sources: WorkbenchState["sources"]["items"];
+}): string {
+  const normalizedMessage = payload.message.trim();
+  const visibleSources = payload.searchEnabled
+    ? payload.sources.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS)
+    : [];
+
+  if (visibleSources.length === 0) {
+    if (payload.searchEnabled) {
+      return [
+        "联网搜索已开启，但本轮没有可用外部来源。",
+        `当前搜索 provider：${payload.searchProviderLabel.trim() || "未配置"}`,
+        "不要声称已经完成实时联网检索；如果回答需要最新资料，请说明缺少可用联网来源，并基于已有知识谨慎回答。",
+        "",
+        `用户问题：${normalizedMessage}`
+      ].join("\n");
+    }
+
+    return normalizedMessage;
+  }
+
+  const sourceLines = visibleSources.map((source, index) => {
+    const title = truncateChatSearchField(source.title || "未命名来源");
+    const provider = truncateChatSearchField(source.provider || "未知 provider", 80);
+    const query = truncateChatSearchField(source.query || "未记录查询", 160);
+    const url = truncateChatSearchField(source.url || "未记录地址", 180);
+    const summary = truncateChatSearchField(source.summary || "未记录摘要");
+
+    return `${index + 1}. ${title} | provider=${provider} | query=${query} | url=${url} | summary=${summary}`;
+  });
+
+  return [
+    "联网搜索参考（只作为参考，不要盲信；请自行判断来源可靠性、时效性和与问题的相关性，综合后用中文回答。）",
+    ...sourceLines,
+    "",
+    `用户问题：${normalizedMessage}`
+  ].join("\n");
+}
+
+export function getLocalModelChatTimeoutMs(message: string): number {
+  const normalized = message.trim();
+  const questionMarkers = [
+    ...(normalized.match(/(?:^|\n|\s)\d{1,2}\s*[.、．]/g) ?? []),
+    ...(normalized.match(/第\s*\d{1,2}\s*题/g) ?? [])
+  ].length;
+  const looksLikeLongQuiz =
+    /单选题|多选题|共\s*\d+\s*(?:小题|题)|每题|答案|解析/.test(normalized)
+    && (normalized.length > 600 || questionMarkers >= 8);
+
+  return looksLikeLongQuiz || normalized.length > 1800
+    ? LONG_LOCAL_MODEL_CHAT_TIMEOUT_MS
+    : LOCAL_MODEL_CHAT_TIMEOUT_MS;
+}
+
+function formatTimeoutSeconds(timeoutMs: number): number {
+  return Math.floor(timeoutMs / 1000);
+}
+
+function formatLocalModelProgressSummary(elapsedMs: number): string {
+  const elapsedSeconds = Math.max(1, Math.floor(elapsedMs / 1000));
+
+  return `Ollama 仍在生成，已等待约 ${elapsedSeconds} 秒。`;
+}
+
+async function executeLocalModelChatTask(payload: {
+  model: string;
+  availableModels: WorkbenchState["model"]["availableModels"];
+  message: string;
+  searchEnabled: boolean;
+  searchProviderLabel: string;
+  sources: WorkbenchState["sources"]["items"];
+  requestId?: string;
+  signal?: AbortSignal;
+  onChunk?: (chunk: string) => void;
+}): Promise<AssistantTaskExecutionResult> {
+  const selectedModel = resolveUsableOllamaChatModel(payload.model, payload.availableModels);
+
+  if (!selectedModel) {
+    throw new Error(
+      "No usable local Ollama model is selected. Start Ollama, pull a local model, and select it before retrying."
+    );
+  }
+
+  const visibleSources = payload.searchEnabled
+    ? payload.sources.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS)
+    : [];
+  const searchProviders = Array.from(
+    new Set([
+      ...visibleSources.map((source) => source.provider.trim()).filter(Boolean),
+      ...(payload.searchEnabled && visibleSources.length === 0 && payload.searchProviderLabel.trim()
+        ? [payload.searchProviderLabel.trim()]
+        : [])
+    ])
+  );
+  const searchContextStatus = payload.searchEnabled
+    ? visibleSources.length > 0
+      ? "enabled-with-sources"
+      : "enabled-no-sources"
+    : "disabled";
+  const result = await chatWithOllamaModel({
+    model: selectedModel,
+    message: createLocalModelChatMessage(payload),
+    requestId: payload.requestId,
+    signal: payload.signal,
+    onChunk: payload.onChunk
+  });
+  const lengthLimitRecoveryLines = result.doneReason === "length"
+    ? [
+        "",
+        LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT
+      ]
+    : [];
+
+  return {
+    resultTitle: "本地模型答复",
+    resultSummary: [result.message, ...lengthLimitRecoveryLines].join("\n"),
+    auditDetailLines: [
+      `Ollama model: ${result.model || selectedModel}`,
+      `Ollama done reason: ${result.doneReason || "complete"}`,
+      `Search context items: ${visibleSources.length}/${MAX_CHAT_SEARCH_CONTEXT_ITEMS}`,
+      `Search context status: ${searchContextStatus}`,
+      `Search provider: ${searchProviders.join(", ") || "none"}`
+    ]
+  };
+}
+
+function isCurrentTaskAttempt(state: WorkbenchState, taskId: string, attemptCount: number): boolean {
+  if (state.tasks.activeTaskId !== taskId) {
+    return false;
+  }
+
+  const activeTask = state.tasks.items.find((item) => item.id === taskId);
+
+  return activeTask?.status === "running" && activeTask.attemptCount === attemptCount;
+}
+
+export function shouldScheduleLocalTaskStart(state: WorkbenchState): boolean {
+  const hasQueuedTask = state.tasks.items.some((item) => item.status === "queued");
+
+  if (!hasQueuedTask) {
+    return false;
+  }
+
+  if (!state.tasks.activeTaskId) {
+    return true;
+  }
+
+  const activeTask = state.tasks.items.find((item) => item.id === state.tasks.activeTaskId);
+
+  return activeTask?.status !== "running";
+}
+
+export function shouldRecoverStaleActiveTaskSlot(state: WorkbenchState): boolean {
+  if (!state.tasks.activeTaskId || state.tasks.items.some((item) => item.status === "queued")) {
+    return false;
+  }
+
+  const activeTask = state.tasks.items.find((item) => item.id === state.tasks.activeTaskId);
+
+  return activeTask?.status !== "running";
+}
 
 export function createContinuationMessageFromPreview(kind: string, message: string): string {
   if (!CONTINUATION_PREVIEW_KINDS.has(kind)) {
@@ -64,24 +768,183 @@ export function createContinuationMessageFromPreview(kind: string, message: stri
   return normalized.trim();
 }
 
+function getTailText(text: string, limit: number): string {
+  const normalizedText = text.trim();
+
+  if (normalizedText.length <= limit) {
+    return normalizedText;
+  }
+
+  return normalizedText.slice(normalizedText.length - limit).trim();
+}
+
+function createLocalModelLengthLimitContinuationMessage(state: WorkbenchState): string | null {
+  const latestAssistantEntry = state.conversation.entries.find((entry) => entry.kind === "assistant");
+
+  if (!latestAssistantEntry?.summary.includes(LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT)) {
+    return null;
+  }
+
+  const latestLocalModelTask = state.tasks.items.find(
+    (item) => item.executionKind === "local-model-chat" && item.status === "completed"
+  );
+
+  if (!latestLocalModelTask) {
+    return null;
+  }
+
+  const priorAnswer = latestAssistantEntry.summary.replace(LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT, "").trim();
+  const answerTail = getTailText(priorAnswer, LOCAL_MODEL_CONTINUATION_TAIL_LIMIT);
+
+  if (!answerTail) {
+    return null;
+  }
+
+  return [
+    "上一轮本地模型回答因为输出长度限制仍可能未完整。",
+    "请从上一轮回答末尾继续，不要重写已经完成的内容。",
+    "保持同样格式，补完整体回答。",
+    "",
+    "原始用户请求：",
+    getOriginalLocalModelRequest(latestLocalModelTask),
+    "",
+    "上一轮回答末尾：",
+    answerTail
+  ].join("\n");
+}
+
+function getOriginalLocalModelRequest(task: WorkbenchState["tasks"]["items"][number]): string {
+  const executionMessage = task.executionMessage?.trim();
+  const originalRequestMatch = executionMessage?.match(
+    /原始用户请求：\s*([\s\S]*?)(?:\n\s*\n上一轮回答末尾：|$)/
+  );
+  const originalRequest = originalRequestMatch?.[1]?.trim();
+
+  return originalRequest || task.summary.trim();
+}
+
 export function resolveContinuationMessage(message: string, state: WorkbenchState): string {
-  if (message.trim().toLowerCase() !== "continue") {
+  const normalizedMessage = message.trim();
+  const isContinuationCommand = normalizedMessage.toLowerCase() === "continue" || normalizedMessage === "继续";
+
+  if (!isContinuationCommand) {
     return message;
   }
 
-  const latestPreviewTask = state.tasks.items.find((item) =>
-    item.executionKind ? CONTINUATION_PREVIEW_KINDS.has(item.executionKind) : false
-  );
+  if (CONTINUATION_CANCELLED_SOURCES.has(state.audit.lastEvent.source)) {
+    return message;
+  }
+
+  const localModelContinuationMessage = createLocalModelLengthLimitContinuationMessage(state);
+
+  if (localModelContinuationMessage) {
+    return localModelContinuationMessage;
+  }
+
+  const latestTask = state.tasks.items[0];
+  const latestPreviewTask =
+    latestTask?.executionKind && CONTINUATION_PREVIEW_KINDS.has(latestTask.executionKind)
+      ? latestTask
+      : null;
 
   if (!latestPreviewTask?.executionKind) {
     return message;
   }
 
+  if (latestPreviewTask.status === "failed" || latestPreviewTask.status === "cancelled") {
+    return message;
+  }
+
+  if (latestPreviewTask.continuationMessage) {
+    return latestPreviewTask.continuationMessage;
+  }
+
   return createContinuationMessageFromPreview(latestPreviewTask.executionKind, latestPreviewTask.summary);
+}
+
+function isShortContinuationCommand(message: string): boolean {
+  const normalizedMessage = message.trim();
+
+  return normalizedMessage.toLowerCase() === "continue" || normalizedMessage === "继续";
+}
+
+function shouldStopTerminalPreviewContinuation(message: string, state: WorkbenchState): boolean {
+  if (!isShortContinuationCommand(message)) {
+    return false;
+  }
+
+  const latestTask = state.tasks.items[0];
+
+  return Boolean(
+    latestTask?.executionKind
+      && CONTINUATION_PREVIEW_KINDS.has(latestTask.executionKind)
+      && (latestTask.status === "failed" || latestTask.status === "cancelled")
+  );
+}
+
+function createStoppedTerminalPreviewContinuationState(state: WorkbenchState): WorkbenchState {
+  return createCommandPolicyBlockedState(state, {
+    summary: "Preview continuation was stopped",
+    detail:
+      "The latest preview task already failed or was cancelled. Review its failure detail, fix the blocking condition, or ask for a narrower explicit repair target before continuing.",
+    actionLabel:
+      "Short continue requests are blocked for terminal preview tasks so opencow does not re-plan hidden repair loops.",
+    source: "preview_continuation_stopped_after_terminal_task"
+  });
+}
+
+function getPlanningFailureInputSummary(state: WorkbenchState): string | null {
+  if (state.error?.source !== "local_assistant_planner") {
+    return null;
+  }
+
+  return state.error.detail.match(/Input summary:\s*(.*?)(?:\s+Planner failure detail:)/)?.[1]?.trim() ?? null;
+}
+
+function isDuplicatePlanningFailureMessage(message: string, state: WorkbenchState): boolean {
+  const previousInputSummary = getPlanningFailureInputSummary(state);
+
+  return Boolean(
+    previousInputSummary
+      && previousInputSummary.toLowerCase() === message.trim().toLowerCase()
+  );
+}
+
+function isDuplicatePendingPermissionMessage(message: string, state: WorkbenchState): boolean {
+  const queuedMessage = state.permission.pendingModeChange?.queuedMessage;
+
+  return Boolean(queuedMessage && queuedMessage.trim().toLowerCase() === message.trim().toLowerCase());
+}
+
+function isDuplicatePendingConfirmationMessage(message: string, state: WorkbenchState): boolean {
+  const queuedMessage = state.confirmation.pending?.queuedMessage;
+
+  return Boolean(queuedMessage && queuedMessage.trim().toLowerCase() === message.trim().toLowerCase());
 }
 
 export function App() {
   const [state, setState] = useState(createInitialWorkbenchState);
+  const lastExecutedTaskAttemptRef = useRef<string | null>(null);
+  const activeLocalModelAbortControllerRef = useRef<AbortController | null>(null);
+  const activeLocalModelRequestIdRef = useRef<string | null>(null);
+  const activeTaskExecutionDependency = state.tasks.activeTaskId
+    ? state.tasks.items
+        .filter((item) => item.id === state.tasks.activeTaskId)
+        .map((item) => `${item.id}:${item.status}:${item.attemptCount}:${item.executionKind ?? ""}`)
+        .at(0) ?? state.tasks.activeTaskId
+    : null;
+
+  function cancelActiveLocalModelRequest() {
+    const requestId = activeLocalModelRequestIdRef.current;
+
+    activeLocalModelAbortControllerRef.current?.abort();
+    activeLocalModelAbortControllerRef.current = null;
+    activeLocalModelRequestIdRef.current = null;
+
+    if (requestId) {
+      void Promise.resolve(cancelOllamaChat(requestId)).catch(() => undefined);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -114,33 +977,40 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (state.tasks.activeTaskId || state.tasks.pendingCount === 0) {
+    if (!shouldScheduleLocalTaskStart(state) && !shouldRecoverStaleActiveTaskSlot(state)) {
       return;
     }
 
     const startTimer = window.setTimeout(() => {
       startTransition(() => {
-        setState((current) => createTaskExecutionStartedState(current));
+        setState((current) =>
+          shouldScheduleLocalTaskStart(current)
+            ? createTaskExecutionStartedState(current)
+            : createStaleActiveTaskSlotRecoveredState(current)
+        );
       });
     }, 80);
 
     return () => {
       window.clearTimeout(startTimer);
     };
-  }, [state.tasks.activeTaskId, state.tasks.pendingCount]);
+  }, [state.tasks.activeTaskId, state.tasks.items]);
 
   useEffect(() => {
     if (!state.tasks.activeTaskId) {
+      lastExecutedTaskAttemptRef.current = null;
       return;
     }
 
     const activeTask = state.tasks.items.find((item) => item.id === state.tasks.activeTaskId);
 
     if (!activeTask) {
+      lastExecutedTaskAttemptRef.current = null;
       return;
     }
 
     if (activeTask.attemptCount > MAX_LOCAL_TASK_ATTEMPTS) {
+      lastExecutedTaskAttemptRef.current = `${activeTask.id}:${activeTask.attemptCount}`;
       startTransition(() => {
         setState((current) =>
           createTaskExecutionFailedState(current, {
@@ -154,16 +1024,190 @@ export function App() {
       return;
     }
 
+    const executionAttemptKey = `${activeTask.id}:${activeTask.attemptCount}`;
+
+    if (lastExecutedTaskAttemptRef.current === executionAttemptKey) {
+      return;
+    }
+
+    lastExecutedTaskAttemptRef.current = executionAttemptKey;
+    const executingTaskId = activeTask.id;
+    const executingAttemptCount = activeTask.attemptCount;
+    let executionTimeoutId: number | null = null;
+    let progressIntervalId: number | null = null;
+    const clearExecutionTimeout = () => {
+      if (executionTimeoutId !== null) {
+        window.clearTimeout(executionTimeoutId);
+        executionTimeoutId = null;
+      }
+    };
+    const clearProgressInterval = () => {
+      if (progressIntervalId !== null) {
+        window.clearInterval(progressIntervalId);
+        progressIntervalId = null;
+      }
+    };
+
     const finishTimer = window.setTimeout(() => {
       if (!activeTask.executionKind) {
+        if (lastExecutedTaskAttemptRef.current !== executionAttemptKey) {
+          return;
+        }
+
         startTransition(() => {
-          setState((current) =>
-            createTaskExecutionSucceededState(current, {
-              resultTitle: "本地助手答复",
-              resultSummary: "已基于本地 Ollama 完成当前输入的初步处理。"
-            })
-          );
+          setState((current) => createTaskMissingExecutionKindFailedState(current));
         });
+        return;
+      }
+
+      if (activeTask.executionKind === "local-model-chat") {
+        const localModelMessage = getTaskExecutionMessage(activeTask);
+        const localModelChatTimeoutMs = getLocalModelChatTimeoutMs(localModelMessage);
+        let localModelDiagnosticModel = state.model.activeModel;
+        cancelActiveLocalModelRequest();
+        const localModelAbortController = new AbortController();
+        const localModelRequestId = `local-model-chat-${activeTask.id}-${activeTask.attemptCount}`;
+        activeLocalModelAbortControllerRef.current = localModelAbortController;
+        activeLocalModelRequestIdRef.current = localModelRequestId;
+        const progressStartedAt = Date.now();
+        progressIntervalId = window.setInterval(() => {
+          startTransition(() => {
+            setState((current) => {
+              if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+                return current;
+              }
+
+              return createTaskExecutionProgressState(current, {
+                taskId: executingTaskId,
+                progressSummary: formatLocalModelProgressSummary(Date.now() - progressStartedAt)
+              });
+            });
+          });
+        }, LOCAL_MODEL_PROGRESS_INTERVAL_MS);
+        const abortLocalModelRequest = () => {
+          if (activeLocalModelAbortControllerRef.current === localModelAbortController) {
+            activeLocalModelAbortControllerRef.current = null;
+          }
+          if (activeLocalModelRequestIdRef.current === localModelRequestId) {
+            activeLocalModelRequestIdRef.current = null;
+          }
+
+          localModelAbortController.abort();
+          void Promise.resolve(cancelOllamaChat(localModelRequestId)).catch(() => undefined);
+        };
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          executionTimeoutId = window.setTimeout(() => {
+            abortLocalModelRequest();
+            reject(
+              new Error(
+                `Local task exceeded the maximum execution time of ${formatTimeoutSeconds(localModelChatTimeoutMs)} seconds.`
+              )
+            );
+          }, localModelChatTimeoutMs);
+        });
+
+        const executeLocalModelChatWithPreflight = async () => {
+          let activeModel = state.model.activeModel;
+          let availableModels = state.model.availableModels;
+
+          if (!resolveUsableOllamaChatModel(activeModel, availableModels)) {
+            const overview = await loadOllamaOverview();
+            activeModel = overview.selectedModel;
+            availableModels = overview.models;
+            localModelDiagnosticModel = resolveUsableOllamaChatModel(activeModel, availableModels) || activeModel;
+
+            startTransition(() => {
+              setState((current) =>
+                isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)
+                  ? mergeOllamaOverview(current, overview)
+                  : current
+              );
+            });
+          } else {
+            localModelDiagnosticModel = resolveUsableOllamaChatModel(activeModel, availableModels) || activeModel;
+          }
+
+          return executeLocalModelChatTask({
+              model: activeModel,
+              availableModels,
+              message: localModelMessage,
+              searchEnabled: state.search.enabled,
+              searchProviderLabel: state.search.providerLabel,
+              sources: state.sources.items,
+              requestId: localModelRequestId,
+              signal: localModelAbortController.signal,
+              onChunk: (chunk) => {
+                startTransition(() => {
+                  setState((current) => {
+                    if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+                      return current;
+                    }
+
+                    return createTaskExecutionStreamingChunkState(current, {
+                      taskId: executingTaskId,
+                      chunk
+                    });
+                  });
+                });
+              }
+            });
+        };
+
+        void Promise.race([
+          executeLocalModelChatWithPreflight(),
+          timeoutPromise
+        ])
+          .then((result) => {
+            clearExecutionTimeout();
+            clearProgressInterval();
+            if (activeLocalModelAbortControllerRef.current === localModelAbortController) {
+              activeLocalModelAbortControllerRef.current = null;
+            }
+            if (activeLocalModelRequestIdRef.current === localModelRequestId) {
+              activeLocalModelRequestIdRef.current = null;
+            }
+            const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
+            startTransition(() => {
+              setState((current) => {
+                if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+                  return current;
+                }
+
+                return createTaskExecutionSucceededState(current, validResult);
+              });
+            });
+          })
+          .catch((error: unknown) => {
+            clearExecutionTimeout();
+            clearProgressInterval();
+            if (activeLocalModelAbortControllerRef.current === localModelAbortController) {
+              activeLocalModelAbortControllerRef.current = null;
+            }
+            if (activeLocalModelRequestIdRef.current === localModelRequestId) {
+              activeLocalModelRequestIdRef.current = null;
+            }
+            const detail = normalizeUnknownAssistantError(error, "Unknown local model chat error");
+            const diagnosticDetail = createLocalModelChatFailureDetail({
+              detail,
+              model: localModelDiagnosticModel,
+              message: localModelMessage,
+              timeoutMs: localModelChatTimeoutMs
+            });
+            startTransition(() => {
+              setState((current) => {
+                if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+                  return current;
+                }
+
+                return createTaskExecutionFailedState(current, {
+                  summary: "本地模型对话失败",
+                  detail: diagnosticDetail,
+                  actionLabel: createLocalTaskFailureActionLabel(diagnosticDetail, activeTask.executionKind),
+                  source: "local_model_chat_runner"
+                });
+              });
+            });
+          });
         return;
       }
 
@@ -176,7 +1220,7 @@ export function App() {
       } as AssistantTaskPlanResult;
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        window.setTimeout(() => {
+        executionTimeoutId = window.setTimeout(() => {
           reject(
             new Error(
               `Local task exceeded the maximum execution time of ${Math.floor(LOCAL_TASK_TIMEOUT_MS / 1000)} seconds.`
@@ -185,39 +1229,94 @@ export function App() {
         }, LOCAL_TASK_TIMEOUT_MS);
       });
 
-      void Promise.race([executeAssistantTask(executionPlan), timeoutPromise])
+      void Promise.race([
+        executeAssistantTask(executionPlan, {
+          snapshotAvailable: state.storage.snapshotCount > 0
+        }),
+        timeoutPromise
+      ])
         .then((result) => {
+          clearExecutionTimeout();
+          const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
           startTransition(() => {
-            setState((current) => createTaskExecutionSucceededState(current, result));
+            setState((current) => {
+              if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+                return current;
+              }
+
+              return createTaskExecutionSucceededState(current, validResult);
+            });
           });
         })
         .catch((error: unknown) => {
-          const detail = error instanceof Error ? error.message : "Unknown local assistant execution error";
+          clearExecutionTimeout();
+          const detail = normalizeUnknownAssistantError(error, "Unknown local assistant execution error");
           const isTimeout = detail.includes("maximum execution time");
-          const failureSummary = isTimeout ? "Local task execution timed out" : "Local task execution failed";
+          const isSelfRepairFailure = isOpencowSelfRepairExecutionKind(activeTask.executionKind) && !isTimeout;
+          const failureSummary = isTimeout
+            ? "Local task execution timed out"
+            : isSelfRepairFailure
+              ? "Opencow self-repair stopped after failure analysis"
+              : "Local task execution failed";
           const failureActionLabel = isTimeout
             ? "Execution was stopped after the timeout limit. Try a smaller task or retry later."
-            : "Check the local execution chain and try again.";
+            : isSelfRepairFailure
+              ? createOpencowSelfRepairFailureActionLabel(
+                activeTask.executionKind,
+                activeTask.executionAuditDetail ?? activeTask.summary
+              )
+              : createLocalTaskFailureActionLabel(detail, activeTask.executionKind);
           startTransition(() => {
-            setState((current) =>
-              createTaskExecutionFailedState(current, {
+            setState((current) => {
+              if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+                return current;
+              }
+
+              return createTaskExecutionFailedState(current, {
                 summary: failureSummary,
                 detail,
                 actionLabel: failureActionLabel,
-                source: isTimeout ? "local_task_timeout" : "local_task_runner"
-              })
-            );
+                source: isTimeout
+                  ? "local_task_timeout"
+                  : isSelfRepairFailure
+                    ? "opencow_self_repair_failure_analysis"
+                    : "local_task_runner"
+              });
+            });
           });
         });
     }, 120);
 
     return () => {
       window.clearTimeout(finishTimer);
+      clearExecutionTimeout();
+      clearProgressInterval();
+      cancelActiveLocalModelRequest();
     };
-  }, [state.tasks.activeTaskId, state.tasks.items]);
+  }, [state.model.activeModel, state.storage.snapshotCount, activeTaskExecutionDependency]);
 
   function parseCapabilityToggleIntent(message: string, currentState: WorkbenchState) {
     const normalized = message.trim();
+    const wantsNaturalNetworkSearch =
+      /\u8054\u7f51\u641c\u7d22.*(\u4e00\u4e0b|\u6700\u65b0|\u8d44\u6599|\u67e5|\u641c)/.test(normalized)
+      || /\u7f51\u4e0a\u641c/.test(normalized)
+      || /\u641c\u4e00\u4e0b\u6700\u65b0/.test(normalized)
+      || /\u6700\u65b0\u8d44\u6599/.test(normalized)
+      || /\bweb search\b/i.test(normalized)
+      || /\binternet search\b/i.test(normalized)
+      || /\bsearch (the )?web\b/i.test(normalized)
+      || (/\blatest\b/i.test(normalized) && /\b(search|find|lookup)\b/i.test(normalized));
+
+    if (!currentState.search.enabled && wantsNaturalNetworkSearch) {
+      return {
+        feature: "search" as const,
+        enabled: true,
+        source: "conversation_request",
+        reason: "\u7528\u6237\u8bf7\u6c42\u8054\u7f51\u641c\u7d22\u6700\u65b0\u8d44\u6599\uff0c\u9700\u8981\u5148\u786e\u8ba4\u542f\u7528\u8054\u7f51\u641c\u7d22\u3002",
+        providerLabel: currentState.search.providerLabel,
+        queuedMessage: normalized
+      };
+    }
 
     if (normalized.includes("开启联网搜索") || normalized.includes("打开联网搜索")) {
       return {
@@ -225,7 +1324,7 @@ export function App() {
         enabled: true,
         source: "conversation_request",
         reason: "用户请求开启联网搜索以补充最新来源。",
-        providerLabel: currentState.search.providerLabel || "Tavily"
+        providerLabel: currentState.search.providerLabel
       };
     }
 
@@ -265,8 +1364,96 @@ export function App() {
         const pendingConfirmation = current.confirmation.pending;
         const approvedState = approvePendingConfirmationState(current);
 
-        if (!pendingConfirmation?.queuedExecutionKind || !pendingConfirmation.queuedMessage) {
+        if (!pendingConfirmation?.queuedMessage) {
           return approvedState;
+        }
+
+        if (approvedState.error?.source === "search_provider_config_missing") {
+          return approvedState;
+        }
+
+        if (!pendingConfirmation.queuedExecutionKind) {
+          let continuedPlan: AssistantTaskPlanResult;
+
+          try {
+            continuedPlan = assertValidAssistantTaskPlanResult(
+              planAssistantTask(pendingConfirmation.queuedMessage, approvedState.permission.mode)
+            );
+          } catch (error: unknown) {
+            return createAssistantPlanningFailedStateFromError(approvedState, pendingConfirmation.queuedMessage, error);
+          }
+
+          if (continuedPlan.kind === "permission-request") {
+            return requestPermissionModeChangeState(approvedState, {
+              targetMode: continuedPlan.targetMode,
+              reason: continuedPlan.reason,
+              riskSummary: continuedPlan.riskSummary,
+              queuedExecutionKind: continuedPlan.queuedExecutionKind,
+              queuedExecutionTitle: continuedPlan.queuedExecutionTitle,
+              queuedExecutionAuditSummary: continuedPlan.queuedExecutionAuditSummary,
+              queuedExecutionAuditDetail: continuedPlan.queuedExecutionAuditDetail,
+              queuedMessage: continuedPlan.queuedMessage
+            });
+          }
+
+          if (continuedPlan.kind === "confirmation") {
+            if (isRepeatedApprovedDangerousConfirmation(pendingConfirmation, continuedPlan)) {
+              return createCommandPolicyBlockedState(approvedState, {
+                summary: "Dangerous confirmation loop stopped",
+                detail: `Dangerous confirmation chain stopped because the planner requested the same dangerous confirmation again after approval. Queued request: ${pendingConfirmation.queuedMessage}. Review planner routing, rewrite the request, or restart from a readonly preview before approving again.`,
+                actionLabel: "Review the planner route, rewrite the request, or restart from a readonly preview before approving again.",
+                source: "dangerous_confirmation_loop_guard"
+              });
+            }
+
+            return createHighRiskConfirmationState(approvedState, {
+              title: continuedPlan.title,
+              summary: continuedPlan.summary,
+              commandPreview: continuedPlan.commandPreview,
+              impact: continuedPlan.impact,
+              requiredMode: continuedPlan.requiredMode,
+              safetySummary: continuedPlan.safetySummary,
+              queuedExecutionKind: continuedPlan.queuedExecutionKind,
+              queuedExecutionTitle: continuedPlan.queuedExecutionTitle,
+              queuedExecutionAuditSummary: continuedPlan.queuedExecutionAuditSummary,
+              queuedExecutionAuditDetail: continuedPlan.queuedExecutionAuditDetail,
+              queuedMessage: continuedPlan.queuedMessage
+            });
+          }
+
+          if (!isExecutionKindAllowedForPermission(continuedPlan.kind, pendingConfirmation.requiredMode)) {
+            return createCommandPolicyBlockedState(approvedState, {
+              summary: "Dangerous confirmation execution scope mismatch stopped",
+              detail:
+                `Dangerous confirmation chain stopped because the planner returned ${continuedPlan.kind} behind ${pendingConfirmation.requiredMode} confirmation. ` +
+                `Queued request: ${pendingConfirmation.queuedMessage}. Restart from a readonly preview or ask again so opencow can request the correct permission and confirmation before execution.`,
+              actionLabel:
+                "Restart from a readonly preview or ask again so opencow can request the correct permission and confirmation before execution.",
+              source: "dangerous_confirmation_execution_scope_guard"
+            });
+          }
+
+          return createUserTaskSubmittedState(approvedState, {
+            message: pendingConfirmation.queuedMessage,
+            executionKind: continuedPlan.kind,
+            executionTitle: continuedPlan.title,
+            executionAuditSummary: continuedPlan.auditSummary,
+            executionAuditDetail: continuedPlan.auditDetail,
+            allowResumeFromFailedTask: true,
+            preserveExistingUserMessage: true
+          });
+        }
+
+        if (!isExecutionKindAllowedForPermission(pendingConfirmation.queuedExecutionKind, pendingConfirmation.requiredMode)) {
+          return createCommandPolicyBlockedState(approvedState, {
+            summary: "Dangerous confirmation execution scope mismatch stopped",
+            detail:
+              `Dangerous confirmation chain stopped because the planner queued ${pendingConfirmation.queuedExecutionKind} behind ${pendingConfirmation.requiredMode} confirmation. ` +
+              `Queued request: ${pendingConfirmation.queuedMessage}. Restart from a readonly preview or ask again so opencow can request the correct permission and confirmation before execution.`,
+            actionLabel:
+              "Restart from a readonly preview or ask again so opencow can request the correct permission and confirmation before execution.",
+            source: "dangerous_confirmation_execution_scope_guard"
+          });
         }
 
         return createUserTaskSubmittedState(approvedState, {
@@ -274,7 +1461,9 @@ export function App() {
           executionKind: pendingConfirmation.queuedExecutionKind,
           executionTitle: pendingConfirmation.queuedExecutionTitle,
           executionAuditSummary: pendingConfirmation.queuedExecutionAuditSummary,
-          executionAuditDetail: pendingConfirmation.queuedExecutionAuditDetail
+          executionAuditDetail: pendingConfirmation.queuedExecutionAuditDetail,
+          allowResumeFromFailedTask: true,
+          preserveExistingUserMessage: true
         });
       });
     });
@@ -296,9 +1485,50 @@ export function App() {
           return approvedState;
         }
 
-        const continuedPlan = planAssistantTask(pendingModeChange.queuedMessage, approvedState.permission.mode);
+        if (pendingModeChange.queuedExecutionKind && pendingModeChange.targetMode !== "controlled-full") {
+          if (!isExecutionKindAllowedForPermission(pendingModeChange.queuedExecutionKind, pendingModeChange.targetMode)) {
+            return createCommandPolicyBlockedState(approvedState, {
+              summary: "Permission execution scope mismatch stopped",
+              detail:
+                `Permission chain stopped because the planner queued ${pendingModeChange.queuedExecutionKind} after ${pendingModeChange.targetMode} approval. ` +
+                `Queued request: ${pendingModeChange.queuedMessage}. Restart from a readonly preview or ask again so opencow can request the correct permission and confirmation before execution.`,
+              actionLabel:
+                "Restart from a readonly preview or ask again so opencow can request the correct permission and confirmation before execution.",
+              source: "permission_execution_scope_guard"
+            });
+          }
+
+          return createUserTaskSubmittedState(approvedState, {
+            message: pendingModeChange.queuedMessage,
+            executionKind: pendingModeChange.queuedExecutionKind,
+            executionTitle: pendingModeChange.queuedExecutionTitle,
+            executionAuditSummary: pendingModeChange.queuedExecutionAuditSummary,
+            executionAuditDetail: pendingModeChange.queuedExecutionAuditDetail,
+            allowResumeFromFailedTask: true,
+            preserveExistingUserMessage: true
+          });
+        }
+
+        let continuedPlan: AssistantTaskPlanResult;
+
+        try {
+          continuedPlan = assertValidAssistantTaskPlanResult(
+            planAssistantTask(pendingModeChange.queuedMessage, approvedState.permission.mode)
+          );
+        } catch (error: unknown) {
+          return createAssistantPlanningFailedStateFromError(approvedState, pendingModeChange.queuedMessage, error);
+        }
 
         if (continuedPlan.kind === "permission-request") {
+          if (isRepeatedApprovedPermissionRequest(continuedPlan.targetMode, approvedState.permission.mode)) {
+            return createCommandPolicyBlockedState(approvedState, {
+              summary: "Permission escalation loop stopped",
+              detail: `Permission chain stopped because the planner requested ${continuedPlan.targetMode} again after ${approvedState.permission.mode} was already approved. Queued request: ${pendingModeChange.queuedMessage}. Review planner routing or rewrite the request before retrying.`,
+              actionLabel: "Review the planner route, rewrite the request, or restart from a readonly preview before retrying.",
+              source: "permission_escalation_loop_guard"
+            });
+          }
+
           return requestPermissionModeChangeState(approvedState, {
             targetMode: continuedPlan.targetMode,
             reason: continuedPlan.reason,
@@ -327,12 +1557,26 @@ export function App() {
           });
         }
 
+        if (pendingModeChange.targetMode === "controlled-full") {
+          return createCommandPolicyBlockedState(approvedState, {
+            summary: "Dangerous confirmation required after controlled-full approval",
+            detail:
+              `Controlled-full chain stopped because the planner returned ${continuedPlan.kind} instead of a dangerous confirmation after permission approval. ` +
+              `Queued request: ${pendingModeChange.queuedMessage}. Restart from a readonly preview or ask again so opencow can show the dangerous confirmation before execution.`,
+            actionLabel:
+              "Restart from a readonly preview or ask again so opencow can show the dangerous confirmation before execution.",
+            source: "controlled_full_confirmation_required_guard"
+          });
+        }
+
         return createUserTaskSubmittedState(approvedState, {
           message: pendingModeChange.queuedMessage,
           executionKind: continuedPlan.kind,
           executionTitle: continuedPlan.title,
           executionAuditSummary: continuedPlan.auditSummary,
-          executionAuditDetail: continuedPlan.auditDetail
+          executionAuditDetail: continuedPlan.auditDetail,
+          allowResumeFromFailedTask: true,
+          preserveExistingUserMessage: true
         });
       });
     });
@@ -362,7 +1606,7 @@ export function App() {
 
   function handleRecoverToolError() {
     startTransition(() => {
-      setState((current) => current);
+      setState((current) => createToolExecutionRecoveredState(current));
     });
   }
 
@@ -384,13 +1628,134 @@ export function App() {
     });
   }
 
-  function handleRetryLocalTask() {
+  function handleRetryLocalTask(taskId?: string) {
+    const retryLocalTaskAfterOllamaSelfCheck = () => {
+      void loadOllamaOverview()
+        .then((overview) => {
+          startTransition(() => {
+            setState((current) => {
+              const checkedState = mergeOllamaOverview(current, overview);
+
+              return hasUsableOllamaOverviewForRetry(overview)
+                ? createTaskExecutionRetriedState(checkedState, taskId)
+                : checkedState;
+            });
+          });
+        })
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : "Unknown ollama load error";
+
+          startTransition(() => {
+            setState((current) => createOllamaLoadErrorState(current, detail));
+          });
+        });
+    };
+    const failedTaskSnapshot = state.tasks.items.find((item) =>
+      taskId ? item.id === taskId && item.status === "failed" : item.status === "failed"
+    );
+
+    if (failedTaskSnapshot?.executionKind === "local-model-chat") {
+      if (isLocalModelContextOverflowFailure(failedTaskSnapshot)) {
+        startTransition(() => {
+          setState((current) => {
+            const failedTask = current.tasks.items.find((item) =>
+              taskId ? item.id === taskId && item.status === "failed" : item.status === "failed"
+            );
+
+            return isLocalModelContextOverflowFailure(failedTask)
+              ? createLocalModelContextOverflowRagRetryState(current, failedTask)
+              : current;
+          });
+        });
+        return;
+      }
+
+      retryLocalTaskAfterOllamaSelfCheck();
+      return;
+    }
+
     startTransition(() => {
-      setState((current) => createTaskExecutionRetriedState(current));
+      setState((current) => {
+        const failedTask = current.tasks.items.find((item) =>
+          taskId ? item.id === taskId && item.status === "failed" : item.status === "failed"
+        );
+        const ragSelfCheckMessage = getRagSelfCheckRetryMessage(failedTask);
+        const selfCheckMessage = ragSelfCheckMessage ?? getShellSelfCheckRetryMessage(failedTask);
+
+        if (!selfCheckMessage) {
+          return createTaskExecutionRetriedState(current, taskId);
+        }
+
+        try {
+          const assistantPlan = assertValidAssistantTaskPlanResult(
+            planAssistantTask(selfCheckMessage, "readonly")
+          );
+
+          if (assistantPlan.kind === "permission-request" || assistantPlan.kind === "confirmation") {
+            return createAssistantPlanningFailedState(current, {
+              message: selfCheckMessage,
+              detail: ragSelfCheckMessage
+                ? "RAG retry self-check must stay readonly. Planner returned a gated action instead of a readonly capability overview, so the original RAG query was not retried."
+                : "Shell retry self-check must stay readonly. Planner returned a gated action instead of a readonly diagnostic task, so the original command was not retried.",
+              actionLabel: ragSelfCheckMessage
+                ? "Review RAG self-check routing before retrying the failed document query."
+                : "Review shell self-check routing before retrying the failed write or destructive command.",
+              source: "local_task_retry_self_check_planner"
+            });
+          }
+
+          if (ragSelfCheckMessage && !isReadonlyRagSelfCheckPlan(assistantPlan)) {
+            return createAssistantPlanningFailedState(current, {
+              message: selfCheckMessage,
+              detail:
+                `RAG retry self-check must return capability-rag-overview. Planner returned ${assistantPlan.kind}, so the original RAG query was not retried.`,
+              actionLabel: "Review RAG self-check routing before retrying the failed document query.",
+              source: "local_task_retry_self_check_planner"
+            });
+          }
+
+          if (ragSelfCheckMessage) {
+            return createUserTaskSubmittedState(current, {
+              message: selfCheckMessage,
+              executionKind: assistantPlan.kind,
+              executionTitle: assistantPlan.title,
+              executionAuditSummary: assistantPlan.auditSummary,
+              executionAuditDetail: assistantPlan.auditDetail
+            });
+          }
+
+          if (!isReadonlyShellDiagnosticPlan(assistantPlan)) {
+            return createAssistantPlanningFailedState(current, {
+              message: selfCheckMessage,
+              detail:
+                `Shell retry self-check must return a readonly shell diagnostic task. Planner returned ${assistantPlan.kind}, so the original command was not retried.`,
+              actionLabel:
+                "Review shell self-check routing before retrying the failed write or destructive command.",
+              source: "local_task_retry_self_check_planner"
+            });
+          }
+
+          return createUserTaskSubmittedState(current, {
+            message: selfCheckMessage,
+            executionKind: assistantPlan.kind,
+            executionTitle: assistantPlan.title,
+            executionAuditSummary: assistantPlan.auditSummary,
+            executionAuditDetail: assistantPlan.auditDetail
+          });
+        } catch (error: unknown) {
+          return createAssistantPlanningFailedStateFromError(
+            current,
+            selfCheckMessage,
+            error,
+            "local_task_retry_self_check_planner"
+          );
+        }
+      });
     });
   }
 
   function handleCancelActiveTask() {
+    cancelActiveLocalModelRequest();
     startTransition(() => {
       setState((current) => createTaskExecutionCancelledState(current));
     });
@@ -419,7 +1784,7 @@ export function App() {
       setState((current) =>
         createSearchToggleState(current, {
           enabled,
-          providerLabel: current.search.providerLabel || "Tavily"
+          providerLabel: current.search.providerLabel
         })
       );
     });
@@ -437,17 +1802,77 @@ export function App() {
     });
   }
 
+  function handleSelectModel(modelName: string) {
+    startTransition(() => {
+      setState((current) => createModelSelectedState(current, modelName));
+    });
+  }
+
+  function handleNewConversation() {
+    cancelActiveLocalModelRequest();
+    startTransition(() => {
+      setState((current) => createNewConversationState(createTaskExecutionCancelledState(current)));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => {
+        if (shouldStopTerminalPreviewContinuation(message, current)) {
+          return createStoppedTerminalPreviewContinuationState(current);
+        }
+
         const resolvedMessage = resolveContinuationMessage(message, current);
         const capabilityIntent = parseCapabilityToggleIntent(resolvedMessage, current);
 
+        if (isDuplicatePlanningFailureMessage(resolvedMessage, current)) {
+          return createDuplicatePlanningFailureSkippedState(current, {
+            message: resolvedMessage
+          });
+        }
+
+        if (isDuplicatePendingPermissionMessage(resolvedMessage, current)) {
+          return createDuplicatePendingApprovalSkippedState(current, {
+            approvalType: "permission",
+            message: resolvedMessage
+          });
+        }
+
+        if (isDuplicatePendingConfirmationMessage(resolvedMessage, current)) {
+          return createDuplicatePendingApprovalSkippedState(current, {
+            approvalType: "dangerous-confirmation",
+            message: resolvedMessage
+          });
+        }
+
         if (capabilityIntent) {
+          const pendingConfirmation = current.confirmation.pending;
+
+          if (
+            pendingConfirmation?.requestedFeature === capabilityIntent.feature
+            && pendingConfirmation.requestedEnabled === capabilityIntent.enabled
+            && pendingConfirmation.summary === capabilityIntent.reason
+            && pendingConfirmation.providerLabel === capabilityIntent.providerLabel
+            && pendingConfirmation.queuedMessage === capabilityIntent.queuedMessage
+          ) {
+            return createDuplicatePendingApprovalSkippedState(current, {
+              approvalType: "capability",
+              message: resolvedMessage
+            });
+          }
+
           return createCapabilityToggleRequestState(current, capabilityIntent);
         }
 
-        const assistantPlan = planAssistantTask(resolvedMessage, current.permission.mode);
+        let assistantPlan: AssistantTaskPlanResult;
+
+        try {
+          assistantPlan = assertValidAssistantTaskPlanResult(
+            planAssistantTask(resolvedMessage, current.permission.mode)
+          );
+        } catch (error: unknown) {
+          return createAssistantPlanningFailedStateFromError(current, resolvedMessage, error);
+        }
 
         if (assistantPlan.kind === "permission-request") {
           return requestPermissionModeChangeState(current, {
@@ -479,11 +1904,16 @@ export function App() {
         }
 
         return createUserTaskSubmittedState(current, {
-          message: resolvedMessage,
+          message: message,
+          executionMessage: resolvedMessage === message ? undefined : resolvedMessage,
           executionKind: assistantPlan.kind,
           executionTitle: assistantPlan.title,
           executionAuditSummary: assistantPlan.auditSummary,
-          executionAuditDetail: assistantPlan.auditDetail
+          executionAuditDetail: assistantPlan.auditDetail,
+          continuationMessage:
+            assistantPlan.kind === "opencow-self-repair-preview"
+              ? resolvedMessage.replace(/\bpreview(ing)?\b/gi, "continue").trim()
+              : undefined
         });
       });
     });
@@ -509,6 +1939,8 @@ export function App() {
       onToggleSearch={handleToggleSearch}
       onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
       onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
+      onSelectModel={handleSelectModel}
+      onNewConversation={handleNewConversation}
       onSubmitTask={handleSubmitTask}
     />
   );

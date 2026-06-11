@@ -25,14 +25,7 @@ export function createInitialWorkbenchState(): WorkbenchState {
       pending: null
     },
     conversation: {
-      entries: [
-        {
-          id: "assistant-welcome",
-          kind: "assistant",
-          title: "Ollama 本地优先",
-          summary: "默认使用本地 Ollama，并优先展示可追溯、可回退、可确认的桌面工作流。"
-        }
-      ]
+      entries: []
     },
     rollback: {
       ...createRollbackJournal({

@@ -71,4 +71,21 @@ describe("task queue metadata", () => {
         "review local shell permission rules and continue to create a temp-output folder with shell automation"
     });
   });
+
+  it("stores self-repair continuation metadata on queued preview tasks", () => {
+    const state = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "diagnose opencow and preview repairing its enabled skills registry",
+      executionKind: "opencow-self-repair-preview",
+      executionTitle: "Opencow self-repair preview",
+      executionAuditSummary: "Local assistant planned a readonly opencow self-repair preview.",
+      executionAuditDetail:
+        "Readonly opencow self-repair preview task: diagnose opencow and preview repairing its enabled skills registry",
+      continuationMessage: "diagnose opencow and continue repairing its enabled skills registry"
+    });
+
+    expect(state.tasks.items[0]).toMatchObject({
+      executionKind: "opencow-self-repair-preview",
+      continuationMessage: "diagnose opencow and continue repairing its enabled skills registry"
+    });
+  });
 });

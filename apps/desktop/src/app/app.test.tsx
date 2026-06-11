@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const {
+  cancelOllamaChatMock,
+  chatWithOllamaModelMock,
   loadOllamaOverviewMock,
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
@@ -16,6 +18,8 @@ const {
   runWorkspaceWriteShellCommandMock,
   runControlledFullShellCommandMock
 } = vi.hoisted(() => ({
+  cancelOllamaChatMock: vi.fn(),
+  chatWithOllamaModelMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
@@ -31,6 +35,8 @@ const {
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  cancelOllamaChat: cancelOllamaChatMock,
+  chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
 
@@ -67,6 +73,10 @@ function getConversationRegion() {
   return screen.getByRole("region", { name: "会话" });
 }
 
+function findModelPicker(modelName: string) {
+  return screen.findByRole("button", { name: `选择模型：${modelName}` });
+}
+
 describe("App", () => {
   it("renders the desktop workbench shell after loading Ollama", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
@@ -79,21 +89,53 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findAllByText("qwen2.5-coder:7b")).not.toHaveLength(0);
+    expect(await findModelPicker("qwen2.5-coder:7b")).toBeInTheDocument();
     expect(screen.getByRole("main", { name: /opencow/i })).toBeInTheDocument();
     expect(getComposerInput()).toBeInTheDocument();
   });
 
-  it("surfaces a traceable error when loading Ollama overview throws", async () => {
+  it("switches sidebar destinations from the app shell", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    for (const destination of ["搜索", "知识库", "Skills", "NPC", "MCP", "审计", "安全", "设置"]) {
+      fireEvent.click(screen.getByRole("button", { name: destination }));
+
+      expect(screen.getByRole("heading", { name: destination })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: destination })).toHaveAttribute("aria-pressed", "true");
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    expect(getConversationRegion()).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新对话" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps Ollama load details in settings while the main conversation stays minimal", async () => {
     loadOllamaOverviewMock.mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
 
     render(<App />);
 
-    await waitFor(() => {
-      expect(screen.getAllByText("connect ECONNREFUSED 127.0.0.1:11434").length).toBeGreaterThan(0);
-    });
+    expect(await screen.findByText("默认使用本地 Ollama，当前未检测到可用服务。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "配置 Ollama" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "配置大模型 API" })).toBeInTheDocument();
+    expect(screen.queryByText("connect ECONNREFUSED 127.0.0.1:11434")).not.toBeInTheDocument();
+    expect(screen.queryByText(/ollama_overview/)).not.toBeInTheDocument();
+    expect(within(getConversationRegion()).queryByText("需要配置模型")).not.toBeInTheDocument();
 
-    expect(screen.getAllByText(/ollama_overview/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "配置 Ollama" }));
+
+    const settingsPanel = screen.getByLabelText("设置");
+    expect(within(settingsPanel).getByText(/connect ECONNREFUSED 127\.0\.0\.1:11434/)).toBeInTheDocument();
   });
 
   it("submits ordinary chat and shows a user message plus assistant reply without queue noise in the main transcript", async () => {
@@ -104,10 +146,14 @@ describe("App", () => {
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "我会先理解你的问题，再结合本地模型、权限链路和可用工具给出答复。"
+    });
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     const input = getComposerInput();
     fireEvent.change(input, {
@@ -119,9 +165,16 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("你能干什么").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText(/本地助手能力说明|Workspace overview|本地助手答复/)).toBeInTheDocument();
+      expect(
+        within(conversation).getAllByText(/我会先理解你的问题/).length
+      ).toBeGreaterThan(0);
     });
 
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: "你能干什么"
+    }));
+    expect(within(conversation).queryByText(/本地助手能力说明|Workspace overview|本地助手答复/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/本地任务开始执行/)).not.toBeInTheDocument();
   });
@@ -137,7 +190,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "inspect the current workspace and summarize it" }
@@ -163,7 +216,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "summarize this project" }
@@ -197,7 +250,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "inspect workspace packages and scripts" }
@@ -231,7 +284,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "inspect workspace config and root scripts" }
@@ -257,7 +310,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "你能干什么" }
@@ -265,7 +318,12 @@ describe("App", () => {
     fireEvent.click(getComposerSendButton());
 
     const pending = await screen.findByLabelText("assistant-pending");
-    expect(within(pending).getByText("你能干什么")).toBeInTheDocument();
+    expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
+    expect(within(pending).queryByText("正在等待本地模型输出")).not.toBeInTheDocument();
+    expect(within(pending).queryByText("你能干什么")).not.toBeInTheDocument();
+    expect(within(pending).queryByText(/已进入本地任务队列|正在本地执行链中处理/)).not.toBeInTheDocument();
+    expect(within(pending).queryByText(/本地模型首轮响应可能较慢|不会重复提交同一请求|请稍候/)).not.toBeInTheDocument();
+    expect(within(pending).queryByRole("button", { name: "停止任务" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
@@ -283,7 +341,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen3.6:35b");
+    await findModelPicker("qwen3.6:35b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "你能干什么" }
@@ -296,6 +354,41 @@ describe("App", () => {
 
     expect(getComposerInput()).toBeEnabled();
     expect(getComposerSendButton()).toBeInTheDocument();
+  }, 10000);
+
+  it("starts a visually blank new conversation while keeping model selection available", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能干什么" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
+    });
+
+    expect(within(getConversationRegion()).getAllByText("你能干什么").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    const conversation = getConversationRegion();
+    expect(within(conversation).queryAllByText("你能干什么")).toHaveLength(0);
+    expect(within(conversation).queryAllByText(/本地助手能力说明|Workspace overview|本地助手答复/)).toHaveLength(0);
+    expect(within(conversation).queryByRole("heading")).not.toBeInTheDocument();
+    expect(screen.queryByText("本地任务")).not.toBeInTheDocument();
+    expect(await findModelPicker("qwen3.6:35b")).toBeInTheDocument();
+    expect(getComposerInput()).toBeEnabled();
   }, 10000);
 
   it("continues from skill enable permission approval into the final enabled result", async () => {
@@ -316,7 +409,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "enable the coding-agent skill for this workspace" }
@@ -350,7 +443,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "install the gpt-taste skill into this workspace skills folder" }
@@ -395,7 +488,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "show enabled skills for this workspace" }
@@ -434,7 +527,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "which enabled skill should handle shell automation in this workspace" }
@@ -475,7 +568,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "show details for the coding-agent skill" }
@@ -536,7 +629,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "use the enabled docs skill to search local rules for shell permission guidance" }
@@ -582,7 +675,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "search local knowledge for shell permission rules" }
@@ -614,7 +707,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "disable the coding-agent skill for this workspace" }
@@ -669,7 +762,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "use the enabled shell automation skill to create a temp-output folder for this workspace" }
@@ -727,7 +820,7 @@ describe("App", () => {
 
     render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await findModelPicker("qwen2.5-coder:7b");
 
     fireEvent.change(getComposerInput(), {
       target: { value: "use the enabled shell automation skill to delete temp-output and clean temporary files" }

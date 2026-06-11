@@ -68,7 +68,7 @@ export function applyPendingRollbackState(state: WorkbenchState): WorkbenchState
     ...state,
     ...snapshot,
     conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
+      entries: prependConversationEntry(snapshot.conversation.entries, {
         id: `rollback-applied-${pendingPreview.targetEntryId}`,
         kind: "system",
         title: `已回退到 ${pendingPreview.targetLabel}`,

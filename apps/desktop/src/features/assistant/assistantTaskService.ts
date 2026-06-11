@@ -1,8 +1,9 @@
-import { planLocalAssistantTask } from "@opencow/openclaw-adapter/browser";
+import { planLocalAssistantTask, resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { createPermissionEscalationRequest } from "@opencow/permission-engine";
 import { guardExecutionPlan } from "@opencow/safety-engine";
 import { planControlledCommand } from "@opencow/shell-runtime";
 import type { LocalTaskExecutionKind, PermissionMode } from "../workbench/workbenchState";
+import { getShellDialogRecoveryNarrative } from "../workbench/shellCapability";
 import {
   disableLocalSkill,
   installLocalSkill,
@@ -26,16 +27,18 @@ import {
   captureNpcLocalProjectScreenshot,
   writeNpcLocalProjectShowcaseSite,
   loadNpcLocalProjectShowcasePublishPreview,
+  loadNpcLocalProjectShowcaseGitConfirmationPreview,
   stopWorkspaceProject,
   runControlledFullShellCommand,
   runReadonlyShellCommand,
   runWorkspaceWriteShellCommand,
-  repairOpencowEnabledSkillsRegistry
+  repairOpencowEnabledSkillsRegistry,
+  repairOpencowWorkspaceProjectRuntimeRegistry
 } from "./localAssistantService";
 
 type ReadonlyAssistantTaskPlan =
   | {
-      kind: "assistant-help-overview";
+      kind: "local-model-chat";
       title: string;
       summary: string;
       auditSummary: string;
@@ -70,7 +73,21 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "opencow-self-repair-target-guidance";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "opencow-self-repair-enabled-skills-registry";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "opencow-self-repair-workspace-project-runtime-registry";
       title: string;
       summary: string;
       auditSummary: string;
@@ -280,6 +297,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "npc-local-project-showcase-git-confirmation-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "npc-local-shell-plan-preview";
       title: string;
       summary: string;
@@ -330,6 +354,13 @@ type ReadonlyAssistantTaskPlan =
     }
   | {
       kind: "rag-local-doc-search";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "network-search-guidance";
       title: string;
       summary: string;
       auditSummary: string;
@@ -427,6 +458,11 @@ export type AssistantTaskPlanResult =
 export type AssistantTaskExecutionResult = {
   resultTitle: string;
   resultSummary: string;
+  auditDetailLines?: string[];
+};
+
+export type AssistantTaskExecutionContext = {
+  snapshotAvailable?: boolean;
 };
 
 export function planAssistantTask(message: string, permissionMode: PermissionMode): AssistantTaskPlanResult {
@@ -436,15 +472,10 @@ export function planAssistantTask(message: string, permissionMode: PermissionMod
   });
 }
 
-export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promise<AssistantTaskExecutionResult> {
-  if (plan.kind === "assistant-help-overview") {
-    return {
-      resultTitle: "本地助手能力说明",
-      resultSummary:
-        "I can help with local chat, inspect workspace/packages/config, run permission-backed project run/status/stop tasks, perform guarded shell changes, search local docs, inspect Skills/MCP/NPC status, and continue into controlled self-repair when the request is explicit."
-    };
-  }
-
+export async function executeAssistantTask(
+  plan: AssistantTaskPlanResult,
+  context: AssistantTaskExecutionContext = {}
+): Promise<AssistantTaskExecutionResult> {
   if (plan.kind === "workspace-overview") {
     const overview = await loadWorkspaceOverview();
     const highlightedPackages = overview.package_names.slice(0, 5).join(", ");
@@ -486,11 +517,19 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "opencow-self-repair-preview") {
-    return executeOpencowSelfRepairPreviewPlan(plan.title, plan.summary);
+    return executeOpencowSelfRepairPreviewPlan(plan.title, deriveTaskQuery(plan));
+  }
+
+  if (plan.kind === "opencow-self-repair-target-guidance") {
+    return executeOpencowSelfRepairTargetGuidancePlan(plan.title);
   }
 
   if (plan.kind === "opencow-self-repair-enabled-skills-registry") {
-    return executeOpencowEnabledSkillsRegistryRepairPlan(plan.title, plan.summary);
+    return executeOpencowEnabledSkillsRegistryRepairPlan(plan.title, deriveTaskQuery(plan));
+  }
+
+  if (plan.kind === "opencow-self-repair-workspace-project-runtime-registry") {
+    return executeOpencowWorkspaceProjectRuntimeRegistryRepairPlan(plan.title, deriveTaskQuery(plan));
   }
 
   if (plan.kind === "capability-rag-overview") {
@@ -534,7 +573,7 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "skills-local-enabled-shell-remove-temp-output") {
-    return executeSkillAssistedControlledFullPlan(plan.title, plan.summary);
+    return executeSkillAssistedControlledFullPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-shell-create-temp-output") {
@@ -542,7 +581,7 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "npc-local-enabled-shell-remove-temp-output") {
-    return executeNpcAssistedControlledFullPlan(plan.title, plan.summary);
+    return executeNpcAssistedControlledFullPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-rag-shell-create-temp-output") {
@@ -550,7 +589,7 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "npc-local-enabled-rag-shell-remove-temp-output") {
-    return executeNpcAssistedRagShellRemovePlan(plan.title, plan.summary);
+    return executeNpcAssistedRagShellRemovePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-rag-doc-search") {
@@ -574,7 +613,7 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "rag-local-shell-remove-temp-output") {
-    return executeLocalRagShellRemovePlan(plan.title, plan.summary);
+    return executeLocalRagShellRemovePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-rag-shell-create-temp-output") {
@@ -582,7 +621,7 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "skills-local-enabled-rag-shell-remove-temp-output") {
-    return executeSkillAssistedRagShellRemovePlan(plan.title, plan.summary);
+    return executeSkillAssistedRagShellRemovePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-collaboration-preview") {
@@ -607,6 +646,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
 
   if (plan.kind === "npc-local-project-showcase-publish-preview") {
     return executeNpcLocalProjectShowcasePublishPreviewPlan(plan.title, plan.summary);
+  }
+
+  if (plan.kind === "npc-local-project-showcase-git-confirmation-preview") {
+    return executeNpcLocalProjectShowcaseGitConfirmationPreviewPlan(plan.title, plan.summary);
   }
 
   if (plan.kind === "npc-local-shell-plan-preview") {
@@ -641,6 +684,10 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
     return executeLocalRagSearchPlan(plan.title, plan.summary);
   }
 
+  if (plan.kind === "network-search-guidance") {
+    return executeNetworkSearchGuidancePlan(plan.title, plan.summary);
+  }
+
   if (plan.kind === "readonly-shell-git-status") {
     return executeReadonlyShellPlan(plan.title, "git-status");
   }
@@ -670,22 +717,50 @@ export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promi
   }
 
   if (plan.kind === "controlled-full-remove-temp-output") {
-    return executeControlledFullShellPlan(plan.title, "remove-temp-output-dir");
+    return executeControlledFullShellPlan(plan.title, "remove-temp-output-dir", context);
   }
 
   throw new Error(`Unsupported assistant task execution plan: ${plan.kind}`);
+}
+
+async function executeNetworkSearchGuidancePlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  return {
+    resultTitle,
+    resultSummary:
+      `No external network search was run for "${query}". ` +
+      "Provider status: not configured. Network call skipped. " +
+      "Network-assisted retrieval is recognized as a controlled assistant capability, but this readonly slice only records the request and explains the safe next step. " +
+      "Next repair step: configure a search provider in advanced settings, approve network search capability, then retry the request; use local RAG when the answer should come from workspace documents."
+  };
 }
 
 async function executeReadonlyShellPlan(
   resultTitle: string,
   commandId: "git-status" | "workspace-root-list" | "packages-dir-list"
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runReadonlyShellCommand(commandId);
+  const result = await runReadonlyShellCommandWithDiagnostics(commandId);
+  const resultSummary = resultTitle.toLowerCase().includes("diagnostics")
+    ? createReadonlyShellSelfCheckReport(result)
+    : `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`;
 
   return {
     resultTitle,
-    resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    resultSummary
   };
+}
+
+function createReadonlyShellSelfCheckReport(result: Awaited<ReturnType<typeof runReadonlyShellCommand>>): string {
+  return [
+    "Self-check report:",
+    "shell bridge reachable",
+    "workspace root accessible",
+    `command whitelist accepted ${result.command_id}`,
+    "audit trail retained readonly shell diagnostics",
+    `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+  ].join(" ");
 }
 
 async function executeCapabilityOverviewPlan(
@@ -709,18 +784,57 @@ async function executeOpencowSelfRepairPreviewPlan(
   const [workspaceOverview, configOverview, ragResult] = await Promise.all([
     loadWorkspaceOverview(),
     loadWorkspaceConfigOverview(),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topPaths = ragResult.items.slice(0, 3).map((item) => item.title).join(", ") || "none";
   const topConfigs = configOverview.config_files.slice(0, 3).join(", ") || "none";
   const topScripts = configOverview.root_script_names.slice(0, 3).join(", ") || "none";
+  const repairTargetPreview = resolveSelfRepairTargetPreview(query);
 
   return {
     resultTitle,
     resultSummary:
       `Readonly self-repair preview for ${workspaceOverview.root_name}. Key config files: ${topConfigs}. ` +
-      `Root scripts: ${topScripts}. Relevant local docs: ${topPaths}. ` +
+      `Root scripts: ${topScripts}. Relevant local docs: ${topPaths}. ${repairTargetPreview.summary} ` +
       `Next recommended flow: inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility.`
+  };
+}
+
+async function executeOpencowSelfRepairTargetGuidancePlan(
+  resultTitle: string
+): Promise<AssistantTaskExecutionResult> {
+  return {
+    resultTitle,
+    resultSummary:
+      "Opencow self-repair stopped before continuing because no specific repair target was confirmed. " +
+      "Ask to continue repairing either the enabled skills registry at .opencow/skills/enabled-skills.json " +
+      "or the workspace project runtime registry at .opencow/runtime/workspace-project-runs.json. " +
+      "Example next requests: `diagnose opencow and continue repairing its enabled skills registry` or " +
+      "`diagnose opencow and continue repairing its workspace project runtime registry`. " +
+      "This keeps the repair chain explicit, permission-scoped, and helps avoid retry loops."
+  };
+}
+
+function resolveSelfRepairTargetPreview(query: string): {
+  summary: string;
+} {
+  const descriptor = resolveOpencowSelfRepairTargetDescriptor(query);
+
+  if (descriptor.label && descriptor.path && descriptor.continueRequest) {
+    return {
+      summary:
+        `Likely target: ${descriptor.label} at ${descriptor.path}. ` +
+        `Check ${descriptor.path} first. ` +
+        "Workspace write permission would be required before opencow can continue that controlled repair. " +
+        `Suggested next request: \`${descriptor.continueRequest}\`.`
+    };
+  }
+
+  return {
+    summary:
+      "No specific controlled repair target has been confirmed yet. If a mutation is needed, workspace write permission would still be required before opencow can continue. " +
+      "Suggested next requests: `diagnose opencow and preview repairing its enabled skills registry` or " +
+      "`diagnose opencow and preview repairing its workspace project runtime registry`."
   };
 }
 
@@ -728,7 +842,7 @@ async function executeOpencowEnabledSkillsRegistryRepairPlan(
   resultTitle: string,
   query: string
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await repairOpencowEnabledSkillsRegistry(query);
+  const result = await repairOpencowEnabledSkillsRegistryWithDiagnostics(query);
 
   return {
     resultTitle,
@@ -739,11 +853,56 @@ async function executeOpencowEnabledSkillsRegistryRepairPlan(
   };
 }
 
+async function repairOpencowEnabledSkillsRegistryWithDiagnostics(query: string) {
+  try {
+    return await repairOpencowEnabledSkillsRegistry(query);
+  } catch (error: unknown) {
+    throw createOpencowSelfRepairDiagnosticError({
+      target: "enabled skills registry",
+      targetPath: ".opencow/skills/enabled-skills.json",
+      requiredPermission: "workspace-write",
+      recoveryStep:
+        "inspect .opencow/skills/enabled-skills.json, narrow the repair request, or fix the file manually before retrying with explicit workspace-write approval",
+      error
+    });
+  }
+}
+
+async function executeOpencowWorkspaceProjectRuntimeRegistryRepairPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await repairOpencowWorkspaceProjectRuntimeRegistryWithDiagnostics(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Repaired path: ${result.repaired_path}. Preserved runs: ${result.preserved_entry_count}. ` +
+      `Verified schema version: ${result.verified_version}. Verified runtime runs: ${result.verified_run_count}. ` +
+      "Verification completed inside the controlled self-repair chain, and the result remains audit-visible and rollback-visible."
+  };
+}
+
+async function repairOpencowWorkspaceProjectRuntimeRegistryWithDiagnostics(query: string) {
+  try {
+    return await repairOpencowWorkspaceProjectRuntimeRegistry(query);
+  } catch (error: unknown) {
+    throw createOpencowSelfRepairDiagnosticError({
+      target: "workspace project runtime registry",
+      targetPath: ".opencow/runtime/workspace-project-runs.json",
+      requiredPermission: "workspace-write",
+      recoveryStep:
+        "inspect .opencow/runtime/workspace-project-runs.json, narrow the repair request, or fix the file manually before retrying with explicit workspace-write approval",
+      error
+    });
+  }
+}
+
 async function executeLocalRagSearchPlan(
   resultTitle: string,
   query: string
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await searchLocalKnowledge(query);
+  const result = await searchLocalKnowledgeWithDiagnostics(query);
   const topPaths = result.items.slice(0, 2).map((item) => item.title).join(", ");
 
   return {
@@ -888,6 +1047,53 @@ async function executeLocalSkillDisablePlan(
   };
 }
 
+function deriveTaskQuery(
+  plan: { summary: string; auditDetail: string }
+): string {
+  const requestMatch = plan.auditDetail.match(/\brequest=(.+)$/i);
+
+  if (requestMatch?.[1]) {
+    return requestMatch[1].trim();
+  }
+
+  const previewMatch = plan.auditDetail.match(/task:\s*(.+)$/i);
+
+  if (previewMatch?.[1]) {
+    return previewMatch[1].trim();
+  }
+
+  return plan.summary;
+}
+
+type EnabledLocalSkillMatchDiagnostics = Awaited<ReturnType<typeof matchEnabledLocalSkills>>;
+type LocalRagSearchDiagnostics = Awaited<ReturnType<typeof searchLocalKnowledge>>;
+
+function createNoEnabledLocalSkillMatchError(
+  capability: string,
+  skillMatch: EnabledLocalSkillMatchDiagnostics
+): Error {
+  return new Error(
+    `No enabled local skill matched in assistantTaskService. Capability: ${capability}. ` +
+      `Registry: ${skillMatch.registry_path}. Query: ${skillMatch.query}. ` +
+      `Match count: ${skillMatch.match_count} of ${skillMatch.enabled_skill_count} enabled skills. ` +
+      `Next step: inspect ${skillMatch.registry_path}, enable a matching skill, or rewrite the request before retrying.`
+  );
+}
+
+async function searchLocalKnowledgeWithDiagnostics(query: string): Promise<LocalRagSearchDiagnostics> {
+  try {
+    return await searchLocalKnowledge(query);
+  } catch (error: unknown) {
+    const detail = (error instanceof Error ? error.message : String(error)).replace(/[.。]\s*$/, "");
+
+    throw new Error(
+      `Local RAG search failed in assistantTaskService. Query: ${query}. ` +
+        `Underlying error: ${detail}. ` +
+        "Next step: verify the local RAG index, document parsers for pptx/docx/md, workspace root discovery, and retry with a narrower document query before continuing."
+    );
+  }
+}
+
 async function executeEnabledLocalSkillsListPlan(
   resultTitle: string
 ): Promise<AssistantTaskExecutionResult> {
@@ -929,10 +1135,10 @@ async function executeSkillAssistedWorkspaceWritePlan(
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted shell request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir");
 
   return {
     resultTitle,
@@ -944,16 +1150,17 @@ async function executeSkillAssistedWorkspaceWritePlan(
 
 async function executeSkillAssistedControlledFullPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const skillMatch = await matchEnabledLocalSkills(query);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted destructive shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted destructive shell request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
 
   return {
     resultTitle,
@@ -971,10 +1178,10 @@ async function executeNpcAssistedWorkspaceWritePlan(
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted shell request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir");
 
   return {
     resultTitle,
@@ -986,16 +1193,17 @@ async function executeNpcAssistedWorkspaceWritePlan(
 
 async function executeNpcAssistedControlledFullPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const skillMatch = await matchEnabledLocalSkills(query);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted destructive shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted destructive shell request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
 
   return {
     resultTitle,
@@ -1013,10 +1221,10 @@ async function executeSkillAssistedLocalRagSearchPlan(
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted local RAG request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted local RAG request", skillMatch);
   }
 
-  const ragResult = await searchLocalKnowledge(query);
+  const ragResult = await searchSkillAssistedLocalKnowledgeWithDiagnostics(query, skillMatch, topMatch.name);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ");
 
   return {
@@ -1027,18 +1235,40 @@ async function executeSkillAssistedLocalRagSearchPlan(
   };
 }
 
+async function searchSkillAssistedLocalKnowledgeWithDiagnostics(
+  query: string,
+  skillMatch: EnabledLocalSkillMatchDiagnostics,
+  recommendedSkillName: string
+): Promise<LocalRagSearchDiagnostics> {
+  try {
+    return await searchLocalKnowledgeWithDiagnostics(query);
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+
+    throw new Error(
+      `Skill-assisted local RAG search failed in assistantTaskService. Recommended skill: ${recommendedSkillName}. ` +
+        `Registry: ${skillMatch.registry_path}. Underlying RAG failure: ${detail} ` +
+        "Next step: verify the matched skill, local RAG index, document parsers, workspace root discovery, and retry with a narrower document query before continuing."
+    );
+  }
+}
+
 async function executeLocalRagShellHandoffPreviewPlan(
   resultTitle: string,
   query: string
 ): Promise<AssistantTaskExecutionResult> {
-  const ragResult = await searchLocalKnowledge(query);
-  const shellPreview = createReadonlyShellNextStepPreview(query);
+  const [ragResult, workspaceOverview] = await Promise.all([
+    searchLocalKnowledgeWithDiagnostics(query),
+    loadWorkspaceOverview()
+  ]);
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
     resultTitle,
     resultSummary:
       `${ragResult.summary} Top matches: ${topPaths}. Command preview: ${shellPreview.command}. ` +
+      `Workspace root: ${shellPreview.workspaceRoot}. ` +
       `Next step: ${shellPreview.nextStep}. Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
   };
 }
@@ -1049,15 +1279,16 @@ async function executeSkillAssistedRagShellHandoffPreviewPlan(
 ): Promise<AssistantTaskExecutionResult> {
   const [skillMatch, ragResult] = await Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted RAG shell handoff preview request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted RAG shell handoff preview request", skillMatch);
   }
 
-  const shellPreview = createReadonlyShellNextStepPreview(query);
+  const workspaceOverview = await loadWorkspaceOverview();
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1065,6 +1296,7 @@ async function executeSkillAssistedRagShellHandoffPreviewPlan(
     resultSummary:
       `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
       `${ragResult.summary} Top matches: ${topPaths}. Command preview: ${shellPreview.command}. ` +
+      `Workspace root: ${shellPreview.workspaceRoot}. ` +
       `Next step: ${shellPreview.nextStep}. Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
   };
 }
@@ -1076,15 +1308,16 @@ async function executeNpcAssistedRagShellHandoffPreviewPlan(
   const [npcOverview, skillMatch, ragResult] = await Promise.all([
     loadOpenClawCapabilityOverview("npc"),
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted RAG shell handoff preview request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted RAG shell handoff preview request", skillMatch);
   }
 
-  const shellPreview = createReadonlyShellNextStepPreview(query);
+  const workspaceOverview = await loadWorkspaceOverview();
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1092,7 +1325,7 @@ async function executeNpcAssistedRagShellHandoffPreviewPlan(
     resultSummary:
       `${npcOverview.summary} Status: ${npcOverview.status}. Recommended skill: ${topMatch.name}. ` +
       `Registry: ${skillMatch.registry_path}. ${ragResult.summary} Top matches: ${topPaths}. ` +
-      `Command preview: ${shellPreview.command}. Next step: ${shellPreview.nextStep}. ` +
+      `Command preview: ${shellPreview.command}. Workspace root: ${shellPreview.workspaceRoot}. Next step: ${shellPreview.nextStep}. ` +
       `Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
   };
 }
@@ -1101,8 +1334,8 @@ async function executeLocalRagShellCreatePlan(
   resultTitle: string,
   query: string
 ): Promise<AssistantTaskExecutionResult> {
-  const ragResult = await searchLocalKnowledge(query);
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const ragResult = await searchLocalKnowledgeWithDiagnostics(query);
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir");
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1115,10 +1348,11 @@ async function executeLocalRagShellCreatePlan(
 
 async function executeLocalRagShellRemovePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const ragResult = await searchLocalKnowledge(query);
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const ragResult = await searchLocalKnowledgeWithDiagnostics(query);
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1135,15 +1369,15 @@ async function executeSkillAssistedRagShellCreatePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const [skillMatch, ragResult] = await Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted RAG handoff shell creation request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted RAG handoff shell creation request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir");
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1157,19 +1391,20 @@ async function executeSkillAssistedRagShellCreatePlan(
 
 async function executeSkillAssistedRagShellRemovePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const [skillMatch, ragResult] = await Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted RAG handoff shell removal request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted RAG handoff shell removal request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1187,15 +1422,15 @@ async function executeNpcAssistedRagShellCreatePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const [skillMatch, ragResult] = await Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted RAG handoff shell creation request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted RAG handoff shell creation request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir");
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1209,19 +1444,20 @@ async function executeNpcAssistedRagShellCreatePlan(
 
 async function executeNpcAssistedRagShellRemovePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const [skillMatch, ragResult] = await Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted RAG handoff shell removal request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted RAG handoff shell removal request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
   const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
 
   return {
@@ -1240,7 +1476,7 @@ async function executeNpcCollaborationPreviewPlan(
   const [npcOverview, enabledSkills, ragResult] = await Promise.all([
     loadOpenClawCapabilityOverview("npc"),
     listEnabledLocalSkills(),
-    searchLocalKnowledge(query)
+    searchLocalKnowledgeWithDiagnostics(query)
   ]);
 
   const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join(", ") || "none";
@@ -1350,36 +1586,54 @@ async function executeNpcLocalProjectShowcasePublishPreviewPlan(
   };
 }
 
-const desktopWorkspaceRoot = "E:\\2026\\opencow";
+async function executeNpcLocalProjectShowcaseGitConfirmationPreviewPlan(
+  resultTitle: string,
+  query: string
+): Promise<AssistantTaskExecutionResult> {
+  const result = await loadNpcLocalProjectShowcaseGitConfirmationPreview(query);
+
+  return {
+    resultTitle,
+    resultSummary:
+      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
+      `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
+      `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
+      `Recommended git action: ${result.recommended_git_action}. ` +
+      `${result.required_confirmation_stage} This is the readonly git-confirmation-preview stage inside the NPC showcase chain.`
+  };
+}
 
 async function executeNpcShellPlanPreview(
   resultTitle: string,
   query: string
 ): Promise<AssistantTaskExecutionResult> {
-  const [npcOverview, skillMatch] = await Promise.all([
+  const [npcOverview, skillMatch, workspaceOverview] = await Promise.all([
     loadOpenClawCapabilityOverview("npc"),
-    matchEnabledLocalSkills(query)
+    matchEnabledLocalSkills(query),
+    loadWorkspaceOverview()
   ]);
 
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC shell preview request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC shell preview request", skillMatch);
   }
 
-  const shellPreview = createReadonlyShellNextStepPreview(query);
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
 
   return {
     resultTitle,
     resultSummary:
       `${npcOverview.summary} Status: ${npcOverview.status}. Recommended skill: ${topMatch.name}. ` +
       `Registry: ${skillMatch.registry_path}. Command preview: ${shellPreview.command}. Next step: ${shellPreview.nextStep}. ` +
+      `Workspace root: ${shellPreview.workspaceRoot}. ` +
       `Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
   };
 }
 
-function createReadonlyShellNextStepPreview(query: string): {
+function createReadonlyShellNextStepPreview(query: string, workspaceRoot: string): {
   command: string;
+  workspaceRoot: string;
   nextStep: string;
   requiredPermission: string;
   safetyStatus: string;
@@ -1390,8 +1644,8 @@ function createReadonlyShellNextStepPreview(query: string): {
 
   const plan = planControlledCommand({
     command,
-    cwd: desktopWorkspaceRoot,
-    allowedRoots: [desktopWorkspaceRoot],
+    cwd: workspaceRoot,
+    allowedRoots: [workspaceRoot],
     permissionMode: "readonly",
     timeoutMs: 20_000
   });
@@ -1405,6 +1659,7 @@ function createReadonlyShellNextStepPreview(query: string): {
 
   return {
     command,
+    workspaceRoot,
     nextStep,
     requiredPermission: plan.requiredPermission,
     safetyStatus: safety.status
@@ -1415,7 +1670,7 @@ async function executeWorkspaceWriteShellPlan(
   resultTitle: string,
   commandId: "create-temp-output-dir"
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runWorkspaceWriteShellCommand(commandId);
+  const result = await runWorkspaceWriteShellCommandWithDiagnostics(commandId);
 
   return {
     resultTitle,
@@ -1471,12 +1726,106 @@ async function executeWorkspaceProjectStopPlan(
 
 async function executeControlledFullShellPlan(
   resultTitle: string,
-  commandId: "remove-temp-output-dir"
+  commandId: "remove-temp-output-dir",
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runControlledFullShellCommand(commandId);
+  const result = await runControlledFullShellCommandWithDiagnostics(commandId, context);
 
   return {
     resultTitle,
     resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
   };
+}
+
+async function runReadonlyShellCommandWithDiagnostics(
+  commandId: "git-status" | "workspace-root-list" | "packages-dir-list"
+) {
+  try {
+    return await runReadonlyShellCommand(commandId);
+  } catch (error: unknown) {
+    throw createShellExecutionDiagnosticError({
+      commandId,
+      requiredPermission: "readonly",
+      recoveryStep: "verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying",
+      error
+    });
+  }
+}
+
+async function runWorkspaceWriteShellCommandWithDiagnostics(commandId: "create-temp-output-dir") {
+  try {
+    return await runWorkspaceWriteShellCommand(commandId);
+  } catch (error: unknown) {
+    throw createShellExecutionDiagnosticError({
+      commandId,
+      requiredPermission: "workspace-write",
+      recoveryStep: "verify the permission approval, workspace root, command whitelist, and audit trail before retrying",
+      error
+    });
+  }
+}
+
+async function runControlledFullShellCommandWithDiagnostics(
+  commandId: "remove-temp-output-dir",
+  context: AssistantTaskExecutionContext
+) {
+  assertControlledFullCommandSafety(commandId, context);
+
+  try {
+    return await runControlledFullShellCommand(commandId);
+  } catch (error: unknown) {
+    throw createShellExecutionDiagnosticError({
+      commandId,
+      requiredPermission: "controlled-full",
+      recoveryStep:
+        "verify the dangerous confirmation, rollback snapshot availability, workspace root, command whitelist, and audit trail before retrying",
+      error
+    });
+  }
+}
+
+function assertControlledFullCommandSafety(
+  commandId: "remove-temp-output-dir",
+  context: AssistantTaskExecutionContext
+) {
+  if (context.snapshotAvailable === false) {
+    throw new Error(
+      `Shell execution blocked in assistantTaskService. Command id: ${commandId}. ` +
+        "Required permission: controlled-full. Reason: rollback snapshot unavailable. " +
+        "Next step: restore snapshot capability or run a readonly preview before retrying destructive execution."
+    );
+  }
+}
+
+function createShellExecutionDiagnosticError(payload: {
+  commandId: string;
+  requiredPermission: PermissionMode;
+  recoveryStep: string;
+  error: unknown;
+}): Error {
+  const detail = (payload.error instanceof Error ? payload.error.message : String(payload.error)).replace(/[.。]\s*$/, "");
+  const recoveryNarrative = getShellDialogRecoveryNarrative();
+
+  return new Error(
+    `Shell execution failed in assistantTaskService. Command id: ${payload.commandId}. ` +
+      `Required permission: ${payload.requiredPermission}. Underlying error: ${detail}. ` +
+      `Next step: ${payload.recoveryStep}. ${recoveryNarrative}`
+  );
+}
+
+function createOpencowSelfRepairDiagnosticError(payload: {
+  target: string;
+  targetPath: string;
+  requiredPermission: PermissionMode;
+  recoveryStep: string;
+  error: unknown;
+}): Error {
+  const detail = (payload.error instanceof Error ? payload.error.message : String(payload.error)).replace(/[.。]\s*$/, "");
+  const recoveryNarrative = getShellDialogRecoveryNarrative();
+
+  return new Error(
+    `Opencow self-repair failed in assistantTaskService. Target: ${payload.target}. ` +
+      `Target path: ${payload.targetPath}. Required permission: ${payload.requiredPermission}. ` +
+      `Underlying error: ${detail}. Next step: ${payload.recoveryStep}. ${recoveryNarrative}`
+  );
 }

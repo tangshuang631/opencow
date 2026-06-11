@@ -67,12 +67,14 @@ export type ToolExecutionResult = {
 };
 
 export type LocalTaskExecutionKind =
-  | "assistant-help-overview"
+  | "local-model-chat"
   | "workspace-overview"
   | "packages-overview"
   | "workspace-config-overview"
   | "opencow-self-repair-preview"
+  | "opencow-self-repair-target-guidance"
   | "opencow-self-repair-enabled-skills-registry"
+  | "opencow-self-repair-workspace-project-runtime-registry"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "skills-local-scan"
@@ -102,6 +104,7 @@ export type LocalTaskExecutionKind =
   | "npc-local-project-screenshot-capture"
   | "npc-local-project-showcase-site-write"
   | "npc-local-project-showcase-publish-preview"
+  | "npc-local-project-showcase-git-confirmation-preview"
   | "npc-local-shell-plan-preview"
   | "capability-npc-overview"
   | "capability-mcp-overview"
@@ -110,6 +113,7 @@ export type LocalTaskExecutionKind =
   | "mcp-local-plugin-start-preview"
   | "mcp-local-plugin-start"
   | "rag-local-doc-search"
+  | "network-search-guidance"
   | "readonly-shell-git-status"
   | "readonly-shell-workspace-root"
   | "readonly-shell-packages-dir"
@@ -122,14 +126,21 @@ export type LocalTaskExecutionKind =
 export type LocalTaskItem = {
   id: string;
   source: "composer";
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   summary: string;
+  executionMessage?: string;
   attemptCount: number;
   executionKind?: LocalTaskExecutionKind;
   executionTitle?: string;
   executionAuditSummary?: string;
   executionAuditDetail?: string;
   continuationMessage?: string;
+  progressSummary?: string;
+  streamingSummary?: string;
+  lastFailureSource?: string;
+  lastFailureSummary?: string;
+  lastFailureDetail?: string;
+  lastFailureActionLabel?: string;
 };
 
 export type StorageCleanupTarget = "conversation" | "logs" | "cache" | "snapshots" | "knowledge";
@@ -230,6 +241,7 @@ export type RollbackSnapshot = Pick<
   | "model"
   | "permission"
   | "confirmation"
+  | "conversation"
   | "search"
   | "sources"
   | "tools"

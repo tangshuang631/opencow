@@ -2,6 +2,8 @@ import type { ConversationEntry, PermissionMode, WorkbenchState } from "./workbe
 
 const MAX_CONVERSATION_ENTRIES = 12;
 const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
+const MAX_COMPRESSED_SNIPPETS = 5;
+const MAX_COMPRESSED_SNIPPET_LENGTH = 140;
 
 export function getPermissionPresentation(mode: PermissionMode) {
   if (mode === "workspace-write") {
@@ -46,7 +48,25 @@ export function createWorkbenchEventId(
   prefix: string,
   suffix: string
 ): string {
-  return `${prefix}-${suffix}-${state.rollback.entries.length}`;
+  return `${prefix}-${suffix}-${getNextWorkbenchEventOrdinal(state)}`;
+}
+
+function getNextWorkbenchEventOrdinal(state: WorkbenchState): number {
+  const rollbackOrdinals = state.rollback.entries
+    .map((entry) => parseTrailingOrdinal(entry.id))
+    .filter((value): value is number => value !== null);
+  const conversationOrdinals = state.conversation.entries
+    .map((entry) => parseTrailingOrdinal(entry.id))
+    .filter((value): value is number => value !== null);
+  const maxOrdinal = Math.max(0, ...rollbackOrdinals, ...conversationOrdinals);
+
+  return maxOrdinal + 1;
+}
+
+function parseTrailingOrdinal(id: string): number | null {
+  const match = id.match(/-(\d+)$/);
+
+  return match ? Number.parseInt(match[1] ?? "", 10) : null;
 }
 
 function compactConversationEntries(entries: ConversationEntry[]): ConversationEntry[] {
@@ -73,6 +93,10 @@ function compactConversationEntries(entries: ConversationEntry[]): ConversationE
     .map((entry) => entry.title)
     .filter((title, index, titles) => title.length > 0 && titles.indexOf(title) === index)
     .join(", ");
+  const sampleSnippets = selectCompressedConversationSnippets(
+    compressedEntries,
+    previousCompressedSummary.snippets
+  );
 
   return [
     ...keptEntries,
@@ -84,7 +108,10 @@ function compactConversationEntries(entries: ConversationEntry[]): ConversationE
       detailLines: [
         `Older user messages: ${compressedUserCount}`,
         `Older assistant or system messages: ${compressedSystemCount}`,
-        sampleTitles.length > 0 ? `Compressed highlights: ${sampleTitles}` : "Compressed highlights: none"
+        sampleTitles.length > 0 ? `Compressed highlights: ${sampleTitles}` : "Compressed highlights: none",
+        sampleSnippets.length > 0
+          ? `Compressed snippets: ${sampleSnippets.join(" | ")}`
+          : "Compressed snippets: none"
       ]
     }
   ];
@@ -94,12 +121,14 @@ function parseCompressedConversationEntry(entry: ConversationEntry | undefined):
   totalCount: number;
   userCount: number;
   systemCount: number;
+  snippets: string[];
 } {
   if (!entry) {
     return {
       totalCount: 0,
       userCount: 0,
-      systemCount: 0
+      systemCount: 0,
+      snippets: []
     };
   }
 
@@ -109,10 +138,54 @@ function parseCompressedConversationEntry(entry: ConversationEntry | undefined):
     entry.detailLines?.[1]?.match(/Older assistant or system messages: (\d+)/i)?.[1] ?? "0",
     10
   );
+  const snippets = parseCompressedConversationSnippets(entry.detailLines);
 
   return {
     totalCount,
     userCount,
-    systemCount
+    systemCount,
+    snippets
   };
+}
+
+function selectCompressedConversationSnippets(
+  compressedEntries: ConversationEntry[],
+  previousSnippets: string[]
+): string[] {
+  const currentSnippets = compressedEntries
+    .slice()
+    .reverse()
+    .map(formatCompressedConversationSnippet)
+    .filter((snippet) => snippet.length > 0);
+  const uniqueSnippets = [...previousSnippets, ...currentSnippets].filter(
+    (snippet, index, snippets) => snippets.indexOf(snippet) === index
+  );
+
+  return uniqueSnippets.slice(0, MAX_COMPRESSED_SNIPPETS);
+}
+
+function formatCompressedConversationSnippet(entry: ConversationEntry): string {
+  const rawSnippet = `[${entry.kind}] ${entry.title}: ${entry.summary}`.replace(/\s+/g, " ").trim();
+
+  if (rawSnippet.length <= MAX_COMPRESSED_SNIPPET_LENGTH) {
+    return rawSnippet;
+  }
+
+  return `${rawSnippet.slice(0, MAX_COMPRESSED_SNIPPET_LENGTH - 1)}…`;
+}
+
+function parseCompressedConversationSnippets(detailLines: string[] | undefined): string[] {
+  const snippetsLine = detailLines?.find((line) => line.startsWith("Compressed snippets: "));
+
+  if (!snippetsLine) {
+    return [];
+  }
+
+  const snippets = snippetsLine.replace("Compressed snippets: ", "").trim();
+
+  if (!snippets || snippets === "none") {
+    return [];
+  }
+
+  return snippets.split(" | ").map((snippet) => snippet.trim()).filter(Boolean);
 }

@@ -2,7 +2,13 @@ import { FileText, Globe2, ListChecks, ScrollText } from "lucide-react";
 import { useState } from "react";
 import { RollbackPanel } from "./RollbackPanel";
 import type { StorageCleanupTarget, WorkbenchState } from "../workbenchState";
-import { normalizeWorkbenchText } from "../workbenchText";
+import {
+  getVisibleLocalTaskFailureActionLabel,
+  getVisibleLocalTaskFailureDetail,
+  getVisibleLocalTaskFailureTitle,
+  isLocalAssistantPlannerFailureSource,
+  normalizeWorkbenchText
+} from "../workbenchText";
 
 type InspectorProps = {
   state: WorkbenchState;
@@ -15,7 +21,7 @@ type InspectorProps = {
   onPreviewRollback: (targetEntryId: string) => void;
   onApplyRollback: () => void;
   onCancelRollback: () => void;
-  onRetryLocalTask: () => void;
+  onRetryLocalTask: (taskId?: string) => void;
   onCancelActiveTask: () => void;
   onUpdateRollbackLimit: (limit: number) => void;
   onCleanupStorage: (target: StorageCleanupTarget) => void;
@@ -29,9 +35,17 @@ const TEXT = {
   panel: "\u53f3\u4fa7\u9762\u677f",
   output: "\u8f93\u51fa",
   sources: "\u6765\u6e90",
+  sourceSummaryEmpty: "\u6682\u65e0\u5916\u90e8\u6765\u6e90\u3002\u6a21\u578b\u3001\u6743\u9650\u548c\u6765\u6e90\u660e\u7ec6\u6309\u9700\u5c55\u5f00\u3002",
+  sourceSummaryPrefix: "\u5df2\u8bb0\u5f55",
+  sourceSummarySuffix: "\u4e2a\u6765\u6e90\u3002\u6a21\u578b\u3001\u6743\u9650\u548c\u6765\u6e90\u660e\u7ec6\u6309\u9700\u5c55\u5f00\u3002",
+  expandSourceStatus: "\u5c55\u5f00\u6765\u6e90\u4e0e\u72b6\u6001",
   sourceProvider: "\u641c\u7d22\u63d0\u4f9b\u65b9",
   sourceTitle: "\u6765\u6e90\u6807\u9898",
   sourceUrl: "\u6765\u6e90\u5730\u5740",
+  records: "\u914d\u7f6e\u4e0e\u8bb0\u5f55",
+  recordsSummary: "\u6765\u6e90\u3001\u65e5\u5fd7\u548c\u56de\u9000\u8bb0\u5f55\u5df2\u6536\u7eb3\uff0c\u914d\u7f6e\u5165\u53e3\u5728\u8bbe\u7f6e\u4e2d\u3002",
+  expandRecords: "\u5c55\u5f00\u914d\u7f6e\u4e0e\u8bb0\u5f55",
+  collapseRecords: "\u6536\u8d77\u914d\u7f6e\u4e0e\u8bb0\u5f55",
   permission: "\u6743\u9650",
   permissionPending: "\u5f85\u5207\u6362\u6743\u9650",
   permissionReason: "\u63d0\u6743\u539f\u56e0",
@@ -52,58 +66,271 @@ const TEXT = {
   localTasks: "\u672c\u5730\u4efb\u52a1",
   taskPending: "\u5f85\u5904\u7406",
   taskUnit: "\u6761",
+  taskAttempt: "Attempt",
   stopTask: "\u505c\u6b62\u4efb\u52a1",
   retryTask: "\u91cd\u8bd5\u672c\u5730\u4efb\u52a1",
-  noLocalTasks: "\u6682\u65e0\u672c\u5730\u4efb\u52a1",
+  expandFailureDetails: "\u5c55\u5f00\u5931\u8d25\u7ec6\u8282",
+  collapseFailureDetails: "\u6536\u8d77\u5931\u8d25\u7ec6\u8282",
   tools: "\u5de5\u5177",
-  modelsDetectedPrefix: "\u5df2\u68c0\u6d4b",
-  modelsDetectedSuffix: "\u4e2a\u672c\u5730\u6a21\u578b",
-  waitingModels: "\u7b49\u5f85\u672c\u5730\u6a21\u578b",
   logs: "\u65e5\u5fd7",
+  expandLogs: "\u5c55\u5f00\u65e5\u5fd7\u7ec6\u8282",
   module: "\u6a21\u5757",
   source: "\u6765\u6e90",
   time: "\u65f6\u95f4",
   errors: "\u9519\u8bef",
   suggestion: "\u5efa\u8bae",
   noErrors: "\u5f53\u524d\u6ca1\u6709\u6d3b\u52a8\u9519\u8bef",
-  advanced: "\u9ad8\u7ea7\u8bbe\u7f6e",
-  remoteApiOn: "\u8fdc\u7a0b API \u5df2\u5f00\u542f",
-  remoteApiOff: "\u8fdc\u7a0b API \u9ed8\u8ba4\u5173\u95ed",
-  remoteApiCollapsed: "\u4fdd\u7559 baseUrl \u548c API \u63a5\u5165\u53e3\uff0c\u6309\u9700\u5c55\u5f00\u3002",
-  remoteApiExpanded: "\u8fdc\u7a0b API \u8bbe\u7f6e\u5df2\u5c55\u5f00\u3002",
   searchOn: "\u8054\u7f51\u641c\u7d22\u5df2\u5f00\u542f",
   searchOff: "\u8054\u7f51\u641c\u7d22\u9ed8\u8ba4\u5173\u95ed",
-  networkToggles: "\u7f51\u7edc\u5f00\u5173",
-  disableRemoteApi: "\u5173\u95ed\u8fdc\u7a0b API",
-  enableRemoteApi: "\u5f00\u542f\u8fdc\u7a0b API",
-  disableSearch: "\u5173\u95ed\u8054\u7f51\u641c\u7d22",
-  enableSearch: "\u5f00\u542f\u8054\u7f51\u641c\u7d22",
-  searchProviderLabel: "\u8054\u7f51\u641c\u7d22 Provider",
-  saveSearchProvider: "\u4fdd\u5b58\u8054\u7f51\u641c\u7d22\u914d\u7f6e",
-  remoteApiBaseUrl: "\u8fdc\u7a0b API Base URL",
-  remoteApiProvider: "\u8fdc\u7a0b API Provider",
-  remoteApiKey: "\u8fdc\u7a0b API Key",
-  saveRemoteApi: "\u4fdd\u5b58\u8fdc\u7a0b API \u914d\u7f6e",
-  rollbackLimit: "\u56de\u9000\u70b9\u4e0a\u9650",
-  rollbackHintPrefix: "\u5f53\u524d\u6700\u591a\u4fdd\u7559",
-  rollbackHintSuffix: "\u6bb5\u53ef\u56de\u9000\u70b9\u3002",
-  rollbackQuick: "\u56de\u9000\u70b9\u4e0a\u9650\u5feb\u6377\u8bbe\u7f6e",
-  session: "\u4f1a\u8bdd",
-  logCount: "\u65e5\u5fd7",
-  cacheCount: "\u7f13\u5b58\u6761\u76ee",
-  snapshotCount: "\u5feb\u7167",
-  knowledgeCount: "\u77e5\u8bc6\u5e93\u7d22\u5f15",
-  localCleanup: "\u672c\u5730\u6e05\u7406\u5165\u53e3",
-  clearConversation: "\u6e05\u7a7a\u4f1a\u8bdd",
-  clearLogs: "\u6e05\u7a7a\u65e5\u5fd7",
-  clearCache: "\u6e05\u7a7a\u7f13\u5b58",
-  clearSnapshots: "\u6e05\u7a7a\u5feb\u7167",
-  clearKnowledge: "\u6e05\u7a7a\u77e5\u8bc6\u5e93\u7d22\u5f15",
   running: "\u6267\u884c\u4e2d",
   completed: "\u5df2\u5b8c\u6210",
   failed: "\u5df2\u5931\u8d25",
+  cancelled: "\u5df2\u53d6\u6d88",
   queued: "\u961f\u5217\u4e2d"
 } as const;
+
+const MAX_LOCAL_TASK_ATTEMPTS = 3;
+const LONG_TASK_SUMMARY_LIMIT = 120;
+const PENDING_APPROVAL_TEXT_LIMIT = 260;
+const EMPTY_OUTPUT_TITLE = "暂无产物";
+const EMPTY_OUTPUT_SUMMARY = "等待工具执行结果或本地产物摘要。";
+const LOCAL_MODEL_CHAT_CONCISE_FAILURE_DETAIL =
+  "本地模型本轮没有按时返回完整结果，详细诊断已保留在本地任务失败细节和日志中。";
+
+function isLocalTaskExecutionErrorSource(source: string) {
+  return source === "local_task_runner"
+    || source === "local_task_timeout"
+    || source === "local_task_attempt_guard"
+    || source === "local_model_chat_runner"
+    || source === "local_task_missing_execution_kind"
+    || source === "opencow_self_repair_failure_analysis";
+}
+
+function isCompletedLocalModelChatTask(task: WorkbenchState["tasks"]["items"][number]) {
+  return task.executionKind === "local-model-chat" && task.status === "completed";
+}
+
+function shouldSuppressCompletedLocalModelChatOutput(state: WorkbenchState) {
+  const latestTask = state.tasks.items[0];
+
+  return Boolean(
+    latestTask
+      && isCompletedLocalModelChatTask(latestTask)
+      && state.audit.lastEvent.source === "local_task_runner"
+      && state.output.title === "本地模型答复"
+  );
+}
+
+function shouldSuppressLocalModelChatProgressOutput(state: WorkbenchState) {
+  const latestTask = state.tasks.items[0];
+
+  return Boolean(
+    latestTask
+      && latestTask.executionKind === "local-model-chat"
+      && (latestTask.status === "queued" || latestTask.status === "running")
+      && state.audit.lastEvent.source === "local_model_chat_progress"
+  );
+}
+
+function isPendingLocalModelChat(task: WorkbenchState["tasks"]["items"][number] | undefined) {
+  return Boolean(
+    task
+      && task.executionKind === "local-model-chat"
+      && (task.status === "queued" || task.status === "running")
+  );
+}
+
+function getVisibleOutputTitle(state: WorkbenchState) {
+  if (state.error?.source === "local_task_attempt_guard") {
+    return "本地任务已达到重试上限";
+  }
+
+  if (state.audit.lastEvent.source === "composer_submit_deduplicated") {
+    return "重复任务已跳过";
+  }
+
+  if (state.audit.lastEvent.source === "permission_confirmation_cancelled") {
+    return "高风险操作已取消";
+  }
+
+  if (state.audit.lastEvent.source === "permission_mode_change_cancelled") {
+    return "权限升级已取消";
+  }
+
+  if (state.audit.lastEvent.source === "capability_toggle_cancelled") {
+    return "能力变更已取消";
+  }
+
+  if (
+    state.error?.module === "tasks"
+    && (isLocalTaskExecutionErrorSource(state.error.source) || isLocalAssistantPlannerFailureSource(state.error.source))
+  ) {
+    return getVisibleLocalTaskFailureTitle(state.error.summary, state.error.source, state.error.detail);
+  }
+
+  return state.output.title;
+}
+
+function getVisibleOutputSummary(state: WorkbenchState) {
+  if (state.error?.module === "permission" && state.error.source === "command_policy") {
+    return "命令已被安全策略阻止，详细原因已保留在错误、日志和回退记录中。";
+  }
+
+  if (state.error?.source === "local_task_cancelled") {
+    return "任务已停止，未继续执行。可以改写请求、缩小范围，或确认后重新提交。";
+  }
+
+  if (state.error?.source === "local_task_attempt_guard") {
+    return "已停止重复执行，避免死循环。请查看失败详情、改写请求，或先帮助 opencow 修复缺失依赖。";
+  }
+
+  if (state.audit.lastEvent.source === "composer_submit_deduplicated") {
+    return getVisibleDuplicateLocalTaskSkipSummary(state.audit.lastEvent.detail);
+  }
+
+  if (state.audit.lastEvent.source === "permission_confirmation_cancelled") {
+    return "没有执行命令。详细记录可在日志或回退记录中展开。";
+  }
+
+  if (state.audit.lastEvent.source === "permission_mode_change_cancelled") {
+    return "当前权限保持不变。详细记录可在日志或回退记录中展开。";
+  }
+
+  if (state.audit.lastEvent.source === "capability_toggle_cancelled") {
+    return "当前设置保持不变。详细记录可在日志或回退记录中展开。";
+  }
+
+  if (state.error?.module === "tasks") {
+    if (state.error.source === "local_model_chat_runner") {
+      return LOCAL_MODEL_CHAT_CONCISE_FAILURE_DETAIL;
+    }
+
+    return `${getVisibleLocalTaskFailureActionLabel(state.error.actionLabel)} 完整失败详情已保留在错误、日志和展开详情中。`;
+  }
+
+  return getConciseVisibleOutputSummary(state.output.summary);
+}
+
+function getVisibleDuplicateLocalTaskSkipSummary(detail: string) {
+  if (detail.includes("retry limit")) {
+    return "相同任务已经达到重试上限，请查看失败详情、改写请求，或先帮助 opencow 修复缺失依赖。";
+  }
+
+  if (detail.includes("Existing task status: failed")) {
+    return "相同任务已经失败，请先查看失败详情、点击重试本地任务，或改写请求。";
+  }
+
+  return "已有相同任务正在排队或执行，已跳过这次重复提交。";
+}
+
+function getPendingApprovalTextPreview(text: string) {
+  const normalized = normalizeWorkbenchText(text).replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= PENDING_APPROVAL_TEXT_LIMIT) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, PENDING_APPROVAL_TEXT_LIMIT).trim()}...`;
+}
+
+function getVisibleErrorDetail(error: NonNullable<WorkbenchState["error"]>) {
+  if (error.source === "local_task_cancelled") {
+    return "停止记录已保留在日志和回退记录中。";
+  }
+
+  if (error.source === "local_task_attempt_guard") {
+    return "重试上限记录已保留在日志和回退记录中。";
+  }
+
+  if (error.module === "permission" && error.source === "command_policy") {
+    return normalizeWorkbenchText(error.detail);
+  }
+
+  if (error.module === "tools") {
+    return "完整工具错误详情已保留在日志、错误详情和回退记录中。";
+  }
+
+  if (error.module !== "tasks") {
+    return error.detail;
+  }
+
+  if (!isLocalTaskExecutionErrorSource(error.source) && !isLocalAssistantPlannerFailureSource(error.source)) {
+    return normalizeWorkbenchText(error.detail);
+  }
+
+  const failureDetail =
+    error.detail.match(/Failure detail:\s*(.*?)(?:\.\s*Recovery hint:|\.\s*Recovery visibility:|$)/s)?.[1]?.trim()
+    ?? error.detail;
+
+  return getVisibleLocalTaskFailureDetail(failureDetail, error.source);
+}
+
+function getVisibleErrorActionLabel(error: NonNullable<WorkbenchState["error"]>) {
+  if (error.source === "local_task_cancelled") {
+    return "任务已停止，未继续执行。可以改写请求、缩小范围，或确认后重新提交。";
+  }
+
+  if (error.source === "local_task_attempt_guard") {
+    return "已停止重复执行，避免死循环。请查看失败详情、改写请求，或先帮助 opencow 修复缺失依赖。";
+  }
+
+  if (
+    error.module === "tasks"
+    && (isLocalTaskExecutionErrorSource(error.source) || isLocalAssistantPlannerFailureSource(error.source))
+  ) {
+    return getVisibleLocalTaskFailureActionLabel(error.actionLabel);
+  }
+
+  return normalizeWorkbenchText(error.actionLabel);
+}
+
+function getVisibleErrorTitle(error: NonNullable<WorkbenchState["error"]>) {
+  if (error.module === "tasks") {
+    return getVisibleLocalTaskFailureTitle(error.summary, error.source, error.detail);
+  }
+
+  return normalizeWorkbenchText(error.summary);
+}
+
+function getConciseVisibleOutputSummary(summary: string) {
+  if (!summary.includes("Previous failure ")) {
+    return summary;
+  }
+
+  const pendingCountMatch = summary.match(/^当前有\s+\d+\s+条待处理任务/);
+
+  return pendingCountMatch
+    ? `${pendingCountMatch[0]}。上次失败细节已收起，可在本地任务中展开。`
+    : "上次失败细节已收起，可在本地任务或日志中展开。";
+}
+
+function isLongTaskSummary(summary: string) {
+  return normalizeWorkbenchText(summary).trim().length > LONG_TASK_SUMMARY_LIMIT;
+}
+
+function getVisibleTaskSummary(task: WorkbenchState["tasks"]["items"][number]) {
+  if (task.executionKind === "local-model-chat") {
+    if (task.status === "queued" || task.status === "running") {
+      return "正在生成";
+    }
+
+    if (task.status === "failed") {
+      return "本地模型对话失败，详情已收起到任务记录中。";
+    }
+
+    return "本地模型任务已结束。";
+  }
+
+  if (isLongTaskSummary(task.summary)) {
+    if (task.status === "failed") {
+      return "这条长文本输入处理失败，完整原文保留在左侧对话和审计记录中。";
+    }
+
+    return "等待本地助手处理，不在右侧重复展示长输入。";
+  }
+
+  return normalizeWorkbenchText(task.summary);
+}
 
 export function Inspector({
   state,
@@ -111,24 +338,20 @@ export function Inspector({
   onCancelDangerousAction,
   onApprovePermissionRequest,
   onCancelPermissionRequest,
-  onRetryOllamaCheck,
   onRecoverToolError,
   onPreviewRollback,
   onApplyRollback,
   onCancelRollback,
   onRetryLocalTask,
-  onCancelActiveTask,
-  onUpdateRollbackLimit,
-  onCleanupStorage,
-  onToggleRemoteApi,
-  onToggleSearch,
-  onSaveRemoteApiConfig,
-  onSaveSearchProviderConfig
+  onCancelActiveTask
 }: InspectorProps) {
   const visibleSources = state.sources.items.slice(0, 3);
-  const visibleTasks = state.tasks.items.slice(0, 3);
-  const hasModels = state.model.availableModels.length > 0;
+  const visibleTasks = state.tasks.items.filter((task) => !isCompletedLocalModelChatTask(task)).slice(0, 3);
+  const hasTaskAtAttemptLimit = state.tasks.items.some(
+    (task) => task.status === "failed" && task.attemptCount >= MAX_LOCAL_TASK_ATTEMPTS
+  );
   const pendingConfirmation = state.confirmation.pending;
+  const hasPendingPermissionOrConfirmation = Boolean(state.permission.pendingModeChange || pendingConfirmation);
   const capabilityAuditSources = new Set([
     "capability_toggle_request",
     "capability_toggle_approved",
@@ -136,48 +359,141 @@ export function Inspector({
   ]);
   const isCapabilityConfirmationContext = Boolean(pendingConfirmation?.requestedFeature)
     || capabilityAuditSources.has(state.audit.lastEvent.source);
-  const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
-  const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
-  const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
-  const [searchProviderLabel, setSearchProviderLabel] = useState(state.search.providerLabel || "Tavily");
+  const [auditExpanded, setAuditExpanded] = useState(false);
+  const [recordsExpanded, setRecordsExpanded] = useState(false);
+  const [sourceStatusExpanded, setSourceStatusExpanded] = useState(false);
+  const [expandedFailureTaskIds, setExpandedFailureTaskIds] = useState<Set<string>>(() => new Set());
+  const visibleOutputTitle = getVisibleOutputTitle(state);
+  const visibleOutputSummary = getVisibleOutputSummary(state);
+  const shouldKeepInspectorQuietForLocalModelGeneration = Boolean(
+    isPendingLocalModelChat(state.tasks.items[0])
+      && !hasPendingPermissionOrConfirmation
+      && !state.rollback.pendingPreview
+      && !state.error
+      && !state.tools.lastResult
+  );
+  const hasVisibleOutput =
+    !shouldKeepInspectorQuietForLocalModelGeneration
+    &&
+    !shouldSuppressCompletedLocalModelChatOutput(state)
+    && !shouldSuppressLocalModelChatProgressOutput(state)
+    && (visibleOutputTitle !== EMPTY_OUTPUT_TITLE || visibleOutputSummary !== EMPTY_OUTPUT_SUMMARY);
+  const visibleError = state.error?.module === "ollama" ? null : state.error;
+
+  const sourceSection = (
+    <section>
+      <h2>
+        <Globe2 aria-hidden="true" size={16} />
+        {TEXT.sources}
+      </h2>
+      <p className="muted">
+        {state.sources.items.length > 0
+          ? `${TEXT.sourceSummaryPrefix} ${state.sources.items.length} ${TEXT.sourceSummarySuffix}`
+          : TEXT.sourceSummaryEmpty}
+      </p>
+      <button
+        className="inspector-disclosure-button"
+        type="button"
+        onClick={() => setSourceStatusExpanded((expanded) => !expanded)}
+      >
+        {TEXT.expandSourceStatus}
+      </button>
+      {sourceStatusExpanded ? (
+        <div className="inspector-disclosure">
+          <p className="muted">{state.search.enabled ? TEXT.searchOn : TEXT.searchOff}</p>
+          {state.search.providerLabel ? <p className="muted">{TEXT.sourceProvider}: {state.search.providerLabel}</p> : null}
+          <p className="muted">Ollama: {normalizeWorkbenchText(state.model.status)}</p>
+          <p className="muted">{TEXT.permission}: {normalizeWorkbenchText(state.permission.label)}</p>
+          <p className="muted">{normalizeWorkbenchText(state.permission.summary)}</p>
+          {visibleSources.map((item) => (
+            <div key={`${item.provider}-${item.url}`}>
+              <p className="muted">{TEXT.sourceTitle}: {normalizeWorkbenchText(item.title)}</p>
+              <p className="muted">{TEXT.sourceUrl}: {item.url}</p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+
+  const auditSection = (
+    <section>
+      <h2>
+        <ScrollText aria-hidden="true" size={16} />
+        {TEXT.logs}
+      </h2>
+      <p className="muted">{normalizeWorkbenchText(state.audit.summary)}</p>
+      <button
+        className="inspector-disclosure-button"
+        type="button"
+        onClick={() => setAuditExpanded((expanded) => !expanded)}
+      >
+        {TEXT.expandLogs}
+      </button>
+      {auditExpanded ? (
+        <div className="inspector-disclosure">
+          <p className="muted">{TEXT.module}: {normalizeWorkbenchText(state.audit.lastEvent.module)}</p>
+          <p className="muted">{TEXT.source}: {normalizeWorkbenchText(state.audit.lastEvent.source)}</p>
+          <p className="muted">{TEXT.time}: {normalizeWorkbenchText(state.audit.lastEvent.timestamp)}</p>
+          <p className="muted">{normalizeWorkbenchText(state.audit.lastEvent.detail)}</p>
+        </div>
+      ) : null}
+    </section>
+  );
+
+  const rollbackSection = (
+    <RollbackPanel
+      state={state}
+      onPreviewRollback={onPreviewRollback}
+      onApplyRollback={onApplyRollback}
+      onCancelRollback={onCancelRollback}
+    />
+  );
 
   return (
-    <aside className="inspector" aria-label={TEXT.panel}>
-      <section>
-        <h2>
-          <FileText aria-hidden="true" size={16} />
-          {TEXT.output}
-        </h2>
-        <p className="muted">{normalizeWorkbenchText(state.output.title)}</p>
-        <p className="muted">{normalizeWorkbenchText(state.output.summary)}</p>
-      </section>
+    <aside className="inspector glass-gradient-sidebar-right" aria-label={TEXT.panel}>
+      {hasVisibleOutput ? (
+        <section>
+          <h2>
+            <FileText aria-hidden="true" size={16} />
+            {TEXT.output}
+          </h2>
+          <p className="muted">{normalizeWorkbenchText(visibleOutputTitle)}</p>
+          <p className="muted">{normalizeWorkbenchText(visibleOutputSummary)}</p>
+        </section>
+      ) : null}
 
-      <section>
-        <h2>
-          <Globe2 aria-hidden="true" size={16} />
-          {TEXT.sources}
-        </h2>
-        <p className="muted">{state.search.enabled ? TEXT.searchOn : TEXT.searchOff}</p>
-        {state.search.providerLabel ? <p className="muted">{TEXT.sourceProvider}: {state.search.providerLabel}</p> : null}
-        <p className="muted">Ollama: {normalizeWorkbenchText(state.model.status)}</p>
-        <p className="muted">{TEXT.permission}: {normalizeWorkbenchText(state.permission.label)}</p>
-        <p className="muted">{normalizeWorkbenchText(state.permission.summary)}</p>
-        {visibleSources.map((item) => (
-          <div key={`${item.provider}-${item.url}`}>
-            <p className="muted">{TEXT.sourceTitle}: {normalizeWorkbenchText(item.title)}</p>
-            <p className="muted">{TEXT.sourceUrl}: {item.url}</p>
-          </div>
-        ))}
-      </section>
+      {shouldKeepInspectorQuietForLocalModelGeneration ? null : (
+        <section>
+          <h2>{TEXT.records}</h2>
+          <p className="muted">{TEXT.recordsSummary}</p>
+          <button
+            className="inspector-disclosure-button"
+            type="button"
+            onClick={() => setRecordsExpanded((expanded) => !expanded)}
+          >
+            {recordsExpanded ? TEXT.collapseRecords : TEXT.expandRecords}
+          </button>
+        </section>
+      )}
 
-      <section>
-        <h2>{normalizeWorkbenchText(state.permission.confirmationTitle)}</h2>
-        <p className="muted">{normalizeWorkbenchText(state.permission.confirmationSummary)}</p>
+      {recordsExpanded ? (
+        <>
+          {sourceSection}
+          {auditSection}
+          {state.rollback.pendingPreview ? null : rollbackSection}
+        </>
+      ) : null}
+
+      {hasPendingPermissionOrConfirmation ? (
+        <section>
+          <h2>{normalizeWorkbenchText(state.permission.confirmationTitle)}</h2>
+          <p className="muted">{normalizeWorkbenchText(state.permission.confirmationSummary)}</p>
         {state.permission.pendingModeChange ? (
           <>
             <p className="muted">{TEXT.permissionPending}: {state.permission.pendingModeChange.targetMode}</p>
-            <p className="muted">{TEXT.permissionReason}: {normalizeWorkbenchText(state.permission.pendingModeChange.reason)}</p>
-            <p className="muted">{TEXT.permissionRisk}: {normalizeWorkbenchText(state.permission.pendingModeChange.riskSummary)}</p>
+            <p className="muted">{TEXT.permissionReason}: {getPendingApprovalTextPreview(state.permission.pendingModeChange.reason)}</p>
+            <p className="muted">{TEXT.permissionRisk}: {getPendingApprovalTextPreview(state.permission.pendingModeChange.riskSummary)}</p>
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
                 {TEXT.approvePrivilege}
@@ -187,19 +503,17 @@ export function Inspector({
               </button>
             </div>
           </>
-        ) : (
-          <p className="muted">{TEXT.noPermissionUpgrade}</p>
-        )}
+        ) : null}
 
         {pendingConfirmation ? (
           <>
-            <p className="muted">{normalizeWorkbenchText(pendingConfirmation.title)}</p>
-            <p className="muted">{normalizeWorkbenchText(pendingConfirmation.summary)}</p>
-            <p className="muted">{TEXT.commandPreview}: {normalizeWorkbenchText(pendingConfirmation.commandPreview)}</p>
-            <p className="muted">{TEXT.impact}: {normalizeWorkbenchText(pendingConfirmation.impact)}</p>
+            <p className="muted">{getPendingApprovalTextPreview(pendingConfirmation.title)}</p>
+            <p className="muted">{getPendingApprovalTextPreview(pendingConfirmation.summary)}</p>
+            <p className="muted">{TEXT.commandPreview}: {getPendingApprovalTextPreview(pendingConfirmation.commandPreview)}</p>
+            <p className="muted">{TEXT.impact}: {getPendingApprovalTextPreview(pendingConfirmation.impact)}</p>
             <p className="muted">{TEXT.requiredPermission}: {pendingConfirmation.requiredMode}</p>
             {pendingConfirmation.safetySummary ? (
-              <p className="muted">{TEXT.safety}: {normalizeWorkbenchText(pendingConfirmation.safetySummary)}</p>
+              <p className="muted">{TEXT.safety}: {getPendingApprovalTextPreview(pendingConfirmation.safetySummary)}</p>
             ) : null}
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApproveDangerousAction}>
@@ -210,251 +524,138 @@ export function Inspector({
               </button>
             </div>
           </>
-        ) : (
-          <p className="muted">{isCapabilityConfirmationContext ? TEXT.noCapability : TEXT.noDanger}</p>
-        )}
-      </section>
+        ) : null}
+        </section>
+      ) : null}
 
-      <section>
-        <h2>
-          <ListChecks aria-hidden="true" size={16} />
-          {TEXT.localTasks}
-        </h2>
-        <p className="muted">{TEXT.taskPending} {state.tasks.pendingCount} {TEXT.taskUnit}</p>
-        {visibleTasks.length > 0 ? (
+      {!shouldKeepInspectorQuietForLocalModelGeneration && visibleTasks.length > 0 ? (
+        <section>
+          <h2>
+            <ListChecks aria-hidden="true" size={16} />
+            {TEXT.localTasks}
+          </h2>
+          <p className="muted">{TEXT.taskPending} {state.tasks.pendingCount} {TEXT.taskUnit}</p>
           <div className="task-queue-list">
-            {visibleTasks.map((task) => (
-              <div key={task.id} className="task-queue-item">
-                <span className="task-queue-status">{getTaskStatusLabel(task.status)}</span>
-                <p className="task-queue-summary">{normalizeWorkbenchText(task.summary)}</p>
-                {task.status === "running" ? (
-                  <div className="action-row">
-                    <button aria-label={TEXT.stopTask} className="action-button" type="button" onClick={onCancelActiveTask}>
-                      {TEXT.stopTask}
-                    </button>
+            {visibleTasks.map((task) => {
+                const hasFailureDetails = Boolean(
+                  task.lastFailureSource
+                    || task.lastFailureSummary
+                    || task.lastFailureDetail
+                    || task.lastFailureActionLabel
+                );
+                const failureDetailsExpanded = expandedFailureTaskIds.has(task.id);
+
+                return (
+                  <div key={task.id} className="task-queue-item">
+                    <span className="task-queue-status">{getTaskStatusLabel(task.status)}</span>
+                    <p className="task-queue-summary">{getVisibleTaskSummary(task)}</p>
+                    {task.attemptCount > 0 ? (
+                      <p className="muted">{TEXT.taskAttempt} {task.attemptCount} / {MAX_LOCAL_TASK_ATTEMPTS}</p>
+                    ) : null}
+                    {hasFailureDetails ? (
+                      <button
+                        className="inspector-disclosure-button"
+                        type="button"
+                        onClick={() =>
+                          setExpandedFailureTaskIds((current) => {
+                            const next = new Set(current);
+
+                            if (next.has(task.id)) {
+                              next.delete(task.id);
+                            } else {
+                              next.add(task.id);
+                            }
+
+                            return next;
+                          })
+                        }
+                      >
+                        {failureDetailsExpanded ? TEXT.collapseFailureDetails : TEXT.expandFailureDetails}
+                      </button>
+                    ) : null}
+                    {hasFailureDetails && failureDetailsExpanded ? (
+                      <div className="inspector-disclosure">
+                        {task.lastFailureSource ? (
+                          <p className="muted">{`来源：${normalizeWorkbenchText(task.lastFailureSource)}`}</p>
+                        ) : null}
+                        {task.lastFailureSummary ? (
+                          <p className="muted">{`摘要：${normalizeWorkbenchText(task.lastFailureSummary)}`}</p>
+                        ) : null}
+                        {task.lastFailureDetail ? (
+                          <p className="muted">{`详情：${normalizeWorkbenchText(task.lastFailureDetail)}`}</p>
+                        ) : null}
+                        {task.lastFailureActionLabel ? (
+                          <p className="muted">{`建议：${normalizeWorkbenchText(task.lastFailureActionLabel)}`}</p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {task.status === "running" ? (
+                      <div className="action-row">
+                        <button aria-label={TEXT.stopTask} className="action-button" type="button" onClick={onCancelActiveTask}>
+                          {TEXT.stopTask}
+                        </button>
+                      </div>
+                    ) : null}
+                    {task.status === "failed" && task.attemptCount < MAX_LOCAL_TASK_ATTEMPTS ? (
+                      <div className="action-row">
+                        <button
+                          aria-label={TEXT.retryTask}
+                          className="action-button action-button-primary"
+                          type="button"
+                          onClick={() => onRetryLocalTask(task.id)}
+                        >
+                          {TEXT.retryTask}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-                {task.status === "failed" ? (
-                  <div className="action-row">
-                    <button
-                      aria-label={TEXT.retryTask}
-                      className="action-button action-button-primary"
-                      type="button"
-                      onClick={onRetryLocalTask}
-                    >
-                      {TEXT.retryTask}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ))}
+                );
+              })}
           </div>
-        ) : (
-          <p className="muted">{TEXT.noLocalTasks}</p>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <section>
-        <h2>
-          <ListChecks aria-hidden="true" size={16} />
-          {TEXT.tools}
-        </h2>
-        <p className="muted">
-          {state.tools.lastResult
-            ? `${normalizeWorkbenchText(state.tools.lastResult.toolLabel)}: ${normalizeWorkbenchText(state.tools.lastResult.summary)}`
-            : hasModels
-              ? `${TEXT.modelsDetectedPrefix} ${state.model.availableModels.length} ${TEXT.modelsDetectedSuffix}`
-              : TEXT.waitingModels}
-        </p>
-      </section>
+      {state.tools.lastResult ? (
+        <section>
+          <h2>
+            <ListChecks aria-hidden="true" size={16} />
+            {TEXT.tools}
+          </h2>
+          <p className="muted">
+            {`${normalizeWorkbenchText(state.tools.lastResult.toolLabel)}: ${normalizeWorkbenchText(state.tools.lastResult.summary)}`}
+          </p>
+        </section>
+      ) : null}
 
-      <section>
-        <h2>
-          <ScrollText aria-hidden="true" size={16} />
-          {TEXT.logs}
-        </h2>
-        <p className="muted">{normalizeWorkbenchText(state.audit.summary)}</p>
-        <p className="muted">{TEXT.module}: {normalizeWorkbenchText(state.audit.lastEvent.module)}</p>
-        <p className="muted">{TEXT.source}: {normalizeWorkbenchText(state.audit.lastEvent.source)}</p>
-        <p className="muted">{TEXT.time}: {normalizeWorkbenchText(state.audit.lastEvent.timestamp)}</p>
-        <p className="muted">{normalizeWorkbenchText(state.audit.lastEvent.detail)}</p>
-      </section>
-
-      <section>
-        <h2>{TEXT.errors}</h2>
-        {state.error ? (
+      {visibleError ? (
+        <section>
+          <h2>{TEXT.errors}</h2>
           <>
-            <p className="muted">{normalizeWorkbenchText(state.error.summary)}</p>
-            <p className="muted">{TEXT.module}: {normalizeWorkbenchText(state.error.module)}</p>
-            <p className="muted">{TEXT.source}: {normalizeWorkbenchText(state.error.source)}</p>
-            <p className="muted">{TEXT.time}: {normalizeWorkbenchText(state.error.timestamp)}</p>
-            <p className="muted">{normalizeWorkbenchText(state.error.detail)}</p>
-            <p className="muted">{TEXT.suggestion}: {normalizeWorkbenchText(state.error.actionLabel)}</p>
-            {state.error.module === "ollama" ? (
-              <div className="action-row">
-                <button className="action-button action-button-primary" type="button" onClick={onRetryOllamaCheck}>
-                  {normalizeWorkbenchText(state.error.actionLabel)}
-                </button>
-              </div>
-            ) : null}
-            {state.error.module === "tools" ? (
+            <p className="muted">{normalizeWorkbenchText(getVisibleErrorTitle(visibleError))}</p>
+            <p className="muted">{TEXT.module}: {normalizeWorkbenchText(visibleError.module)}</p>
+            <p className="muted">{TEXT.source}: {normalizeWorkbenchText(visibleError.source)}</p>
+            <p className="muted">{TEXT.time}: {normalizeWorkbenchText(visibleError.timestamp)}</p>
+            <p className="muted">{normalizeWorkbenchText(getVisibleErrorDetail(visibleError))}</p>
+            <p className="muted">{TEXT.suggestion}: {normalizeWorkbenchText(getVisibleErrorActionLabel(visibleError))}</p>
+            {visibleError.module === "tools" ? (
               <div className="action-row">
                 <button className="action-button action-button-primary" type="button" onClick={onRecoverToolError}>
-                  {normalizeWorkbenchText(state.error.actionLabel)}
+                  {normalizeWorkbenchText(visibleError.actionLabel)}
                 </button>
               </div>
             ) : null}
-            {state.error.module === "tasks" ? (
+            {visibleError.module === "tasks" && !hasTaskAtAttemptLimit ? (
               <div className="action-row">
-                <button className="action-button action-button-primary" type="button" onClick={onRetryLocalTask}>
+                <button className="action-button action-button-primary" type="button" onClick={() => onRetryLocalTask()}>
                   {TEXT.retryTask}
                 </button>
               </div>
             ) : null}
           </>
-        ) : (
-          <p className="muted">{TEXT.noErrors}</p>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <section>
-        <h2>{TEXT.advanced}</h2>
-        <p className="muted">{state.settings.remoteApi.enabled ? TEXT.remoteApiOn : TEXT.remoteApiOff}</p>
-        <p className="muted">
-          {state.settings.remoteApi.collapsed ? TEXT.remoteApiCollapsed : TEXT.remoteApiExpanded}
-        </p>
-        <p className="muted">{state.search.enabled ? TEXT.searchOn : TEXT.searchOff}</p>
-        <div className="action-row" aria-label={TEXT.networkToggles}>
-          <button
-            className="action-button"
-            type="button"
-            onClick={() => onToggleRemoteApi(!state.settings.remoteApi.enabled)}
-          >
-            {state.settings.remoteApi.enabled ? TEXT.disableRemoteApi : TEXT.enableRemoteApi}
-          </button>
-          <button className="action-button" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
-            {state.search.enabled ? TEXT.disableSearch : TEXT.enableSearch}
-          </button>
-        </div>
-        <div className="action-row">
-          <label>
-            <span className="muted">{TEXT.searchProviderLabel}</span>
-            <input
-              aria-label={TEXT.searchProviderLabel}
-              type="text"
-              value={searchProviderLabel}
-              onChange={(event) => setSearchProviderLabel(event.target.value)}
-            />
-          </label>
-        </div>
-        <div className="action-row">
-          <button
-            className="action-button"
-            type="button"
-            onClick={() =>
-              onSaveSearchProviderConfig({
-                providerLabel: searchProviderLabel
-              })
-            }
-          >
-            {TEXT.saveSearchProvider}
-          </button>
-        </div>
-        <div className="action-row">
-          <label>
-            <span className="muted">{TEXT.remoteApiBaseUrl}</span>
-            <input
-              aria-label={TEXT.remoteApiBaseUrl}
-              type="text"
-              value={remoteApiBaseUrl}
-              onChange={(event) => setRemoteApiBaseUrl(event.target.value)}
-            />
-          </label>
-        </div>
-        <div className="action-row">
-          <label>
-            <span className="muted">{TEXT.remoteApiProvider}</span>
-            <input
-              aria-label={TEXT.remoteApiProvider}
-              type="text"
-              value={remoteApiProviderLabel}
-              onChange={(event) => setRemoteApiProviderLabel(event.target.value)}
-            />
-          </label>
-        </div>
-        <div className="action-row">
-          <label>
-            <span className="muted">{TEXT.remoteApiKey}</span>
-            <input
-              aria-label={TEXT.remoteApiKey}
-              type="password"
-              value={remoteApiKey}
-              onChange={(event) => setRemoteApiKey(event.target.value)}
-            />
-          </label>
-        </div>
-        <div className="action-row">
-          <button
-            className="action-button"
-            type="button"
-            onClick={() =>
-              onSaveRemoteApiConfig({
-                baseUrl: remoteApiBaseUrl,
-                providerLabel: remoteApiProviderLabel,
-                apiKey: remoteApiKey
-              })
-            }
-          >
-            {TEXT.saveRemoteApi}
-          </button>
-        </div>
-        <p className="muted">{TEXT.rollbackLimit} {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
-        <p className="muted">{TEXT.rollbackHintPrefix} {state.rollback.activeLimit} {TEXT.rollbackHintSuffix}</p>
-        <div className="action-row" aria-label={TEXT.rollbackQuick}>
-          <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(10)}>
-            10 段
-          </button>
-          <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(15)}>
-            15 段
-          </button>
-          <button className="action-button action-button-primary" type="button" onClick={() => onUpdateRollbackLimit(20)}>
-            20 段
-          </button>
-        </div>
-        <p className="muted">{TEXT.session} {state.storage.sessionCount}</p>
-        <p className="muted">{TEXT.logCount} {state.storage.logCount}</p>
-        <p className="muted">{TEXT.cacheCount} {state.storage.cacheCount}</p>
-        <p className="muted">{TEXT.snapshotCount} {state.storage.snapshotCount}</p>
-        <p className="muted">{TEXT.knowledgeCount} {state.storage.knowledgeCount}</p>
-        <div className="action-row" aria-label={TEXT.localCleanup}>
-          <button className="action-button" type="button" onClick={() => onCleanupStorage("conversation")}>
-            {TEXT.clearConversation}
-          </button>
-          <button className="action-button" type="button" onClick={() => onCleanupStorage("logs")}>
-            {TEXT.clearLogs}
-          </button>
-        </div>
-        <div className="action-row">
-          <button className="action-button" type="button" onClick={() => onCleanupStorage("cache")}>
-            {TEXT.clearCache}
-          </button>
-          <button className="action-button" type="button" onClick={() => onCleanupStorage("snapshots")}>
-            {TEXT.clearSnapshots}
-          </button>
-        </div>
-        <div className="action-row">
-          <button className="action-button" type="button" onClick={() => onCleanupStorage("knowledge")}>
-            {TEXT.clearKnowledge}
-          </button>
-        </div>
-      </section>
-
-      <RollbackPanel
-        state={state}
-        onPreviewRollback={onPreviewRollback}
-        onApplyRollback={onApplyRollback}
-        onCancelRollback={onCancelRollback}
-      />
+      {state.rollback.pendingPreview ? rollbackSection : null}
     </aside>
   );
 }
@@ -470,6 +671,10 @@ function getTaskStatusLabel(status: WorkbenchState["tasks"]["items"][number]["st
 
   if (status === "failed") {
     return TEXT.failed;
+  }
+
+  if (status === "cancelled") {
+    return TEXT.cancelled;
   }
 
   return TEXT.queued;

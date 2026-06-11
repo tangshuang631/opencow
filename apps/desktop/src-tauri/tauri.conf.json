@@ -12,11 +12,14 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "opencow",
+        "create": false,
         "width": 1320,
         "height": 860,
         "minWidth": 980,
-        "minHeight": 680
+        "minHeight": 680,
+        "dataDirectory": "dev-webview"
       }
     ]
   },
