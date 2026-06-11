@@ -46,3 +46,205 @@ export function normalizeWorkbenchText(value: string): string {
 
   return normalized.replace(/\?+/g, "").trim();
 }
+
+function isReadonlyShellFailure(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("readonly-shell") || normalized.includes("required permission: readonly");
+}
+
+function isWorkspaceWriteShellFailure(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("workspace-write")
+    || normalized.includes("workspace_write")
+    || normalized.includes("required permission: workspace-write");
+}
+
+function isControlledFullShellFailure(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("controlled-full")
+    || normalized.includes("controlled_full")
+    || normalized.includes("required permission: controlled-full");
+}
+
+function isLocalRagFailure(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("local rag search failed")
+    || normalized.includes("rag retry self-check")
+    || normalized.includes("local knowledge index")
+    || normalized.includes("document parsers for pptx/docx/md")
+    || normalized.includes("pptx/docx/md");
+}
+
+function isLocalExecutionMappingFailure(value: string): boolean {
+  const normalized = value.toLowerCase();
+
+  return normalized.includes("invalid local assistant execution result")
+    || normalized.includes("inspect assistanttaskservice result mapping");
+}
+
+function isUnknownLocalExecutionFailure(value: string): boolean {
+  return value.toLowerCase().includes("unknown local assistant execution error");
+}
+
+export function isLocalAssistantPlannerFailureSource(source?: string): boolean {
+  return source === "local_assistant_planner"
+    || source === "local_assistant_self_check_planner"
+    || source === "local_task_retry_self_check_planner";
+}
+
+export function getVisibleLocalTaskFailureTitle(summary: string, source?: string, detail = ""): string {
+  if (isLocalAssistantPlannerFailureSource(source) || summary === "Local assistant planning failed") {
+    return "\u672c\u5730\u52a9\u624b\u89c4\u5212\u5931\u8d25";
+  }
+
+  if (source === "local_task_attempt_guard") {
+    return "本地任务已达到重试上限";
+  }
+
+  if (source === "local_task_timeout" || summary === "Local task execution timed out") {
+    return summary;
+  }
+
+  if (
+    summary === "Local task execution failed"
+    && (isReadonlyShellFailure(detail) || isWorkspaceWriteShellFailure(detail) || isControlledFullShellFailure(detail))
+  ) {
+    return "本地任务执行失败";
+  }
+
+  if (isLocalRagFailure(detail) || isLocalRagFailure(summary)) {
+    return "本地 RAG 检索失败";
+  }
+
+  if (isLocalExecutionMappingFailure(detail) || isLocalExecutionMappingFailure(summary)) {
+    return "本地任务执行失败";
+  }
+
+  if (summary === "Local task execution failed" && isUnknownLocalExecutionFailure(detail)) {
+    return "本地任务执行失败";
+  }
+
+  return normalizeWorkbenchText(summary);
+}
+
+export function getVisibleLocalTaskFailureActionLabel(actionLabel: string): string {
+  const normalized = actionLabel.trim();
+
+  if (
+    normalized.includes("Review planner routing, rewrite the request, or restart from a readonly preview before retrying.")
+    || normalized.includes("Review RAG self-check routing before retrying the failed document query.")
+    || normalized.includes("Review shell self-check routing before retrying the failed write or destructive command.")
+    || normalized.includes("请改写请求后重新提交")
+    || normalized.includes("从只读预览重新开始")
+  ) {
+    return "\u8bf7\u6539\u5199\u8bf7\u6c42\uff0c\u6216\u4ece\u53ea\u8bfb\u9884\u89c8\u91cd\u65b0\u5f00\u59cb\u3002";
+  }
+
+  if (
+    normalized.includes("verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying")
+    || normalized.includes("只读 shell 桥接")
+  ) {
+    return "请先检查只读 shell 桥接、工作区根目录、命令白名单和审计记录，再重试。";
+  }
+
+  if (
+    normalized.includes("verify the permission approval, workspace root, command whitelist, and audit trail before retrying")
+    || normalized.includes("权限审批")
+  ) {
+    return "请先检查权限审批、工作区根目录、命令白名单和审计记录，再重试。";
+  }
+
+  if (
+    normalized.includes("verify the dangerous confirmation, rollback snapshot availability, workspace root, command whitelist, and audit trail before retrying")
+    || normalized.includes("高风险确认")
+  ) {
+    return "请先检查高风险确认、回退快照、工作区根目录、命令白名单和审计记录，再重试。";
+  }
+
+  if (normalized === "restore snapshot capability or run a readonly preview before retrying destructive execution.") {
+    return "请先恢复回退快照能力，或先运行只读预览再重试高风险执行。";
+  }
+
+  if (isLocalRagFailure(normalized)) {
+    return "请先检查本地 RAG 索引、pptx/docx/md 解析器和工作区根目录，再缩小文档范围重试。";
+  }
+
+  if (isLocalExecutionMappingFailure(normalized)) {
+    return "请先检查本地助手执行结果映射，再重试。";
+  }
+
+  if (normalized === "Check the local execution chain and try again.") {
+    return "请检查本地执行链和日志，再重试。";
+  }
+
+  return normalizeWorkbenchText(actionLabel);
+}
+
+export function getVisibleLocalTaskFailureDetail(detail: string, source?: string): string {
+  if (isLocalAssistantPlannerFailureSource(source)) {
+    return "\u672c\u5730\u52a9\u624b\u6682\u65f6\u65e0\u6cd5\u7406\u89e3\u8fd9\u6b21\u8bf7\u6c42\uff0c\u672a\u6392\u961f\u3001\u672a\u6267\u884c\u4efb\u4f55\u547d\u4ee4\u3002";
+  }
+
+  if (source === "local_model_chat_runner") {
+    const actionableDetail = getActionableOllamaFailureDetail(detail);
+
+    if (actionableDetail) {
+      return actionableDetail;
+    }
+
+    return "本地模型本轮没有按时返回完整结果，详细诊断已保留在本地任务失败细节和日志中。";
+  }
+
+  if (isReadonlyShellFailure(detail)) {
+    return "本地 shell 执行没有完成。完整命令、权限和底层错误已保留在日志、回退记录和展开详情中。";
+  }
+
+  if (isWorkspaceWriteShellFailure(detail)) {
+    return "本地写入命令没有完成。完整命令、权限审批和底层错误已保留在日志、回退记录和展开详情中。";
+  }
+
+  if (isControlledFullShellFailure(detail)) {
+    return "本地高风险命令没有完成。完整命令、高风险确认、回退快照和底层错误已保留在日志、回退记录和展开详情中。";
+  }
+
+  if (isLocalRagFailure(detail)) {
+    return "本地 RAG 没有完成。完整索引、解析器、文件路径和重试诊断已保留在日志、回退记录和展开详情中。";
+  }
+
+  if (isLocalExecutionMappingFailure(detail)) {
+    return "本地助手返回了无法识别的执行结果。完整结果映射诊断已保留在日志、回退记录和展开详情中。";
+  }
+
+  if (isUnknownLocalExecutionFailure(detail)) {
+    return "本地助手返回了空错误或未知错误。完整原始诊断已保留在日志、回退记录和展开详情中。";
+  }
+
+  return normalizeWorkbenchText(detail);
+}
+
+function getActionableOllamaFailureDetail(detail: string): string | null {
+  const conciseDetail = stripLocalModelDiagnostics(detail);
+  const normalized = conciseDetail.toLowerCase();
+  const isActionableOllamaError =
+    normalized.includes("ollama chat failed")
+    || normalized.includes("ollama stream returned an error")
+    || normalized.includes("no usable local ollama model")
+    || (normalized.includes("model ") && normalized.includes("not found"));
+
+  if (!isActionableOllamaError) {
+    return null;
+  }
+
+  return `Ollama error: ${conciseDetail}`;
+}
+
+function stripLocalModelDiagnostics(detail: string): string {
+  const diagnosticIndex = detail.indexOf("Local model chat diagnostics:");
+  const conciseDetail = diagnosticIndex >= 0 ? detail.slice(0, diagnosticIndex) : detail;
+
+  return conciseDetail.trim().replace(/[.\s]+$/, "");
+}
