@@ -377,3 +377,20 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This removes another approved low-risk fixed-output success path while preserving permission, audit, rollback, and model-stall fallback behavior.
 - Status: DONE
+
+## Follow-up: approved local project run/stop results use bounded local-model explanation
+
+- Symptom: `workspace-project-run` and `workspace-project-stop` correctly required `workspace-write` approval and used the controlled project lifecycle service, but their successful visible responses still surfaced deterministic facts such as `Run matched local project`, `Stop matched local project`, command, path, PID, URL, status, and stdout preview directly.
+- Root cause: The App-level result explanation hook already covered readonly project status and several approved low-risk mutation results, but not the approved local project lifecycle results. These paths were intentionally permission-gated because they affect local processes, yet there was no post-success model explanation layer after the service returned verified facts.
+- Fix: Added `workspace-project-run` and `workspace-project-stop` to the App explanation whitelist and post-approval mutation set in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain, in Chinese, that the project was started/stopped only after `workspace-write` approval, which project matched, which command/working directory/PID/URL/status were involved, how to safely check or stop/confirm status next, and that this is not arbitrary shell access.
+- Safety boundary: Permission approval still happens before the project lifecycle action. The model explanation runs only after `runWorkspaceProject` or `stopWorkspaceProject` succeeds. If the explanation stalls, OpenCow cancels the explanation request, falls back to verified service facts, and does not fail the already successful project action.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.project-run.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 4 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/features/assistant/assistantTaskService.project-stop.test.ts --pool forks --poolOptions.forks.singleFork` passed with 4 tests.
+  - `npm --workspace apps/desktop exec tsc -b` passed.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.project-run.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 130 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 41 tests.
+  - `npm run predesktop:dev` passed.
+- Regression test: `apps/desktop/src/app/app.project-run.test.tsx`
+- Related: This removes another user-visible fixed-output approved-success path while keeping process lifecycle actions strictly permission-gated, audit-visible, and fallback-safe when the explanation model stalls.
+- Status: DONE

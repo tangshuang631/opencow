@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const {
+  cancelOllamaChatMock,
   loadOllamaOverviewMock,
   chatWithOllamaModelMock,
   runWorkspaceProjectMock,
   getWorkspaceProjectStatusMock,
   stopWorkspaceProjectMock
 } = vi.hoisted(() => ({
+  cancelOllamaChatMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
   chatWithOllamaModelMock: vi.fn(),
   runWorkspaceProjectMock: vi.fn(),
@@ -17,6 +19,7 @@ const {
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  cancelOllamaChat: cancelOllamaChatMock,
   chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
@@ -45,6 +48,7 @@ async function waitForSelectedLocalModel() {
 
 describe("App project run flow", () => {
   beforeEach(() => {
+    cancelOllamaChatMock.mockReset();
     loadOllamaOverviewMock.mockReset();
     chatWithOllamaModelMock.mockReset();
     runWorkspaceProjectMock.mockReset();
@@ -69,6 +73,11 @@ describe("App project run flow", () => {
       pid: 4242,
       stdout_preview: "job:4242",
       summary: "Workspace project run started successfully and returned a live local process handle."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "desktop 项目已在批准工作区读写后通过受控项目运行链路启动，命令是 npm run dev，PID 是 4242，预期地址是 http://127.0.0.1:1420；可以继续查看状态或停止它。"
     });
 
     const { container } = render(<App />);
@@ -97,11 +106,20 @@ describe("App project run flow", () => {
     });
     fireEvent.click(approvePermissionButton);
 
+    const conversation = screen.getByRole("region", { name: "会话" });
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Run matched local project|apps\/desktop|npm run dev|http:\/\/127\.0\.0\.1:1420|4242/i).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("本地项目启动结果说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/desktop 项目已在批准工作区读写后/)).toBeInTheDocument();
     });
+    expect(runWorkspaceProjectMock).toHaveBeenCalledTimes(1);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^workspace-project-run-explanation-/),
+      message: expect.stringContaining("用户批准 workspace-write")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("PID: 4242")
+    }));
   });
 
   it("shows the final matched local project status result for an explicit readonly lifecycle request", async () => {
@@ -176,6 +194,11 @@ describe("App project run flow", () => {
       stdout_preview: "job:4242 stopped",
       summary: "Workspace project stop completed successfully and released the local process handle."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "desktop 项目已在批准工作区读写后通过受控项目停止链路停止，PID 4242 已释放，状态是 stopped；这一步没有删除项目文件。"
+    });
 
     const { container } = render(<App />);
 
@@ -203,10 +226,78 @@ describe("App project run flow", () => {
     });
     fireEvent.click(approvePermissionButton);
 
+    const conversation = screen.getByRole("region", { name: "会话" });
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Stop matched local project|apps\/desktop|npm run dev|4242|stopped|job:4242 stopped/i).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("本地项目停止结果说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/desktop 项目已在批准工作区读写后/)).toBeInTheDocument();
     });
+    expect(stopWorkspaceProjectMock).toHaveBeenCalledTimes(1);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^workspace-project-stop-explanation-/),
+      message: expect.stringContaining("PID: 4242")
+    }));
   });
+
+  it("falls back to verified project run facts when post-approval explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    runWorkspaceProjectMock.mockResolvedValueOnce({
+      project_name: "desktop",
+      project_path: "apps/desktop",
+      command_label: "npm run dev",
+      working_directory: "apps/desktop",
+      expected_url: "http://127.0.0.1:1420",
+      pid: 4242,
+      stdout_preview: "job:4242",
+      summary: "Workspace project run started successfully and returned a live local process handle."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    const { container } = render(<App />);
+
+    await waitForSelectedLocalModel();
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "run the desktop app locally" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
+    const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
+      name: APPROVE_PERMISSION_NAME
+    });
+    fireEvent.click(approvePermissionButton);
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: expect.stringMatching(/^workspace-project-run-explanation-/)
+      }));
+    });
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("Run matched local project")).toBeInTheDocument();
+      expect(within(conversation).getByText(/Workspace project run started successfully/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/npm run dev|http:\/\/127\.0\.0\.1:1420|4242/)).toBeInTheDocument();
+    }, { timeout: 12_000 });
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^workspace-project-run-explanation-/));
+    expect(runWorkspaceProjectMock).toHaveBeenCalledTimes(1);
+  }, 15_000);
 });
