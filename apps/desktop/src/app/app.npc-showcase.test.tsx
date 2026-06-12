@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const {
   loadOllamaOverviewMock,
+  chatWithOllamaModelMock,
   runWorkspaceProjectMock,
   captureNpcLocalProjectScreenshotMock,
   writeNpcLocalProjectShowcaseSiteMock,
@@ -11,6 +12,7 @@ const {
   loadNpcLocalProjectShowcaseGitConfirmationPreviewMock
 } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
+  chatWithOllamaModelMock: vi.fn(),
   runWorkspaceProjectMock: vi.fn(),
   captureNpcLocalProjectScreenshotMock: vi.fn(),
   writeNpcLocalProjectShowcaseSiteMock: vi.fn(),
@@ -19,6 +21,7 @@ const {
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
 
@@ -44,6 +47,16 @@ async function waitForSelectedLocalModel() {
 }
 
 describe("App npc local run flow", () => {
+  beforeEach(() => {
+    loadOllamaOverviewMock.mockReset();
+    chatWithOllamaModelMock.mockReset();
+    runWorkspaceProjectMock.mockReset();
+    captureNpcLocalProjectScreenshotMock.mockReset();
+    writeNpcLocalProjectShowcaseSiteMock.mockReset();
+    loadNpcLocalProjectShowcasePublishPreviewMock.mockReset();
+    loadNpcLocalProjectShowcaseGitConfirmationPreviewMock.mockReset();
+  });
+
   it("continues from npc showcase run permission approval into the final run result", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
@@ -212,6 +225,10 @@ describe("App npc local run flow", () => {
       next_git_step: "Git commit or push is still separate and requires its own explicit confirmation stage.",
       summary: "NPC local project showcase publish-preview loaded the latest generated showcase outputs without entering git."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "这是 cattle 项目的展示发布预览：站点产物已经在 .opencow/artifacts/npc-showcase/sites/cattle，下一步 Git commit 或 push 仍然需要单独确认，本轮没有执行提交或推送。"
+    });
 
     const { container } = render(<App />);
 
@@ -236,13 +253,19 @@ describe("App npc local run flow", () => {
       ).toBeNull();
     });
 
+    const conversation = screen.getByRole("region", { name: "会话" });
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(
-          /NPC local project showcase publish preview|cattle|apps\/cattle|\.opencow\/artifacts\/npc-showcase\/sites\/cattle|index\.html|Git commit or push is still separate/i
-        ).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("NPC 展示发布预览说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/本轮没有执行提交或推送/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("Git commit or push is still separate")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("为什么本轮没有进入提交或推送")
+    }));
   });
 
   it("continues from readonly npc showcase git confirmation preview into the final result without permission prompts", async () => {
@@ -263,6 +286,10 @@ describe("App npc local run flow", () => {
       recommended_git_action: "commit",
       required_confirmation_stage: "Git commit or push still requires its own explicit confirmation and execution stage.",
       summary: "NPC local project showcase git confirmation preview summarized the current showcase-related changes without executing git."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "这是 cattle 展示站点的 Git 确认预览：推荐动作是 commit，但还没有执行 git；继续前必须由用户显式确认提交或推送范围。"
     });
 
     const { container } = render(<App />);
@@ -288,12 +315,18 @@ describe("App npc local run flow", () => {
       ).toBeNull();
     });
 
+    const conversation = screen.getByRole("region", { name: "会话" });
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(
-          /NPC local project showcase git confirmation preview|cattle|apps\/cattle|\.opencow\/artifacts\/npc-showcase\/sites\/cattle|index\.html|commit|explicit confirmation/i
-        ).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("NPC Git 确认预览说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/还没有执行 git/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("explicit confirmation")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("为什么还没有执行 commit/push")
+    }));
   });
 });

@@ -636,6 +636,93 @@ describe("App", () => {
     }));
   });
 
+  it("explains readonly NPC collaboration previews through the selected local model", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
+      capability_id: "npc",
+      title: "OpenClaw NPC capability overview",
+      status: "ready-foundation",
+      required_package_count: 3,
+      available_package_count: 3,
+      available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/tool-call-repair"],
+      missing_packages: [],
+      summary: "NPC foundation packages are available for local collaboration preview."
+    });
+    listEnabledLocalSkillsMock.mockResolvedValueOnce({
+      summary: "Found 2 enabled local skill entries in the workspace registry.",
+      total_count: 2,
+      registry_path: ".opencow/skills/enabled-skills.json",
+      items: [
+        {
+          name: "coding-agent",
+          path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+          source: "vendor-openclaw-skill",
+          description: "OpenClaw coding agent workflow"
+        },
+        {
+          name: "docs-helper",
+          path: "skills/docs-helper/SKILL.md",
+          source: "workspace-skill",
+          description: "Help search local docs and rules."
+        }
+      ]
+    });
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: "preview an npc collaboration plan for local shell permission rules",
+      summary: "Local knowledge search returned 2 matching passages across 7 indexed documents.",
+      match_count: 2,
+      indexed_document_count: 7,
+      items: [
+        {
+          path: "docs/v1.0/04-permission-safety-shell.md",
+          title: "04-permission-safety-shell.md",
+          snippet: "Shell execution must include permission checks and confirmation.",
+          score: 42
+        },
+        {
+          path: "OPENCOW_CORE_RULES.md",
+          title: "OPENCOW_CORE_RULES.md",
+          snippet: "Permissions, shell, safety, logs, and rollback are core safety paths.",
+          score: 27
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "NPC 协作预览显示 ready-foundation 已具备，coding-agent 与 docs-helper 可以辅助读取仓库和规则；下一步如果要执行 Shell，仍必须走权限审批。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "preview an npc collaboration plan for local shell permission rules" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("NPC 协作预览说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/coding-agent 与 docs-helper/)).toBeInTheDocument();
+    });
+    expect(within(conversation).queryByText("NPC collaboration preview")).not.toBeInTheDocument();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("04-permission-safety-shell.md")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("已启用 Skills")
+    }));
+  });
+
   it("explains disabled network search guidance through the local model without claiming a web search ran", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,

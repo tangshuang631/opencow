@@ -138,3 +138,18 @@
 - Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/app/app.mcp-start.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.capabilities.test.ts`
 - Related: This removes another ordinary readonly fixed-output path while keeping MCP process startup gated by the controlled execution chain.
 - Status: DONE
+
+## Follow-up: readonly NPC previews use local-model explanation
+
+- Symptom: NPC collaboration and showcase preview flows still surfaced deterministic staged summaries directly in the main conversation, including English labels such as `NPC collaboration preview`, `readonly publish-preview stage`, and `explicit confirmation`.
+- Root cause: Several NPC preview execution kinds were safe readonly information tasks but were not included in the App-level readonly explanation hook.
+- Fix: Added `npc-local-collaboration-preview`, `npc-local-project-showcase-preview`, `npc-local-project-showcase-publish-preview`, `npc-local-project-showcase-git-confirmation-preview`, and `npc-local-shell-plan-preview` to the local-model explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain NPC readiness, enabled Skills, local doc evidence, showcase stages, shell-plan permission boundaries, and Git confirmation boundaries from readonly facts.
+- Safety boundary: Actual project launch, screenshot capture, showcase-site writes, and git execution are not included in this readonly hook. Those paths remain permission-backed or explicitly confirmable through the existing task guard chain.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.npc-showcase.test.tsx` passed with 37 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.npc-preview.test.ts src/features/assistant/assistantTaskService.npc-showcase.test.ts` passed with 16 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.npc-showcase.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx` passed with 172 tests.
+  - `npm run verify:all` passed, including 588 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/app/app.npc-showcase.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.npc-preview.test.ts`, `apps/desktop/src/features/assistant/assistantTaskService.npc-showcase.test.ts`
+- Related: This removes another user-visible fixed-output path in the NPC workflow while preserving the safety gates around real local process, artifact, and git side effects.
+- Status: DONE
