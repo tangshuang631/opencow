@@ -62,3 +62,21 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This preserves the required capability approval and provider-configuration gate for network search, while making the visible response model-generated and keeping raw diagnostics audit-only.
 - Status: DONE
+
+## Follow-up: explicit local RAG results use local-model explanation without weakening overflow recovery
+
+- Symptom: Explicit local RAG and Skill-assisted RAG requests still surfaced the deterministic retrieval summary as the final visible answer. That was traceable, but it felt like another fixed result path rather than a model-explained answer.
+- Root cause: The App-level readonly explanation hook covered workspace/package/config/capability/network guidance, but not `rag-local-doc-search` or `skills-local-enabled-rag-doc-search`.
+- Fix: Added both RAG result kinds to the readonly explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain the retrieved local facts, sources, limits, and next steps. Raw RAG facts remain available as audit-only detail through the existing successful-task path.
+- Safety boundary: Context-length local-model failures that auto-route into readonly RAG intentionally skip this second local-model explanation. This preserves the anti-stall rule that overflow recovery must not immediately call Ollama again.
+- Extra guard: Added an App-level regression for a late underlying task rejection after timeout, proving it cannot overwrite the visible timeout failure with a new confusing error.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx` passed with 86 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.rag-search.test.ts src/features/assistant/assistantTaskService.skills-rag.test.ts` passed with 11 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.chat.test.tsx src/app/app.test.tsx src/app/app.task-guard.test.tsx` passed with 132 tests.
+  - `npm --workspace apps/desktop run test:unit` passed with 583 tests.
+  - `npm run build`, `npm run check:encoding`, and `npm run check:health` passed.
+  - `npm run verify:all` passed, including 583 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/app/app.chat.test.tsx`, `apps/desktop/src/app/app.task-guard.test.tsx`
+- Related: This moves more ordinary readonly output through the local model while keeping context-overflow recovery bounded and non-looping.
+- Status: DONE

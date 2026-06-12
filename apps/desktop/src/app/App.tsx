@@ -413,6 +413,14 @@ function isReadonlyRagSelfCheckPlan(plan: AssistantTaskPlanResult): boolean {
   return plan.kind === "capability-rag-overview";
 }
 
+function shouldSkipReadonlyExplanationForRecoveryTask(task: WorkbenchState["tasks"]["items"][number]): boolean {
+  return task.executionKind === "rag-local-doc-search"
+    && Boolean(
+      task.executionAuditSummary?.includes("context-length local model retry")
+      || task.executionAuditDetail?.includes("context-length failure")
+    );
+}
+
 function getTaskExecutionMessage(task: WorkbenchState["tasks"]["items"][number]): string {
   return task.executionMessage?.trim() || task.summary;
 }
@@ -829,6 +837,8 @@ type ExplainableReadonlyResultKind =
   | "capability-skills-overview"
   | "capability-npc-overview"
   | "capability-mcp-overview"
+  | "rag-local-doc-search"
+  | "skills-local-enabled-rag-doc-search"
   | "network-search-guidance";
 
 function isExplainableReadonlyResultKind(kind: string | undefined): kind is ExplainableReadonlyResultKind {
@@ -839,6 +849,8 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
     || kind === "capability-mcp-overview"
+    || kind === "rag-local-doc-search"
+    || kind === "skills-local-enabled-rag-doc-search"
     || kind === "network-search-guidance";
 }
 
@@ -922,6 +934,14 @@ function getReadonlyOverviewExplanationTitle(
     return "联网搜索说明";
   }
 
+  if (executionKind === "skills-local-enabled-rag-doc-search") {
+    return "Skill 辅助 RAG 说明";
+  }
+
+  if (executionKind === "rag-local-doc-search") {
+    return "本地 RAG 说明";
+  }
+
   return "工作区说明";
 }
 
@@ -944,7 +964,11 @@ function createReadonlyOverviewExplanationPrompt(payload: {
               ? "重点解释 MCP 能力当前可用基础、插件/工具边界、缺失项，以及下一步如何安全验证。"
               : payload.executionKind === "network-search-guidance"
                 ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
-                : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+                : payload.executionKind === "skills-local-enabled-rag-doc-search"
+                  ? "重点根据已匹配 Skill 和本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                  : payload.executionKind === "rag-local-doc-search"
+                    ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                    : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [
     "你是 OpenCow 的本地项目说明助手。",
@@ -1627,7 +1651,10 @@ export function App() {
         });
         const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
 
-        if (!isExplainableReadonlyResultKind(activeTask.executionKind)) {
+        if (
+          !isExplainableReadonlyResultKind(activeTask.executionKind)
+          || shouldSkipReadonlyExplanationForRecoveryTask(activeTask)
+        ) {
           return validResult;
         }
 

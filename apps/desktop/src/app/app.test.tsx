@@ -1001,6 +1001,10 @@ describe("App", () => {
         }
       ]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "根据 docs-helper 匹配结果和本地规则文档，Shell 权限链路必须先走权限检查、确认、审计和超时保护，再执行受控命令。"
+    });
 
     render(<App />);
 
@@ -1011,12 +1015,19 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
+    const conversation = getConversationRegion();
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Skill-assisted local RAG document search|docs-helper|enabled-skills\.json|04-permission-safety-shell\.md/i)
-          .length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("Skill 辅助 RAG 说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/Shell 权限链路必须先走权限检查/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("docs-helper")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("04-permission-safety-shell.md")
+    }));
   });
 
   it("shows the final readonly local RAG result for an explicit local knowledge request", async () => {
@@ -1047,6 +1058,10 @@ describe("App", () => {
         }
       ]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "本地 RAG 命中的规则说明 Shell 执行必须带权限检查、确认、审计日志、超时和工作目录限制。"
+    });
 
     render(<App />);
 
@@ -1057,11 +1072,19 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
+    const conversation = getConversationRegion();
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Local RAG document search|04-permission-safety-shell\.md|OPENCOW_CORE_RULES\.md/i).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("本地 RAG 说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/权限检查、确认、审计日志、超时和工作目录限制/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("本地 RAG 命中文档")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("OPENCOW_CORE_RULES.md")
+    }));
   });
 
   it("continues from skill disable permission approval into the final disabled result", async () => {

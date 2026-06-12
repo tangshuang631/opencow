@@ -2267,6 +2267,70 @@ describe("App local task guard", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("keeps a timed-out local task failed when its underlying execution rejects late", async () => {
+    vi.useFakeTimers();
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    planAssistantTaskMock.mockReturnValue({
+      kind: "workspace-overview",
+      title: "Workspace overview",
+      summary: "Inspect the current workspace",
+      auditSummary: "Local assistant planned a workspace overview task.",
+      auditDetail: "Readonly workspace overview task."
+    });
+    let rejectTask: (reason: Error) => void = () => {};
+    executeAssistantTaskMock.mockReturnValueOnce(
+      new Promise<{ resultTitle: string; resultSummary: string }>((_, reject) => {
+        rejectTask = reject;
+      })
+    );
+
+    const { container } = render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expectWorkbenchReady();
+
+    fireEvent.change(container.querySelector("textarea") as HTMLTextAreaElement, {
+      target: { value: "inspect the workspace but the execution hangs then fails late" }
+    });
+    fireEvent.click(container.querySelector("button.send-button") as HTMLButtonElement);
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+    });
+    expect(executeAssistantTaskMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
+
+    await act(async () => {
+      rejectTask(new Error("Late bridge failure after timeout should stay in diagnostics only."));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Late bridge failure after timeout/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("surfaces self-repair failure analysis and a concrete user-help next step instead of looping", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
