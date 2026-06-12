@@ -87,14 +87,12 @@ const capabilityOverviewIntentPatterns = [
   /\boverview\b/i,
   /\breadiness\b/i,
   /\bwiring\b/i,
-  /\bsetup\b/i,
   /\bfoundation\b/i,
   /\bcapability\b/i,
   /能力/,
   /概览/,
   /就绪/,
   /接线/,
-  /配置/,
   /检查/
 ];
 const networkSearchIntentPatterns = [

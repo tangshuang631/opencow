@@ -103,6 +103,22 @@ describe("local assistant task planner", () => {
     });
   });
 
+  it.each([
+    "帮我配置一个本地 RAG 知识库",
+    "帮我配置一个文档处理 skill",
+    "帮我配置一个 mcp 插件工作流"
+  ])("keeps configuration-style capability requests on local model chat unless a controlled config flow exists: %s", (message) => {
+    const plan = planLocalAssistantTask({
+      message,
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
   it("keeps ordinary package.json concept questions on local model chat instead of workspace config overview", () => {
     const plan = planLocalAssistantTask({
       message: "package.json 是干嘛的，为什么前端项目里经常会有它",
