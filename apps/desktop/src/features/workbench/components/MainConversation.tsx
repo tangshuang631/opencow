@@ -24,7 +24,8 @@ const TEXT = {
   localModelThinkingTitle: "Ollama 正在生成",
   queuedLabel: "已进入本地任务队列",
   runningLabel: "正在本地执行链中处理",
-  localModelRunningLabel: "正在等待本地模型输出"
+  localModelRunningLabel: "正在等待本地模型输出",
+  localModelSlowStartHint: "本地模型首轮响应可能较慢，OpenCow 会保持界面响应，并持续等待真实输出返回。"
 } as const;
 
 const LONG_TEXT_LIMIT = 220;
@@ -356,6 +357,9 @@ export function MainConversation({
       ? TEXT.runningLabel
       : TEXT.queuedLabel;
   const pendingTitle = isLocalModelPending ? TEXT.localModelThinkingTitle : TEXT.thinkingTitle;
+  const pendingLocalModelProgress = isLocalModelPending
+    ? pendingTask?.progressSummary?.trim() || TEXT.localModelSlowStartHint
+    : "";
 
   return (
     <section className="conversation" aria-label={TEXT.conversation}>
@@ -469,7 +473,11 @@ export function MainConversation({
                 <div className="task-inline-panel">
                   <span className="task-inline-status">{pendingStatusLabel}</span>
                 </div>
-              ) : null}
+              ) : (
+                <div className="thinking-summary-group">
+                  <p className="message-summary">{pendingLocalModelProgress}</p>
+                </div>
+              )}
             </div>
           </article>
         ) : null}

@@ -562,10 +562,10 @@ describe("App", () => {
 
     const pending = await screen.findByLabelText("assistant-pending");
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).queryByText("正在等待本地模型输出")).not.toBeInTheDocument();
+    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
     expect(within(pending).queryByText("你能干什么")).not.toBeInTheDocument();
     expect(within(pending).queryByText(/已进入本地任务队列|正在本地执行链中处理/)).not.toBeInTheDocument();
-    expect(within(pending).queryByText(/本地模型首轮响应可能较慢|不会重复提交同一请求|请稍候/)).not.toBeInTheDocument();
+    expect(within(pending).queryByText(/不会重复提交同一请求|请稍候/)).not.toBeInTheDocument();
     expect(within(pending).queryByRole("button", { name: "停止任务" })).not.toBeInTheDocument();
 
     await act(async () => {

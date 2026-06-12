@@ -994,9 +994,8 @@ describe("App chat fallback", () => {
 
     const pending = screen.getByLabelText("assistant-pending");
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).queryByText("正在等待本地模型输出")).not.toBeInTheDocument();
+    expect(within(pending).getByText(/Ollama 仍在生成，已等待约 \d+ 秒。/)).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Ollama 仍在生成，已等待约 \d+ 秒。/)).not.toBeInTheDocument();
     expect(screen.queryByText("本地模型对话失败")).not.toBeInTheDocument();
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
   });

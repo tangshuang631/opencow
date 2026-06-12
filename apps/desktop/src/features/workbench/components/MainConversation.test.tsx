@@ -572,8 +572,7 @@ describe("MainConversation", () => {
 
     expect(pending).toBeInTheDocument();
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).queryByText("正在等待本地模型输出")).not.toBeInTheDocument();
-    expect(within(pending).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
+    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
     expect(screen.queryByText("开源协议有哪些")).not.toBeInTheDocument();
     expect(within(pending).queryByText(/不会重复提交同一请求/)).not.toBeInTheDocument();
@@ -607,10 +606,8 @@ describe("MainConversation", () => {
     const pending = screen.getByLabelText("assistant-pending");
 
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).queryByText("正在等待本地模型输出")).not.toBeInTheDocument();
-    expect(within(pending).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
+    expect(within(pending).getByText("Ollama 仍在生成，已等待约 15 秒。")).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
-    expect(within(pending).queryByText("Ollama 仍在生成，已等待约 15 秒。")).not.toBeInTheDocument();
     expect(screen.queryByText("开源协议有哪些")).not.toBeInTheDocument();
   });
 
@@ -652,10 +649,9 @@ describe("MainConversation", () => {
     const pending = screen.getByLabelText("assistant-pending");
 
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).queryByText("正在等待本地模型输出")).not.toBeInTheDocument();
-    expect(within(pending).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
+    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
-    expect(within(conversation).queryByText("本地模型首轮响应可能较慢，OpenCow 会保持界面响应、保留停止按钮，并且不会重复提交同一请求。")).not.toBeInTheDocument();
+    expect(within(conversation).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
     expect(within(conversation).queryByText("请稍候，界面保持响应中")).not.toBeInTheDocument();
     expect(within(conversation).queryByText("你能做什么")).not.toBeInTheDocument();
     expect(within(conversation).queryByText("上一轮问题")).not.toBeInTheDocument();
