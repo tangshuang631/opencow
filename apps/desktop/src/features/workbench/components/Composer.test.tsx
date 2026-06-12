@@ -91,6 +91,30 @@ describe("Composer", () => {
     expect(screen.getByRole("button", { name: "停止任务" })).toBeInTheDocument();
   });
 
+  it("shows stop controls once an approved NPC config task starts execution", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "你能帮我配置一个文档处理npc吗",
+      executionKind: "npc-config-write",
+      executionTitle: "大模型生成并保存 NPC 配置",
+      executionAuditSummary: "Local assistant planned an LLM-generated NPC configuration write.",
+      executionAuditDetail: "LLM-generated NPC configuration write task."
+    });
+    const running = createTaskExecutionStartedState(queued);
+
+    render(
+      <Composer
+        state={running}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("textbox", { name: "输入任务" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "停止任务" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "发送" })).not.toBeInTheDocument();
+  });
+
   it("keeps input usable when the active task slot is stale", () => {
     const staleActive = {
       ...createInitialWorkbenchState(),

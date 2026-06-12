@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const {
@@ -81,6 +81,24 @@ function findModelPicker(modelName: string) {
 }
 
 describe("App", () => {
+  beforeEach(() => {
+    cancelOllamaChatMock.mockReset();
+    chatWithOllamaModelMock.mockReset();
+    loadOllamaOverviewMock.mockReset();
+    loadWorkspacePackagesOverviewMock.mockReset();
+    loadWorkspaceConfigOverviewMock.mockReset();
+    searchLocalKnowledgeMock.mockReset();
+    inspectLocalSkillMock.mockReset();
+    enableLocalSkillMock.mockReset();
+    installLocalSkillMock.mockReset();
+    listEnabledLocalSkillsMock.mockReset();
+    disableLocalSkillMock.mockReset();
+    matchEnabledLocalSkillsMock.mockReset();
+    runWorkspaceWriteShellCommandMock.mockReset();
+    runControlledFullShellCommandMock.mockReset();
+    writeNpcConfigMock.mockReset();
+  });
+
   it("renders the desktop workbench shell after loading Ollama", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -287,6 +305,65 @@ describe("App", () => {
     expect(within(conversation).getByText(/请继续补充资料或让模型重新生成/)).toBeInTheDocument();
   });
 
+  it("aborts an in-flight NPC config generation when the user stops the task", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    let resolveNpcConfigGeneration: (value: { model: string; message: string }) => void = () => undefined;
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveNpcConfigGeneration = resolve;
+    }));
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能帮我配置一个文档处理npc吗" }
+    });
+    fireEvent.click(getComposerSendButton());
+    const approveButton = await screen.findByRole("button", { name: "批准提权" });
+    fireEvent.click(approveButton);
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+    });
+
+    const request = chatWithOllamaModelMock.mock.calls.at(-1)?.[0] as { requestId?: string; signal?: AbortSignal };
+
+    const stopButtons = screen.getAllByRole("button", { name: "停止任务" });
+    fireEvent.click(stopButtons.find((button) => button.classList.contains("send-button")) ?? stopButtons[0]);
+
+    await waitFor(() => {
+      expect(request.signal?.aborted).toBe(true);
+    });
+    expect(request.requestId).toMatch(/^local-model-chat-/);
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(request.requestId);
+
+    await act(async () => {
+      resolveNpcConfigGeneration({
+        model: "qwen3.6:35b",
+        message: JSON.stringify({
+          name: "迟到 NPC",
+          purpose: "这次迟到成功不能覆盖停止状态"
+        })
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/本地任务已停止/).length).toBeGreaterThan(0);
+    });
+
+    expect(writeNpcConfigMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("NPC 配置已保存")).not.toBeInTheDocument();
+    expect(screen.queryByText("迟到 NPC")).not.toBeInTheDocument();
+  });
+
   it("routes an explicit workspace inspection request into the workspace overview result instead of generic help copy", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -415,6 +492,10 @@ describe("App", () => {
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
+    let resolveChat: (value: { model: string; message: string }) => void = () => undefined;
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveChat = resolve;
+    }));
 
     render(<App />);
 
@@ -432,6 +513,14 @@ describe("App", () => {
     expect(within(pending).queryByText(/已进入本地任务队列|正在本地执行链中处理/)).not.toBeInTheDocument();
     expect(within(pending).queryByText(/本地模型首轮响应可能较慢|不会重复提交同一请求|请稍候/)).not.toBeInTheDocument();
     expect(within(pending).queryByRole("button", { name: "停止任务" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveChat({
+        model: "qwen3.6:35b",
+        message: "我会通过本地模型继续处理你的请求。"
+      });
+      await Promise.resolve();
+    });
 
     await waitFor(() => {
       expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();

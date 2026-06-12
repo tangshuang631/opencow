@@ -649,6 +649,12 @@ function formatLocalModelProgressSummary(elapsedMs: number): string {
   return `Ollama 仍在生成，已等待约 ${elapsedSeconds} 秒。`;
 }
 
+function assertLocalModelTaskNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new Error("Local model task was aborted before applying side effects.");
+  }
+}
+
 async function executeLocalModelChatTask(payload: {
   model: string;
   availableModels: WorkbenchState["model"]["availableModels"];
@@ -735,7 +741,9 @@ async function executeNpcConfigWriteTask(payload: {
     signal: payload.signal,
     onChunk: payload.onChunk
   });
+  assertLocalModelTaskNotAborted(payload.signal);
   const configResult = extractNpcConfigFromModelOutput(result.message);
+  assertLocalModelTaskNotAborted(payload.signal);
   const writeResult = await writeNpcConfig({
     query: payload.message,
     modelOutput: result.message,
@@ -1610,15 +1618,17 @@ export function App() {
             });
           }
 
-          return createUserTaskSubmittedState(approvedState, {
-            message: pendingConfirmation.queuedMessage,
-            executionKind: continuedPlan.kind,
-            executionTitle: continuedPlan.title,
-            executionAuditSummary: continuedPlan.auditSummary,
-            executionAuditDetail: continuedPlan.auditDetail,
-            allowResumeFromFailedTask: true,
-            preserveExistingUserMessage: true
-          });
+          return createTaskExecutionStartedState(
+            createUserTaskSubmittedState(approvedState, {
+              message: pendingConfirmation.queuedMessage,
+              executionKind: continuedPlan.kind,
+              executionTitle: continuedPlan.title,
+              executionAuditSummary: continuedPlan.auditSummary,
+              executionAuditDetail: continuedPlan.auditDetail,
+              allowResumeFromFailedTask: true,
+              preserveExistingUserMessage: true
+            })
+          );
         }
 
         if (!isExecutionKindAllowedForPermission(pendingConfirmation.queuedExecutionKind, pendingConfirmation.requiredMode)) {
@@ -1633,15 +1643,17 @@ export function App() {
           });
         }
 
-        return createUserTaskSubmittedState(approvedState, {
-          message: pendingConfirmation.queuedMessage,
-          executionKind: pendingConfirmation.queuedExecutionKind,
-          executionTitle: pendingConfirmation.queuedExecutionTitle,
-          executionAuditSummary: pendingConfirmation.queuedExecutionAuditSummary,
-          executionAuditDetail: pendingConfirmation.queuedExecutionAuditDetail,
-          allowResumeFromFailedTask: true,
-          preserveExistingUserMessage: true
-        });
+        return createTaskExecutionStartedState(
+          createUserTaskSubmittedState(approvedState, {
+            message: pendingConfirmation.queuedMessage,
+            executionKind: pendingConfirmation.queuedExecutionKind,
+            executionTitle: pendingConfirmation.queuedExecutionTitle,
+            executionAuditSummary: pendingConfirmation.queuedExecutionAuditSummary,
+            executionAuditDetail: pendingConfirmation.queuedExecutionAuditDetail,
+            allowResumeFromFailedTask: true,
+            preserveExistingUserMessage: true
+          })
+        );
       });
     });
   }
@@ -1675,15 +1687,17 @@ export function App() {
             });
           }
 
-          return createUserTaskSubmittedState(approvedState, {
-            message: pendingModeChange.queuedMessage,
-            executionKind: pendingModeChange.queuedExecutionKind,
-            executionTitle: pendingModeChange.queuedExecutionTitle,
-            executionAuditSummary: pendingModeChange.queuedExecutionAuditSummary,
-            executionAuditDetail: pendingModeChange.queuedExecutionAuditDetail,
-            allowResumeFromFailedTask: true,
-            preserveExistingUserMessage: true
-          });
+          return createTaskExecutionStartedState(
+            createUserTaskSubmittedState(approvedState, {
+              message: pendingModeChange.queuedMessage,
+              executionKind: pendingModeChange.queuedExecutionKind,
+              executionTitle: pendingModeChange.queuedExecutionTitle,
+              executionAuditSummary: pendingModeChange.queuedExecutionAuditSummary,
+              executionAuditDetail: pendingModeChange.queuedExecutionAuditDetail,
+              allowResumeFromFailedTask: true,
+              preserveExistingUserMessage: true
+            })
+          );
         }
 
         let continuedPlan: AssistantTaskPlanResult;
@@ -1746,15 +1760,17 @@ export function App() {
           });
         }
 
-        return createUserTaskSubmittedState(approvedState, {
-          message: pendingModeChange.queuedMessage,
-          executionKind: continuedPlan.kind,
-          executionTitle: continuedPlan.title,
-          executionAuditSummary: continuedPlan.auditSummary,
-          executionAuditDetail: continuedPlan.auditDetail,
-          allowResumeFromFailedTask: true,
-          preserveExistingUserMessage: true
-        });
+        return createTaskExecutionStartedState(
+          createUserTaskSubmittedState(approvedState, {
+            message: pendingModeChange.queuedMessage,
+            executionKind: continuedPlan.kind,
+            executionTitle: continuedPlan.title,
+            executionAuditSummary: continuedPlan.auditSummary,
+            executionAuditDetail: continuedPlan.auditDetail,
+            allowResumeFromFailedTask: true,
+            preserveExistingUserMessage: true
+          })
+        );
       });
     });
   }
