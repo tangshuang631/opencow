@@ -691,7 +691,7 @@ function createBrowserPreviewPackagesOverview(): WorkspacePackagesOverview {
     package_names: ["openclaw-adapter", "permission-engine", "shell-runtime"],
     total_script_count: 6,
     packages_with_scripts: ["openclaw-adapter", "permission-engine", "shell-runtime"],
-    summary: "Browser preview mode returned a mock workspace package overview."
+    summary: "Browser preview mode returned a static workspace package overview preview."
   };
 }
 
@@ -702,7 +702,7 @@ function createBrowserPreviewConfigOverview(): WorkspaceConfigOverview {
     root_script_names: ["dev", "desktop:dev", "verify:all"],
     root_script_count: 3,
     package_manager_files: ["package-lock.json"],
-    summary: "Browser preview mode returned a mock workspace config overview."
+    summary: "Browser preview mode returned a static workspace config overview preview."
   };
 }
 
@@ -712,8 +712,8 @@ function createBrowserPreviewProjectRunPreview(query: string): WorkspaceProjectR
   return {
     query,
     summary: prefersCattle
-      ? "Browser preview mode matched a mock cattle project run preview."
-      : "Browser preview mode matched a mock workspace project run preview.",
+      ? "Browser preview mode matched a static cattle project run preview."
+      : "Browser preview mode matched a static workspace project run preview.",
     inspected_project_count: 3,
     matched_project_name: prefersCattle ? "cattle" : "apps/desktop",
     matched_project_path: prefersCattle ? "projects/cattle" : "apps/desktop",
@@ -763,7 +763,7 @@ function createBrowserPreviewNpcConfigWrite(payload: {
     npc_name: npcName,
     config_path: `.opencow/npcs/${npcName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "custom-npc"}.json`,
     status: "saved",
-    summary: "Browser preview mode returned a mock saved NPC config result."
+    summary: "Browser preview mode returned a browser-preview NPC config write result."
   };
 }
 
@@ -774,7 +774,7 @@ function createBrowserPreviewReadonlyCommand(commandId: ReadonlyShellCommandId):
       command_label: "git status --short",
       stdout_preview: " M apps/desktop/src/app/App.tsx",
       line_count: 1,
-      summary: "Browser preview mode returned a mock readonly shell result."
+      summary: "Browser preview mode returned a browser-preview readonly shell result."
     };
   }
 
@@ -784,7 +784,7 @@ function createBrowserPreviewReadonlyCommand(commandId: ReadonlyShellCommandId):
       command_label: "Get-ChildItem -Name",
       stdout_preview: "apps\ndocs\npackages",
       line_count: 3,
-      summary: "Browser preview mode returned a mock readonly shell result."
+      summary: "Browser preview mode returned a browser-preview readonly shell result."
     };
   }
 
@@ -793,7 +793,7 @@ function createBrowserPreviewReadonlyCommand(commandId: ReadonlyShellCommandId):
     command_label: "Get-ChildItem packages -Name",
     stdout_preview: "openclaw-adapter\npermission-engine\nshell-runtime",
     line_count: 3,
-    summary: "Browser preview mode returned a mock readonly shell result."
+    summary: "Browser preview mode returned a browser-preview readonly shell result."
   };
 }
 
@@ -805,7 +805,7 @@ function createBrowserPreviewWorkspaceWriteCommand(
     command_label: "New-Item -ItemType Directory -Force temp-output",
     stdout_preview: "temp-output",
     line_count: 1,
-    summary: "Browser preview mode returned a mock workspace-write shell result."
+    summary: "Browser preview mode returned a browser-preview workspace-write shell result."
   };
 }
 
@@ -817,7 +817,7 @@ function createBrowserPreviewControlledFullCommand(
     command_label: "Remove-Item -LiteralPath temp-output -Recurse -Force",
     stdout_preview: "temp-output removed",
     line_count: 1,
-    summary: "Browser preview mode returned a mock controlled-full shell result."
+    summary: "Browser preview mode returned a browser-preview controlled-full shell result."
   };
 }
 
@@ -831,8 +831,8 @@ function createBrowserPreviewWorkspaceProjectRun(query: string): WorkspaceProjec
     working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
     expected_url: prefersDesktop ? "http://127.0.0.1:1420" : "http://127.0.0.1:3000",
     pid: 4242,
-    stdout_preview: "browser preview mode started a mock workspace project process",
-    summary: "Browser preview mode returned a mock workspace project run result."
+    stdout_preview: "browser preview mode returned a static workspace project run preview",
+    summary: "Browser preview mode returned a browser-preview workspace project run result."
   };
 }
 
@@ -848,7 +848,7 @@ function createBrowserPreviewWorkspaceProjectStatus(query: string): WorkspacePro
     pid: 4242,
     status: "running",
     stdout_preview: "pid:4242",
-    summary: "Browser preview mode found a mock active workspace project process handle."
+    summary: "Browser preview mode returned a browser-preview workspace project status result."
   };
 }
 
@@ -862,8 +862,8 @@ function createBrowserPreviewWorkspaceProjectStop(query: string): WorkspaceProje
     working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
     pid: 4242,
     status: "stopped",
-    stdout_preview: "browser preview mode stopped a mock workspace project process",
-    summary: "Browser preview mode returned a mock workspace project stop result."
+    stdout_preview: "browser preview mode returned a static workspace project stop preview",
+    summary: "Browser preview mode returned a browser-preview workspace project stop result."
   };
 }
 
@@ -881,7 +881,7 @@ function createBrowserPreviewNpcProjectScreenshotCapture(
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     artifact_directory: ".opencow/artifacts/npc-showcase",
     capture_target: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
-    summary: "Browser preview mode returned a mock NPC local project screenshot capture result."
+    summary: "Browser preview mode returned a browser-preview NPC local project screenshot capture result."
   };
 }
 
@@ -902,7 +902,7 @@ function createBrowserPreviewNpcProjectShowcaseSiteWrite(
     source_screenshot_path: prefersCattle
       ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
-    summary: "Browser preview mode returned a mock NPC local project showcase-site write result."
+    summary: "Browser preview mode returned a browser-preview NPC local project showcase-site write result."
   };
 }
 
@@ -924,7 +924,7 @@ function createBrowserPreviewNpcProjectShowcasePublishPreview(
       ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     next_git_step: "Git commit or push is still separate and requires its own explicit confirmation stage.",
-    summary: "Browser preview mode returned a mock NPC local project showcase publish preview result."
+    summary: "Browser preview mode returned a browser-preview NPC local project showcase publish preview result."
   };
 }
 
@@ -948,7 +948,7 @@ function createBrowserPreviewNpcProjectShowcaseGitConfirmationPreview(
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     recommended_git_action,
     required_confirmation_stage: "Git commit or push still requires its own explicit confirmation and execution stage.",
-    summary: "Browser preview mode returned a mock NPC local project showcase git confirmation preview result."
+    summary: "Browser preview mode returned a browser-preview NPC local project showcase git confirmation preview result."
   };
 }
 
@@ -961,7 +961,7 @@ function createBrowserPreviewCapabilityOverview(capabilityId: OpenClawCapability
       available_package_count: 3,
       available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/model-catalog-core"],
       missing_packages: [],
-      summary: "Browser preview mode returned a mock OpenClaw RAG capability overview."
+      summary: "Browser preview mode returned a browser-preview OpenClaw RAG capability overview."
     },
     skills: {
       title: "OpenClaw Skills capability overview",
@@ -970,7 +970,7 @@ function createBrowserPreviewCapabilityOverview(capabilityId: OpenClawCapability
       available_package_count: 2,
       available_packages: ["@openclaw/plugin-sdk", "@openclaw/tool-call-repair"],
       missing_packages: [],
-      summary: "Browser preview mode returned a mock OpenClaw Skills capability overview."
+      summary: "Browser preview mode returned a browser-preview OpenClaw Skills capability overview."
     },
     npc: {
       title: "OpenClaw NPC capability overview",
@@ -979,7 +979,7 @@ function createBrowserPreviewCapabilityOverview(capabilityId: OpenClawCapability
       available_package_count: 3,
       available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/tool-call-repair"],
       missing_packages: [],
-      summary: "Browser preview mode returned a mock OpenClaw NPC capability overview."
+      summary: "Browser preview mode returned a browser-preview OpenClaw NPC capability overview."
     },
     mcp: {
       title: "OpenClaw MCP capability overview",
@@ -988,7 +988,7 @@ function createBrowserPreviewCapabilityOverview(capabilityId: OpenClawCapability
       available_package_count: 3,
       available_packages: ["@openclaw/plugin-sdk", "@openclaw/terminal-core", "@openclaw/tool-call-repair"],
       missing_packages: [],
-      summary: "Browser preview mode returned a mock OpenClaw MCP capability overview."
+      summary: "Browser preview mode returned a browser-preview OpenClaw MCP capability overview."
     }
   };
 
