@@ -860,6 +860,10 @@ describe("App", () => {
         }
       ]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "当前只启用了 coding-agent，它适合代码实现与仓库上下文协作；注册表在 .opencow/skills/enabled-skills.json，后续安装或改配置仍要走审批。"
+    });
 
     render(<App />);
 
@@ -870,9 +874,19 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
+    const conversation = getConversationRegion();
+
     await waitFor(() => {
-      expect(screen.getAllByText(/Enabled local skills|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("已启用 Skills 说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/只启用了 coding-agent/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("coding-agent")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining(".opencow/skills/enabled-skills.json")
+    }));
   });
 
   it("shows the final enabled skill recommendation result for an explicit readonly match request", async () => {
@@ -899,6 +913,10 @@ describe("App", () => {
         }
       ]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "推荐使用 shell-automation，因为它明确面向带安全护栏的本地 Shell 自动化；真正执行写入或清理时仍必须进入权限审批和高风险确认链。"
+    });
 
     render(<App />);
 
@@ -909,11 +927,19 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
+    const conversation = getConversationRegion();
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Match enabled local skills|shell-automation|enabled-skills\.json/i).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("已启用 Skill 推荐")).toBeInTheDocument();
+      expect(within(conversation).getByText(/推荐使用 shell-automation/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("shell-automation")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("权限边界")
+    }));
   });
 
   it("shows the final local skill detail result for an explicit readonly skill inspection request", async () => {

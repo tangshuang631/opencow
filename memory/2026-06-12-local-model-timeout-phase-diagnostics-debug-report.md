@@ -80,3 +80,19 @@
 - Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/app/app.chat.test.tsx`, `apps/desktop/src/app/app.task-guard.test.tsx`
 - Related: This moves more ordinary readonly output through the local model while keeping context-overflow recovery bounded and non-looping.
 - Status: DONE
+
+## Follow-up: enabled Skills readback and matching use local-model explanation
+
+- Symptom: Explicit enabled Skills list and recommendation requests returned deterministic registry summaries such as enabled count, registry path, and recommended skill directly in the main conversation. The facts were useful, but the visible answer still felt like a fixed readback path.
+- Root cause: `skills-local-enabled-list` and `skills-local-enabled-match` were not included in the App-level readonly explanation hook, even though they are readonly user-facing information tasks.
+- Fix: Added both execution kinds to the local-model explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The visible answer now asks the selected local model to explain enabled Skill purpose, matching rationale, registry location, next steps, and permission boundaries from readonly facts.
+- Safety boundary: The underlying `assistantTaskService` still returns structured registry and matching facts. The App-level model explanation is only applied after the readonly facts exist, so install/enable/disable mutations and shell execution remain gated by the existing permission chain.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx` passed with 27 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-enabled-list.test.ts src/features/assistant/assistantTaskService.skills-enabled-match.test.ts` passed with 4 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/app/app.chat-search-context.test.tsx src/app/app.chat-search-empty-context.test.tsx` passed with 108 tests.
+  - `npm run build`, `npm run check:encoding`, and `npm run check:health` passed.
+  - `npm run verify:all` passed, including 583 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.skills-enabled-list.test.ts`, `apps/desktop/src/features/assistant/assistantTaskService.skills-enabled-match.test.ts`
+- Related: This removes another ordinary readonly fixed-output path while keeping the registry facts auditable and bounded.
+- Status: DONE

@@ -837,6 +837,8 @@ type ExplainableReadonlyResultKind =
   | "capability-skills-overview"
   | "capability-npc-overview"
   | "capability-mcp-overview"
+  | "skills-local-enabled-list"
+  | "skills-local-enabled-match"
   | "rag-local-doc-search"
   | "skills-local-enabled-rag-doc-search"
   | "network-search-guidance";
@@ -849,6 +851,8 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
     || kind === "capability-mcp-overview"
+    || kind === "skills-local-enabled-list"
+    || kind === "skills-local-enabled-match"
     || kind === "rag-local-doc-search"
     || kind === "skills-local-enabled-rag-doc-search"
     || kind === "network-search-guidance";
@@ -938,6 +942,14 @@ function getReadonlyOverviewExplanationTitle(
     return "Skill 辅助 RAG 说明";
   }
 
+  if (executionKind === "skills-local-enabled-match") {
+    return "已启用 Skill 推荐";
+  }
+
+  if (executionKind === "skills-local-enabled-list") {
+    return "已启用 Skills 说明";
+  }
+
   if (executionKind === "rag-local-doc-search") {
     return "本地 RAG 说明";
   }
@@ -966,9 +978,13 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                 ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
                 : payload.executionKind === "skills-local-enabled-rag-doc-search"
                   ? "重点根据已匹配 Skill 和本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
-                  : payload.executionKind === "rag-local-doc-search"
-                    ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
-                    : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+                  : payload.executionKind === "skills-local-enabled-match"
+                    ? "重点解释推荐哪个已启用 Skill、为什么匹配、可做什么、不能越过哪些权限边界。"
+                    : payload.executionKind === "skills-local-enabled-list"
+                      ? "重点解释当前已启用 Skills 的用途、注册表位置、适合的下一步，以及哪些动作仍需要审批。"
+                      : payload.executionKind === "rag-local-doc-search"
+                        ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                        : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [
     "你是 OpenCow 的本地项目说明助手。",
