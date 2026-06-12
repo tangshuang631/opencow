@@ -785,7 +785,15 @@ async function executeNpcConfigWriteTask(payload: {
   };
 }
 
-async function explainWorkspaceOverviewResultWithLocalModel(payload: {
+function isReadonlyOverviewExplanationKind(kind: string | undefined): kind is
+  | "workspace-overview"
+  | "packages-overview"
+  | "workspace-config-overview" {
+  return kind === "workspace-overview" || kind === "packages-overview" || kind === "workspace-config-overview";
+}
+
+async function explainReadonlyOverviewResultWithLocalModel(payload: {
+  executionKind: "workspace-overview" | "packages-overview" | "workspace-config-overview";
   model: string;
   availableModels: WorkbenchState["model"]["availableModels"];
   requestMessage: string;
@@ -802,45 +810,70 @@ async function explainWorkspaceOverviewResultWithLocalModel(payload: {
       resultSummary: payload.readonlySummary,
       auditDetailLines: [
         selectedModel
-          ? "Workspace overview explanation skipped: local model bridge was unavailable in this runtime."
-          : "Workspace overview explanation skipped: no usable local Ollama model was selected."
+          ? "Readonly overview explanation skipped: local model bridge was unavailable in this runtime."
+          : "Readonly overview explanation skipped: no usable local Ollama model was selected."
       ]
     };
   }
 
   const result = await chatWithOllamaModel({
     model: selectedModel,
-    message: createWorkspaceOverviewExplanationPrompt(payload.requestMessage, payload.readonlySummary),
+    message: createReadonlyOverviewExplanationPrompt({
+      executionKind: payload.executionKind,
+      userRequest: payload.requestMessage,
+      readonlySummary: payload.readonlySummary
+    }),
     requestId: payload.requestId,
     signal: payload.signal
   });
 
   return {
-    resultTitle: "工作区说明",
+    resultTitle: getReadonlyOverviewExplanationTitle(payload.executionKind),
     resultSummary: result.message,
     auditDetailLines: [
       `Ollama model: ${result.model || selectedModel}`,
       `Ollama done reason: ${result.doneReason || "complete"}`,
-      "Workspace overview explanation: local model generated from readonly workspace facts.",
+      `Readonly overview explanation: local model generated for ${payload.executionKind} from readonly facts.`,
       `Readonly workspace facts: ${payload.readonlySummary}`
     ]
   };
 }
 
-function createWorkspaceOverviewExplanationPrompt(
-  userRequest: string,
-  readonlySummary: string
+function getReadonlyOverviewExplanationTitle(
+  executionKind: "workspace-overview" | "packages-overview" | "workspace-config-overview"
 ): string {
+  if (executionKind === "packages-overview") {
+    return "包与脚本说明";
+  }
+
+  if (executionKind === "workspace-config-overview") {
+    return "配置说明";
+  }
+
+  return "工作区说明";
+}
+
+function createReadonlyOverviewExplanationPrompt(payload: {
+  executionKind: "workspace-overview" | "packages-overview" | "workspace-config-overview";
+  userRequest: string;
+  readonlySummary: string;
+}): string {
+  const focusLine = payload.executionKind === "packages-overview"
+    ? "重点解释包结构、脚本数量、可运行入口和下一步开发排查重点。"
+    : payload.executionKind === "workspace-config-overview"
+      ? "重点解释配置文件、根脚本、包管理线索和启动/验证链路重点。"
+      : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+
   return [
     "你是 OpenCow 的本地项目说明助手。",
-    "请根据下面给出的只读工作区事实，用中文直接解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。",
+    `请根据下面给出的只读工作区事实，用中文直接解释用户关心的问题。${focusLine}`,
     "不要编造不存在的目录、包或功能，不要输出模板化套话，不要说你已经做了联网搜索。",
     "保持回答像真正看过项目后的自然总结，简洁但有判断。",
     "",
-    `用户请求：${userRequest.trim()}`,
+    `用户请求：${payload.userRequest.trim()}`,
     "",
     "只读工作区事实：",
-    readonlySummary
+    payload.readonlySummary
   ].join("\n");
 }
 
@@ -1512,18 +1545,19 @@ export function App() {
         });
         const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
 
-        if (activeTask.executionKind !== "workspace-overview") {
+        if (!isReadonlyOverviewExplanationKind(activeTask.executionKind)) {
           return validResult;
         }
 
         try {
-          return await explainWorkspaceOverviewResultWithLocalModel({
+          return await explainReadonlyOverviewResultWithLocalModel({
+            executionKind: activeTask.executionKind,
             model: state.model.activeModel,
             availableModels: state.model.availableModels,
             requestMessage: getTaskExecutionMessage(activeTask),
             readonlyTitle: validResult.resultTitle,
             readonlySummary: validResult.resultSummary,
-            requestId: `workspace-overview-explanation-${activeTask.id}-${activeTask.attemptCount}`,
+            requestId: `${activeTask.executionKind}-explanation-${activeTask.id}-${activeTask.attemptCount}`,
             signal: currentAssistantTaskAbortController.signal
           });
         } catch (error: unknown) {
@@ -1531,7 +1565,7 @@ export function App() {
             ...validResult,
             auditDetailLines: [
               ...(validResult.auditDetailLines ?? []),
-              `Workspace overview explanation skipped after local model failure: ${normalizeUnknownAssistantError(
+              `Readonly overview explanation skipped after local model failure: ${normalizeUnknownAssistantError(
                 error,
                 "Unknown local model explanation error"
               )}`

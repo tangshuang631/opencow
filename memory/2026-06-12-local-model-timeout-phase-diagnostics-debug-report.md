@@ -23,3 +23,16 @@
 - Regression test: `apps/desktop/src/app/app.task-guard.test.tsx`
 - Related: This preserves the model-first answer direction for ordinary/explain outputs without weakening malformed-result diagnostics, task timeout cleanup, or permission-guard recovery behavior.
 - Status: DONE
+
+## Follow-up: packages/config readonly overviews also use local-model explanation
+
+- Symptom: `packages-overview` and `workspace-config-overview` still returned fixed readonly summaries directly, while `workspace-overview` had already moved to "readonly facts + local-model explanation". This left ordinary inspection-style answers inconsistent and more template-like than the product goal.
+- Root cause: The optional explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx) was hard-coded to `workspace-overview`, so package and config inspection tasks never asked the selected local model to explain the readonly facts.
+- Fix: Generalized the explanation hook to `workspace-overview`, `packages-overview`, and `workspace-config-overview`. Each still validates the assistant task result first, keeps the original readonly result when the model is unavailable or fails, and uses a focused Chinese prompt so the model explains package/script or config/root-script facts instead of emitting fixed overview copy.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx` passed with 83 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx` passed with 159 tests.
+  - `npm run verify:all` passed, including 579 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This further reduces fixed/template-like ordinary inspection answers while preserving the anti-stall fallback behavior and readonly safety boundary.
+- Status: DONE

@@ -500,6 +500,10 @@ describe("App", () => {
       packages_with_scripts: ["openclaw-adapter", "permission-engine"],
       summary: "Workspace package inspection found 3 packages and 9 npm scripts."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这个工作区有 3 个本地包，脚本集中在适配层和权限/运行时链路，下一步应优先确认 verify:all 和桌面启动脚本。"
+    });
 
     render(<App />);
 
@@ -514,8 +518,13 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("inspect workspace packages and scripts").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("Workspace packages overview")).toBeInTheDocument();
+      expect(within(conversation).getByText("包与脚本说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/脚本集中在适配层和权限\/运行时链路/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("重点解释包结构、脚本数量、可运行入口")
+    }));
   });
 
   it("routes an explicit config inspection request into the workspace config overview result", async () => {
@@ -534,6 +543,10 @@ describe("App", () => {
       package_manager_files: ["package-lock.json"],
       summary: "Workspace config inspection found 3 key config files and 3 root scripts."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这个配置面说明根目录脚本已经覆盖开发、桌面启动和完整验证，排查报错时应先看 package.json 与 Tauri 配置。"
+    });
 
     render(<App />);
 
@@ -548,8 +561,13 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("inspect workspace config and root scripts").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("Workspace config overview")).toBeInTheDocument();
+      expect(within(conversation).getByText("配置说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/根目录脚本已经覆盖开发、桌面启动和完整验证/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("重点解释配置文件、根脚本、包管理线索")
+    }));
   });
 
   it("shows a visible assistant pending block while an ordinary chat request is still running", async () => {
