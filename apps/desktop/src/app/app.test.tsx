@@ -2196,4 +2196,142 @@ describe("App", () => {
     expect(runControlledFullShellCommandMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
   }, 15_000);
+
+  it("explains NPC-assisted shell creation through the local model after workspace-write approval", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "use npc collaboration to create a temp-output folder with shell automation",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "shell-automation",
+          path: "skills/shell-automation/SKILL.md",
+          source: "workspace-skill",
+          description: "Run safe local shell automation tasks.",
+          content_preview: "Use this skill when the task needs shell automation with local safety rails."
+        }
+      ]
+    });
+    runWorkspaceWriteShellCommandMock.mockResolvedValueOnce({
+      command_id: "create-temp-output-dir",
+      command_label: "New-Item -ItemType Directory -Force temp-output",
+      stdout_preview: "temp-output",
+      line_count: 1,
+      summary: "Workspace write shell command completed successfully."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "NPC 协作只是帮你组织本地能力并匹配 shell-automation；temp-output 已在批准工作区读写后通过受控 shell runner 创建，不是 NPC 或模型拿到了任意 shell 权限。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "use npc collaboration to create a temp-output folder with shell automation" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("NPC 辅助创建结果说明").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/NPC 协作只是帮你组织本地能力/).length).toBeGreaterThan(0);
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^npc-local-enabled-shell-create-temp-output-explanation-/),
+      message: expect.stringContaining("NPC 协作只是用于组织本地能力")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
+    }));
+    expect(screen.queryByText(/Workspace write shell command completed successfully/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to verified NPC-assisted shell removal facts when post-confirmation explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "use npc collaboration to delete temp-output with shell automation",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "shell-automation",
+          path: "skills/shell-automation/SKILL.md",
+          source: "workspace-skill",
+          description: "Run safe local shell automation tasks.",
+          content_preview: "Use this skill when the task needs shell automation with local safety rails."
+        }
+      ]
+    });
+    runControlledFullShellCommandMock.mockResolvedValueOnce({
+      command_id: "remove-temp-output-dir",
+      command_label: "Remove-Item -LiteralPath temp-output -Recurse -Force",
+      stdout_preview: "temp-output removed",
+      line_count: 1,
+      summary: "Controlled full shell command completed successfully."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "use npc collaboration to delete temp-output with shell automation" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予受控完全访问权限/i);
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    const approveDangerButton = await within(permissionSection as HTMLElement).findByRole("button", {
+      name: "批准高风险操作"
+    });
+    fireEvent.click(approveDangerButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/NPC-assisted temp-output removal|shell-automation|temp-output removed|enabled-skills\.json/i)
+          .length
+      ).toBeGreaterThan(0);
+    }, { timeout: 12_000 });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^npc-local-enabled-shell-remove-temp-output-explanation-/),
+      message: expect.stringContaining("授予 controlled-full 并确认高风险操作")
+    }));
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^npc-local-enabled-shell-remove-temp-output-explanation-/)
+    );
+    expect(runControlledFullShellCommandMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+  }, 15_000);
 });

@@ -910,6 +910,8 @@ type ExplainableReadonlyResultKind =
   | "skills-local-enabled-match"
   | "skills-local-enabled-shell-create-temp-output"
   | "skills-local-enabled-shell-remove-temp-output"
+  | "npc-local-enabled-shell-create-temp-output"
+  | "npc-local-enabled-shell-remove-temp-output"
   | "rag-local-doc-search"
   | "skills-local-enabled-rag-doc-search"
   | "rag-local-shell-handoff-preview"
@@ -954,6 +956,8 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "skills-local-enabled-match"
     || kind === "skills-local-enabled-shell-create-temp-output"
     || kind === "skills-local-enabled-shell-remove-temp-output"
+    || kind === "npc-local-enabled-shell-create-temp-output"
+    || kind === "npc-local-enabled-shell-remove-temp-output"
     || kind === "rag-local-doc-search"
     || kind === "skills-local-enabled-rag-doc-search"
     || kind === "rag-local-shell-handoff-preview"
@@ -980,7 +984,9 @@ function isPostApprovalMutationResultKind(kind: ExplainableReadonlyResultKind): 
     || kind === "workspace-project-stop"
     || kind === "controlled-full-remove-temp-output"
     || kind === "skills-local-enabled-shell-create-temp-output"
-    || kind === "skills-local-enabled-shell-remove-temp-output";
+    || kind === "skills-local-enabled-shell-remove-temp-output"
+    || kind === "npc-local-enabled-shell-create-temp-output"
+    || kind === "npc-local-enabled-shell-remove-temp-output";
 }
 
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
@@ -1140,6 +1146,14 @@ function getReadonlyOverviewExplanationTitle(
     return "Skill 辅助清理结果说明";
   }
 
+  if (executionKind === "npc-local-enabled-shell-create-temp-output") {
+    return "NPC 辅助创建结果说明";
+  }
+
+  if (executionKind === "npc-local-enabled-shell-remove-temp-output") {
+    return "NPC 辅助清理结果说明";
+  }
+
   if (executionKind === "capability-rag-overview") {
     return "RAG 能力说明";
   }
@@ -1282,6 +1296,10 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                               ? "重点解释已启用 Skill 只是用于匹配合适的本地能力，temp-output 创建仍是在用户批准 workspace-write 后通过受控 shell runner 执行；说明匹配 Skill、注册表、实际命令、工作区边界、输出预览、审计/回退可见性和下一步安全使用方式。不要暗示 Skill 或模型获得了任意 shell 权限。"
                               : payload.executionKind === "skills-local-enabled-shell-remove-temp-output"
                                 ? "重点解释已启用 Skill 只是用于匹配合适的本地能力，temp-output 删除仍是在用户授予 controlled-full 并确认高风险操作后通过受控 shell runner 执行；说明匹配 Skill、注册表、实际命令、工作区边界、输出预览、审计/回退快照可见性和下一步安全确认方式。不要暗示 Skill 或模型获得了任意删除权限，也不要暗示删除了其他路径。"
+                                : payload.executionKind === "npc-local-enabled-shell-create-temp-output"
+                                  ? "重点解释 NPC 协作只是用于组织本地能力和匹配已启用 Skill，temp-output 创建仍是在用户批准 workspace-write 后通过受控 shell runner 执行；说明匹配 Skill、注册表、实际命令、工作区边界、输出预览、审计/回退可见性和下一步安全使用方式。不要暗示 NPC、Skill 或模型获得了任意 shell 权限。"
+                                  : payload.executionKind === "npc-local-enabled-shell-remove-temp-output"
+                                    ? "重点解释 NPC 协作只是用于组织本地能力和匹配已启用 Skill，temp-output 删除仍是在用户授予 controlled-full 并确认高风险操作后通过受控 shell runner 执行；说明匹配 Skill、注册表、实际命令、工作区边界、输出预览、审计/回退快照可见性和下一步安全确认方式。不要暗示 NPC、Skill 或模型获得了任意删除权限，也不要暗示删除了其他路径。"
                     : payload.executionKind === "capability-rag-overview"
                 ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
                 : payload.executionKind === "capability-skills-overview"

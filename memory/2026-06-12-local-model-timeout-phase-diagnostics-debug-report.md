@@ -424,3 +424,18 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This further reduces fixed/template-like approved-success output while preserving permission, confirmation, audit, rollback, and model-stall fallback behavior.
 - Status: DONE
+
+## Follow-up: NPC-assisted shell execution results use bounded local-model explanation
+
+- Symptom: NPC-assisted shell create/delete flows correctly reused enabled Skill matching plus the existing permission or high-risk confirmation chain, but their successful visible responses still surfaced deterministic service facts such as `NPC-assisted temp-output creation`, `shell-automation`, registry path, command label, and stdout preview directly.
+- Root cause: The App-level explanation whitelist covered direct shell results and Skill-assisted shell results, but not the adjacent NPC-assisted shell execution kinds. These paths were therefore still template-like even though the actual action had already completed through the controlled shell runner.
+- Fix: Added `npc-local-enabled-shell-create-temp-output` and `npc-local-enabled-shell-remove-temp-output` to the App explanation whitelist and post-approval mutation set in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now tells the model to explain that NPC collaboration only organizes local capability use and enabled Skill matching, while the actual create/delete remains gated by `workspace-write` approval or `controlled-full` plus dangerous confirmation.
+- Safety boundary: The local model still does not choose the command, approve permission, or execute deletion. It only explains verified post-success facts. If the explanation stalls, OpenCow cancels the explanation request, falls back to the verified NPC+Skill+shell facts, and does not run the shell command a second time.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "NPC-assisted shell|npc collaboration" --pool forks --poolOptions.forks.singleFork` passed with 43 tests reported.
+  - `npm --workspace apps/desktop exec tsc -b` passed.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-shell-write.test.ts src/features/assistant/assistantTaskService.skills-rag-shell-write.test.ts --pool forks --poolOptions.forks.singleFork` passed with 12 tests.
+  - `npm run predesktop:dev` passed.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This moves another NPC collaboration success path away from fixed command output while preserving permission, confirmation, audit, rollback, and model-stall fallback behavior.
+- Status: DONE
