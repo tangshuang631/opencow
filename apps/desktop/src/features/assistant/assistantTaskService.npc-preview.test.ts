@@ -38,6 +38,15 @@ describe("assistantTaskService npc collaboration preview", () => {
     });
   });
 
+  it("keeps Chinese NPC draft requests on the readonly preview path", () => {
+    const plan = planAssistantTask("先给我课程助手 NPC 的只读草案", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-collaboration-preview",
+      title: "NPC collaboration preview"
+    });
+  });
+
   it("plans a document processing NPC config write once workspace-write is available", () => {
     const plan = planAssistantTask("你能帮我配置一个文档处理npc吗", "workspace-write");
 

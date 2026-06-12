@@ -119,7 +119,7 @@ const npcConfigurationIntentPatterns = [
   /\bset up\b/i,
   /\bconfigure\b/i
 ];
-const npcPreviewPatterns = [/\bpreview\b/i, /\bplan\b/i, /\bworkflow\b/i];
+const npcPreviewPatterns = [/\bpreview\b/i, /\bplan\b/i, /\bworkflow\b/i, /预览/, /草案/, /方案/, /工作流/];
 const npcShowcaseProjectPatterns = [/\bcattle\b/i, /\bproject\b/i, /项目/];
 const npcShowcaseOutputPatterns = [/\bshowcase\b/i, /\bportfolio\b/i, /\bresume\b/i, /简历/];
 const npcShowcaseActionPatterns = [/\brun\b/i, /运行/, /\bscreenshot/i, /截图/, /\bwebsite\b/i, /网站/, /\bgit repo\b/i, /仓库/];
@@ -1333,6 +1333,19 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Inspect local OpenClaw Skills package foundations before enablement and audit wiring expand.",
       auditSummary: "Local assistant planned an OpenClaw Skills capability overview.",
       auditDetail: `Readonly capability catalog task: skills | request=${message}`
+    };
+  }
+
+  if (
+    npcCapabilityPatterns.some((pattern) => pattern.test(message))
+    && npcPreviewPatterns.some((pattern) => pattern.test(message))
+  ) {
+    return {
+      kind: "npc-local-collaboration-preview",
+      title: "NPC collaboration preview",
+      summary: "Preview a readonly local NPC collaboration plan by combining NPC readiness, enabled skills, and local rules or docs context.",
+      auditSummary: "Local assistant planned a readonly NPC collaboration preview.",
+      auditDetail: `Readonly NPC collaboration preview task: ${message}`
     };
   }
 

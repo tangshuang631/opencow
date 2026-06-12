@@ -671,6 +671,36 @@ describe("MainConversation", () => {
     expect(screen.queryByText("开源协议有哪些")).not.toBeInTheDocument();
   });
 
+  it("shows NPC config generation as a local-model pending task with heartbeat text", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "你能帮我创建一个课程助手npc吗",
+        executionKind: "npc-config-write",
+        executionTitle: "大模型生成并保存 NPC 配置",
+        executionAuditSummary: "Local assistant planned an LLM-generated NPC configuration write.",
+        executionAuditDetail: "LLM-generated NPC configuration write task: 你能帮我创建一个课程助手npc吗"
+      })
+    );
+    const progressed = createTaskExecutionProgressState(running, {
+      taskId: running.tasks.activeTaskId ?? "",
+      progressSummary: "Ollama 已连接，正在等待首轮输出，已等待约 15 秒。"
+    });
+
+    render(
+      <MainConversation
+        state={progressed}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+      />
+    );
+
+    const pending = screen.getByLabelText("assistant-pending");
+
+    expect(within(pending).getByText("Ollama 正在生成 NPC 配置")).toBeInTheDocument();
+    expect(within(pending).getByText("Ollama 已连接，正在等待首轮输出，已等待约 15 秒。")).toBeInTheDocument();
+    expect(screen.queryByText("你能帮我创建一个课程助手npc吗")).not.toBeInTheDocument();
+  });
+
   it("shows only the compact Ollama generation title while a local model chat is pending", () => {
     const completed = createTaskExecutionSucceededState(
       createTaskExecutionStartedState(

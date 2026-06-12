@@ -23,9 +23,11 @@ const TEXT = {
   system: "系统",
   thinkingTitle: "助手处理中",
   localModelThinkingTitle: "Ollama 正在生成",
+  npcConfigThinkingTitle: "Ollama 正在生成 NPC 配置",
   queuedLabel: "已进入本地任务队列",
   runningLabel: "正在本地执行链中处理",
   localModelRunningLabel: "正在等待本地模型输出",
+  npcConfigRunningLabel: "正在等待本地模型生成 NPC 配置",
   localModelSlowStartHint: "本地模型首轮响应可能较慢，OpenCow 会保持界面响应，并持续等待真实输出返回。"
 } as const;
 
@@ -275,6 +277,10 @@ function isLongWorkbenchText(text: string) {
   return normalizeWorkbenchText(text).trim().length > LONG_TEXT_LIMIT;
 }
 
+function isLocalModelPendingTask(executionKind: string | undefined) {
+  return executionKind === "local-model-chat" || executionKind === "npc-config-write";
+}
+
 function CollapsibleWorkbenchText({
   text,
   isUser
@@ -340,7 +346,8 @@ export function MainConversation({
   const queuedTask = state.tasks.items.find((item) => item.status === "queued") ?? null;
   const pendingTask = activeTask ?? queuedTask;
   const hasPendingTask = pendingTask !== null;
-  const isLocalModelPending = pendingTask?.executionKind === "local-model-chat";
+  const isLocalModelPending = isLocalModelPendingTask(pendingTask?.executionKind);
+  const isNpcConfigPending = pendingTask?.executionKind === "npc-config-write";
   const entries = state.conversation.entries.slice().reverse();
   const visibleEntries = isLocalModelPending
     ? []
@@ -357,11 +364,17 @@ export function MainConversation({
     || state.audit.lastEvent.source === "capability_toggle_cancelled";
   const showsActionableErrorRecovery = state.error !== null && state.error.module !== "ollama";
   const pendingStatusLabel = isLocalModelPending
-    ? TEXT.localModelRunningLabel
+    ? isNpcConfigPending
+      ? TEXT.npcConfigRunningLabel
+      : TEXT.localModelRunningLabel
     : activeTask
       ? TEXT.runningLabel
       : TEXT.queuedLabel;
-  const pendingTitle = isLocalModelPending ? TEXT.localModelThinkingTitle : TEXT.thinkingTitle;
+  const pendingTitle = isLocalModelPending
+    ? isNpcConfigPending
+      ? TEXT.npcConfigThinkingTitle
+      : TEXT.localModelThinkingTitle
+    : TEXT.thinkingTitle;
   const pendingLocalModelProgress = isLocalModelPending
     ? pendingTask?.progressSummary?.trim() || TEXT.localModelSlowStartHint
     : "";

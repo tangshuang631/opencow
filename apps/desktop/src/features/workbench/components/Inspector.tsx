@@ -115,6 +115,13 @@ function isCompletedLocalModelChatTask(task: WorkbenchState["tasks"]["items"][nu
   return task.executionKind === "local-model-chat" && task.status === "completed";
 }
 
+function isLocalModelGenerationTask(task: WorkbenchState["tasks"]["items"][number] | undefined) {
+  return Boolean(
+    task
+      && (task.executionKind === "local-model-chat" || task.executionKind === "npc-config-write")
+  );
+}
+
 function shouldSuppressCompletedLocalModelChatOutput(state: WorkbenchState) {
   const latestTask = state.tasks.items[0];
 
@@ -131,7 +138,7 @@ function shouldSuppressLocalModelChatProgressOutput(state: WorkbenchState) {
 
   return Boolean(
     latestTask
-      && latestTask.executionKind === "local-model-chat"
+      && isLocalModelGenerationTask(latestTask)
       && (latestTask.status === "queued" || latestTask.status === "running")
       && state.audit.lastEvent.source === "local_model_chat_progress"
   );
@@ -140,7 +147,7 @@ function shouldSuppressLocalModelChatProgressOutput(state: WorkbenchState) {
 function isPendingLocalModelChat(task: WorkbenchState["tasks"]["items"][number] | undefined) {
   return Boolean(
     task
-      && task.executionKind === "local-model-chat"
+      && isLocalModelGenerationTask(task)
       && (task.status === "queued" || task.status === "running")
   );
 }
@@ -372,6 +379,18 @@ function isLongTaskSummary(summary: string) {
 }
 
 function getVisibleTaskSummary(task: WorkbenchState["tasks"]["items"][number]) {
+  if (task.executionKind === "npc-config-write") {
+    if (task.status === "queued" || task.status === "running") {
+      return "正在生成 NPC 配置";
+    }
+
+    if (task.status === "failed") {
+      return "NPC 配置生成失败，详情已收起到任务记录中。";
+    }
+
+    return "NPC 配置生成任务已结束。";
+  }
+
   if (task.executionKind === "local-model-chat") {
     if (task.status === "queued" || task.status === "running") {
       return "正在生成";

@@ -26,6 +26,10 @@ function createDefaultTaskPreview(message: string): string {
     : normalized;
 }
 
+function isLocalModelGenerationTaskKind(executionKind: string | undefined): boolean {
+  return executionKind === "local-model-chat" || executionKind === "npc-config-write";
+}
+
 export function createUserTaskSubmittedState(
   state: WorkbenchState,
   payload: {
@@ -630,7 +634,7 @@ export function createTaskExecutionProgressState(
   const activeTask = state.tasks.items.find((item) =>
     item.id === payload.taskId
     && item.status === "running"
-    && item.executionKind === "local-model-chat"
+    && isLocalModelGenerationTaskKind(item.executionKind)
   );
 
   if (!activeTask || !normalizedProgressSummary || activeTask.progressSummary === normalizedProgressSummary) {
@@ -676,7 +680,7 @@ export function createTaskExecutionStreamingChunkState(
   const activeTask = state.tasks.items.find((item) =>
     item.id === payload.taskId
     && item.status === "running"
-    && item.executionKind === "local-model-chat"
+    && isLocalModelGenerationTaskKind(item.executionKind)
   );
 
   if (!activeTask) {

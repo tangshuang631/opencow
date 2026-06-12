@@ -253,8 +253,16 @@ function createLocalTaskFailureActionLabel(detail: string, executionKind: string
 function createNpcConfigWriteFailureActionLabel(detail: string): string {
   const normalizedDetail = detail.toLowerCase();
 
+  if (normalizedDetail.includes("streamphase=waiting-first-chunk")) {
+    return "NPC 配置生成卡在首轮输出前：配置尚未写入。请先把 NPC 职责缩小成一两句话，或改问“先给我课程助手 NPC 的只读草案”，确认方向后再保存；也可以切换更快的本地模型后重试。";
+  }
+
+  if (normalizedDetail.includes("streamphase=streaming")) {
+    return "NPC 配置生成中途超时：配置尚未写入。请先要求本地模型分阶段生成更短的 NPC JSON，确认角色、能力和权限边界后再保存。";
+  }
+
   if (normalizedDetail.includes("maximum execution time") || normalizedDetail.includes("timed out")) {
-    return "本地模型生成 NPC 配置超时：请先缩短这次 NPC 需求描述，或切换更快的本地模型后重试；如果经常卡在首轮输出前，请优先检查 Ollama 是否仍在稳定返回首块内容。";
+    return "本地模型生成 NPC 配置超时：请先缩短这次 NPC 需求描述，或改成只读草案确认方向后再保存；如果经常卡在首轮输出前，请优先检查 Ollama 是否仍在稳定返回首块内容。";
   }
 
   if (

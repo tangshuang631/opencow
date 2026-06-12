@@ -706,6 +706,28 @@ describe("Inspector", () => {
     expect(screen.queryByText("正在生成")).not.toBeInTheDocument();
   });
 
+  it("keeps NPC config generation heartbeat out of the right output summary", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "你能帮我创建一个课程助手npc吗",
+      executionKind: "npc-config-write",
+      executionTitle: "大模型生成并保存 NPC 配置",
+      executionAuditSummary: "Local assistant planned an LLM-generated NPC configuration write.",
+      executionAuditDetail: "LLM-generated NPC configuration write task: 你能帮我创建一个课程助手npc吗"
+    });
+    const running = createTaskExecutionStartedState(submitted);
+    const progressed = createTaskExecutionProgressState(running, {
+      taskId: running.tasks.activeTaskId ?? "",
+      progressSummary: "Ollama 已连接，正在等待首轮输出，已等待约 15 秒。"
+    });
+
+    renderInspector(progressed);
+
+    expect(screen.getByLabelText("右侧面板")).toBeInTheDocument();
+    expect(screen.queryByText("输出")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Ollama 已连接，正在等待首轮输出/)).not.toBeInTheDocument();
+    expect(screen.queryByText("正在生成 NPC 配置")).not.toBeInTheDocument();
+  });
+
   it("keeps the right inspector visually quiet while local model chat is generating", () => {
     const running = createTaskExecutionStartedState(
       createUserTaskSubmittedState(createInitialWorkbenchState(), {
@@ -726,6 +748,26 @@ describe("Inspector", () => {
     expect(screen.queryByText("待处理 1 条")).not.toBeInTheDocument();
     expect(screen.queryByText("正在生成")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "停止任务" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the right inspector visually quiet while NPC config generation is pending", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "你能帮我创建一个课程助手npc吗",
+        executionKind: "npc-config-write",
+        executionTitle: "大模型生成并保存 NPC 配置",
+        executionAuditSummary: "Local assistant planned an LLM-generated NPC configuration write.",
+        executionAuditDetail: "LLM-generated NPC configuration write task: 你能帮我创建一个课程助手npc吗"
+      })
+    );
+
+    renderInspector(running);
+
+    expect(screen.getByLabelText("右侧面板")).toBeInTheDocument();
+    expect(screen.queryByText("配置与记录")).not.toBeInTheDocument();
+    expect(screen.queryByText("本地任务")).not.toBeInTheDocument();
+    expect(screen.queryByText("你能帮我创建一个课程助手npc吗")).not.toBeInTheDocument();
+    expect(screen.queryByText("正在生成 NPC 配置")).not.toBeInTheDocument();
   });
 
   it("shows retried failure diagnostics with concise Chinese labels instead of raw previous-failure fields", () => {
