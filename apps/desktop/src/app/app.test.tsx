@@ -12,6 +12,9 @@ const {
   searchLocalKnowledgeMock,
   scanLocalSkillsMock,
   inspectLocalSkillMock,
+  scanLocalMcpPluginsMock,
+  inspectLocalMcpPluginMock,
+  previewLocalMcpPluginStartMock,
   enableLocalSkillMock,
   installLocalSkillMock,
   listEnabledLocalSkillsMock,
@@ -30,6 +33,9 @@ const {
   searchLocalKnowledgeMock: vi.fn(),
   scanLocalSkillsMock: vi.fn(),
   inspectLocalSkillMock: vi.fn(),
+  scanLocalMcpPluginsMock: vi.fn(),
+  inspectLocalMcpPluginMock: vi.fn(),
+  previewLocalMcpPluginStartMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
@@ -59,6 +65,9 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     searchLocalKnowledge: searchLocalKnowledgeMock,
     scanLocalSkills: scanLocalSkillsMock,
     inspectLocalSkill: inspectLocalSkillMock,
+    scanLocalMcpPlugins: scanLocalMcpPluginsMock,
+    inspectLocalMcpPlugin: inspectLocalMcpPluginMock,
+    previewLocalMcpPluginStart: previewLocalMcpPluginStartMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
@@ -97,6 +106,9 @@ describe("App", () => {
     searchLocalKnowledgeMock.mockReset();
     scanLocalSkillsMock.mockReset();
     inspectLocalSkillMock.mockReset();
+    scanLocalMcpPluginsMock.mockReset();
+    inspectLocalMcpPluginMock.mockReset();
+    previewLocalMcpPluginStartMock.mockReset();
     enableLocalSkillMock.mockReset();
     installLocalSkillMock.mockReset();
     listEnabledLocalSkillsMock.mockReset();
@@ -1055,6 +1067,181 @@ describe("App", () => {
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining("启用状态")
     }));
+  });
+
+  it("explains local MCP plugin scan results through the selected local model", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    scanLocalMcpPluginsMock.mockResolvedValueOnce({
+      summary: "Local MCP plugin scan found 2 plugin entries across 2 scanned roots.",
+      total_count: 2,
+      scanned_root_count: 2,
+      items: [
+        {
+          id: "browser",
+          path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "startup",
+          tool_count: 1,
+          skill_count: 1
+        },
+        {
+          id: "codex-supervisor",
+          path: "vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "manual",
+          tool_count: 5,
+          skill_count: 0
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "当前扫描到 browser 和 codex-supervisor 两个本地 MCP 插件入口；browser 是 startup 激活线索，但真正启动仍要经过受控权限链。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "scan local mcp plugins and list available model context protocol entries" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 MCP 插件扫描说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/browser 和 codex-supervisor/)).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("codex-supervisor")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("可用工具边界")
+    }));
+  });
+
+  it("explains local MCP plugin detail results through the selected local model", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    inspectLocalMcpPluginMock.mockResolvedValueOnce({
+      query: "show details for the browser mcp plugin",
+      summary: "Local MCP plugin detail lookup found 1 matching plugin across 2 scanned roots.",
+      match_count: 1,
+      scanned_root_count: 2,
+      items: [
+        {
+          id: "browser",
+          path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "startup",
+          tool_count: 1,
+          skill_count: 1,
+          description: "Browser automation plugin entry.",
+          tool_names: ["browser"],
+          skill_paths: ["./skills"]
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "browser MCP 插件暴露 browser 工具和 ./skills 目录，适合浏览器自动化；当前只是读取 manifest 详情，不能绕过配置和权限边界。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show details for the browser mcp plugin" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("MCP 插件详情说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/browser MCP 插件暴露 browser 工具/)).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("Browser automation plugin entry")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("配置边界")
+    }));
+  });
+
+  it("explains local MCP plugin start previews through the selected local model without running the plugin", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    previewLocalMcpPluginStartMock.mockResolvedValueOnce({
+      query: "preview starting the browser mcp plugin locally",
+      summary: "Local MCP plugin start preview found 1 matching plugin across 2 scanned roots.",
+      match_count: 1,
+      scanned_root_count: 2,
+      items: [
+        {
+          id: "browser",
+          path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+          source: "vendor-openclaw-extension-plugin",
+          activation: "startup",
+          startup_allowed: false,
+          command_preview: "No resolved executable launcher for this local MCP plugin in the current desktop slice.",
+          working_directory: "vendor/openclaw/extensions/browser",
+          risk_summary:
+            "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process.",
+          requires_config: false,
+          config_hint: "No required config schema fields were detected."
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "这是 browser MCP 插件的启动预览：当前没有已验证的 executable launcher，所以没有启动真实进程；继续启动前必须补齐启动器并走受控权限确认。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "preview starting the browser mcp plugin locally" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("MCP 插件启动预览说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/没有启动真实进程/)).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("No resolved executable launcher")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("为什么只是预览")
+    }));
+    expect(runControlledFullShellCommandMock).not.toHaveBeenCalled();
   });
 
   it("shows the final skill-assisted readonly RAG result for an explicit enabled docs skill request", async () => {

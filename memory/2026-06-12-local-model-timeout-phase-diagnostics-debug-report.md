@@ -124,3 +124,17 @@
 - Regression tests: `apps/desktop/src/features/workbench/components/Inspector.test.tsx`, `apps/desktop/src/app/app.task-guard.test.tsx`
 - Related: This keeps timeout failures recoverable and Chinese-first, without hiding the low-level Ollama diagnostics needed for deeper troubleshooting.
 - Status: DONE
+
+## Follow-up: readonly MCP plugin outputs use local-model explanation
+
+- Symptom: Explicit readonly MCP plugin requests such as local plugin scan, plugin detail lookup, and start preview still surfaced deterministic English summaries like `Local MCP plugin scan` or `No resolved executable launcher` directly in the main conversation.
+- Root cause: `mcp-local-plugin-scan`, `mcp-local-plugin-inspect`, and `mcp-local-plugin-start-preview` were safe readonly information tasks, but they were not part of the App-level readonly explanation hook.
+- Fix: Added those three execution kinds to [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The selected local model now explains MCP plugin inventory, manifest details, activation/tool/Skill boundaries, and start-preview limitations from readonly facts. The real controlled `mcp-local-plugin-start` path remains outside this hook and still requires permission and dangerous confirmation.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx` passed with 31 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.capabilities.test.ts` passed with 6 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/app/app.mcp-start.test.tsx src/features/workbench/components/MainConversation.test.tsx` passed with 167 tests.
+  - `npm run verify:all` passed, including 587 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/app/app.mcp-start.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.capabilities.test.ts`
+- Related: This removes another ordinary readonly fixed-output path while keeping MCP process startup gated by the controlled execution chain.
+- Status: DONE
