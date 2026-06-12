@@ -94,6 +94,11 @@ describe("local assistant task planner npc showcase workflow", () => {
       queuedExecutionKind: "npc-local-project-showcase-site-write",
       queuedExecutionTitle: "NPC local project showcase-site write"
     });
+    if (plan.kind !== "permission-request") {
+      throw new Error(`Unexpected plan kind: ${plan.kind}`);
+    }
+    expect(plan.reason).toContain("Shell 出问题时，可以把它当成一个可对话恢复的受控能力来处理");
+    expect(plan.riskSummary).toContain("Shell 出问题时，可以把它当成一个可对话恢复的受控能力来处理");
   });
 
   it("plans npc showcase-site write after workspace-write is approved", () => {

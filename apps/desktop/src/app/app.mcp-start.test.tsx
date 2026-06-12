@@ -59,13 +59,13 @@ describe("App MCP start flow", () => {
     const approveDangerButton = await within(permissionSection as HTMLElement).findByRole("button", {
       name: APPROVE_DANGER_NAME
     });
-    expect(screen.queryByText(/browser plugin start simulated/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no verified executable launcher has been implemented/i)).not.toBeInTheDocument();
 
     fireEvent.click(approveDangerButton);
 
     await waitFor(() => {
       expect(
-        screen.getAllByText(/Local MCP plugin start|npx openclaw-extension-browser|browser plugin start simulated/i).length
+        screen.getAllByText(/Local MCP plugin start|No resolved executable launcher|not executed/i).length
       ).toBeGreaterThan(0);
     });
   });

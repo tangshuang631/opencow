@@ -1468,11 +1468,13 @@ pub fn local_mcp_plugin_start_preview(
                 path: relative_path,
                 source: classify_mcp_plugin_source(&root, &path),
                 activation: activation.clone(),
-                startup_allowed: activation == "startup",
-                command_preview: format!("npx openclaw-extension-{id}"),
+                startup_allowed: false,
+                command_preview:
+                    "No resolved executable launcher for this local MCP plugin in the current desktop slice."
+                        .to_string(),
                 working_directory,
                 risk_summary:
-                    "Preview only. Actual MCP plugin launch is not enabled in this slice."
+                    "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process."
                         .to_string(),
                 requires_config,
                 config_hint,
@@ -1527,12 +1529,13 @@ pub fn local_mcp_plugin_start(query: String) -> Result<LocalMcpPluginStartResult
 
     Ok(LocalMcpPluginStartResult {
         plugin_id: "browser".to_string(),
-        command_label: "npx openclaw-extension-browser".to_string(),
+        command_label: "No resolved executable launcher".to_string(),
         working_directory: "vendor/openclaw/extensions/browser".to_string(),
-        stdout_preview: "browser plugin start simulated".to_string(),
-        line_count: 1,
-        summary: "Local MCP plugin start executed through the controlled desktop runner."
-            .to_string(),
+        stdout_preview:
+            "Execution blocked: the browser MCP plugin manifest exists, but this desktop slice does not yet know how to launch a real plugin host for it."
+                .to_string(),
+        line_count: 0,
+        summary: "Local MCP plugin start was not executed. The browser plugin is present, but no verified executable launcher has been implemented for it yet.".to_string(),
     })
 }
 
@@ -4367,11 +4370,12 @@ mod tests {
 
         assert_eq!(result.match_count, 1);
         assert_eq!(result.items[0].id, "browser");
-        assert!(result.items[0].startup_allowed);
+        assert!(!result.items[0].startup_allowed);
         assert_eq!(result.items[0].activation, "startup");
         assert_eq!(
             result.items[0].command_preview,
-            "npx openclaw-extension-browser".to_string()
+            "No resolved executable launcher for this local MCP plugin in the current desktop slice."
+                .to_string()
         );
         assert_eq!(
             result.items[0].working_directory,

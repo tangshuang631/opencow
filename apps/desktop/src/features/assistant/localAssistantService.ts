@@ -1238,10 +1238,11 @@ function createBrowserPreviewLocalMcpPluginStartPreview(query: string): LocalMcp
         path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
         source: "vendor-openclaw-extension-plugin",
         activation: "startup",
-        startup_allowed: true,
-        command_preview: "npx openclaw-extension-browser",
+        startup_allowed: false,
+        command_preview: "No resolved executable launcher for this local MCP plugin in the current desktop slice.",
         working_directory: "vendor/openclaw/extensions/browser",
-        risk_summary: "Preview only. Actual MCP plugin launch is not enabled in this slice.",
+        risk_summary:
+          "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process.",
         requires_config: false,
         config_hint: "No required config schema fields were detected."
       }
@@ -1252,10 +1253,12 @@ function createBrowserPreviewLocalMcpPluginStartPreview(query: string): LocalMcp
 function createBrowserPreviewLocalMcpPluginStart(query: string): LocalMcpPluginStartResult {
   return {
     plugin_id: query.toLowerCase().includes("browser") ? "browser" : "plugin",
-    command_label: "npx openclaw-extension-browser",
+    command_label: "No resolved executable launcher",
     working_directory: "vendor/openclaw/extensions/browser",
-    stdout_preview: "browser plugin start simulated",
-    line_count: 1,
-    summary: "Browser preview mode simulated a controlled local MCP plugin start."
+    stdout_preview:
+      "Execution blocked: the browser MCP plugin manifest exists, but this desktop slice does not yet know how to launch a real plugin host for it.",
+    line_count: 0,
+    summary:
+      "Browser preview mode did not execute a local MCP plugin start because no verified executable launcher has been implemented for it yet."
   };
 }

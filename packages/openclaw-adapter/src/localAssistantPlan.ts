@@ -1352,7 +1352,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
         kind: "confirmation",
         title: "Confirm local MCP plugin start",
         summary: "The assistant identified a real local MCP plugin start request and requires explicit confirmation before execution.",
-        commandPreview: "npx openclaw-extension-browser",
+        commandPreview: "No resolved executable launcher is currently available for this local MCP plugin.",
         impact: "This will start a local MCP-adjacent plugin process through a tightly scoped desktop runner.",
         requiredMode: "controlled-full",
         safetySummary: "A preview and audit record must remain available before local MCP plugin execution continues.",

@@ -172,10 +172,11 @@ describe("assistantTaskService capability catalogs", () => {
           path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
           source: "vendor-openclaw-extension-plugin",
           activation: "startup",
-          startup_allowed: true,
-          command_preview: "npx openclaw-extension-browser",
+          startup_allowed: false,
+          command_preview: "No resolved executable launcher for this local MCP plugin in the current desktop slice.",
           working_directory: "vendor/openclaw/extensions/browser",
-          risk_summary: "Preview only. Actual MCP plugin launch is not enabled in this slice.",
+          risk_summary:
+            "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process.",
           requires_config: false,
           config_hint: "No required config schema fields were detected."
         }
@@ -192,7 +193,7 @@ describe("assistantTaskService capability catalogs", () => {
 
     expect(result.resultTitle).toBe("Local MCP plugin start preview");
     expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("npx openclaw-extension-browser");
+    expect(result.resultSummary).toContain("No resolved executable launcher");
     expect(result.resultSummary).toContain("startup");
     expect(result.resultSummary).toContain("Preview only");
     expect(result.resultSummary).toContain("No required config schema fields were detected");
@@ -201,11 +202,13 @@ describe("assistantTaskService capability catalogs", () => {
   it("executes a real local MCP plugin start task through the desktop service", async () => {
     startLocalMcpPluginMock.mockResolvedValueOnce({
       plugin_id: "browser",
-      command_label: "npx openclaw-extension-browser",
+      command_label: "No resolved executable launcher",
       working_directory: "vendor/openclaw/extensions/browser",
-      stdout_preview: "browser plugin start simulated",
-      line_count: 1,
-      summary: "Local MCP plugin start executed through the controlled desktop runner."
+      stdout_preview:
+        "Execution blocked: the browser MCP plugin manifest exists, but this desktop slice does not yet know how to launch a real plugin host for it.",
+      line_count: 0,
+      summary:
+        "Local MCP plugin start was not executed. The browser plugin is present, but no verified executable launcher has been implemented for it yet."
     });
 
     const result = await executeAssistantTask({
@@ -218,7 +221,7 @@ describe("assistantTaskService capability catalogs", () => {
 
     expect(result.resultTitle).toBe("Local MCP plugin start");
     expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("npx openclaw-extension-browser");
-    expect(result.resultSummary).toContain("browser plugin start simulated");
+    expect(result.resultSummary).toContain("No resolved executable launcher");
+    expect(result.resultSummary).toContain("was not executed");
   });
 });
