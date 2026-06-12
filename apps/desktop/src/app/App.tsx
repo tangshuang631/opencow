@@ -845,6 +845,8 @@ type ExplainableReadonlyResultKind =
   | "workspace-config-overview"
   | "opencow-self-repair-preview"
   | "opencow-self-repair-target-guidance"
+  | "opencow-self-repair-enabled-skills-registry"
+  | "opencow-self-repair-workspace-project-runtime-registry"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "capability-npc-overview"
@@ -878,6 +880,8 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "workspace-config-overview"
     || kind === "opencow-self-repair-preview"
     || kind === "opencow-self-repair-target-guidance"
+    || kind === "opencow-self-repair-enabled-skills-registry"
+    || kind === "opencow-self-repair-workspace-project-runtime-registry"
     || kind === "capability-rag-overview"
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
@@ -906,6 +910,11 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "network-search-guidance";
 }
 
+function isSelfRepairMutationResultKind(kind: ExplainableReadonlyResultKind): boolean {
+  return kind === "opencow-self-repair-enabled-skills-registry"
+    || kind === "opencow-self-repair-workspace-project-runtime-registry";
+}
+
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
   executionKind: ExplainableReadonlyResultKind;
   model: string;
@@ -924,14 +933,14 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
       resultSummary: payload.readonlySummary,
       auditDetailLines: [
         selectedModel
-          ? "Readonly overview explanation skipped: local model bridge was unavailable in this runtime."
-          : "Readonly overview explanation skipped: no usable local Ollama model was selected."
+          ? "Assistant task result explanation skipped: local model bridge was unavailable in this runtime."
+          : "Assistant task result explanation skipped: no usable local Ollama model was selected."
       ]
     };
   }
 
   if (payload.signal?.aborted) {
-    throw new Error("Readonly overview explanation was aborted before it started.");
+    throw new Error("Assistant task result explanation was aborted before it started.");
   }
 
   const explanationAbortController = new AbortController();
@@ -953,7 +962,7 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
       abortExplanation();
       reject(
         new Error(
-          `Readonly overview explanation exceeded ${Math.floor(READONLY_EXPLANATION_TIMEOUT_MS / 1000)} seconds.`
+          `Assistant task result explanation exceeded ${Math.floor(READONLY_EXPLANATION_TIMEOUT_MS / 1000)} seconds.`
         )
       );
     }, READONLY_EXPLANATION_TIMEOUT_MS);
@@ -988,10 +997,14 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
     auditDetailLines: [
       `Ollama model: ${result.model || selectedModel}`,
       `Ollama done reason: ${result.doneReason || "complete"}`,
-      `Readonly overview explanation: local model generated for ${payload.executionKind} from readonly facts.`
+      isSelfRepairMutationResultKind(payload.executionKind)
+        ? `Assistant task result explanation: local model generated for ${payload.executionKind} after approved self-repair completed.`
+        : `Readonly overview explanation: local model generated for ${payload.executionKind} from readonly facts.`
     ],
     auditOnlyDetailLines: [
-      `Readonly workspace facts: ${payload.readonlySummary}`
+      isSelfRepairMutationResultKind(payload.executionKind)
+        ? `Original approved self-repair result facts: ${payload.readonlySummary}`
+        : `Readonly workspace facts: ${payload.readonlySummary}`
     ]
   };
 }
@@ -1013,6 +1026,14 @@ function getReadonlyOverviewExplanationTitle(
 
   if (executionKind === "opencow-self-repair-target-guidance") {
     return "OpenCow 自修复目标说明";
+  }
+
+  if (executionKind === "opencow-self-repair-enabled-skills-registry") {
+    return "OpenCow Skills 注册表修复说明";
+  }
+
+  if (executionKind === "opencow-self-repair-workspace-project-runtime-registry") {
+    return "OpenCow 项目运行注册表修复说明";
   }
 
   if (executionKind === "capability-rag-overview") {
@@ -1135,9 +1156,13 @@ function createReadonlyOverviewExplanationPrompt(payload: {
         ? "重点解释当前只是 OpenCow 自修复只读预览、命中的配置/脚本/RAG 依据、可能的修复目标、为什么没有写文件，以及继续前必须经过 workspace-write 提权和审计/回退保护。"
         : payload.executionKind === "opencow-self-repair-target-guidance"
           ? "重点解释为什么本轮不能继续泛化自修复、必须先选择 enabled skills registry 或 workspace project runtime registry 之一；明确本轮没有提权、没有写文件，下一步应让用户明确目标。"
-          : payload.executionKind === "capability-rag-overview"
-            ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
-            : payload.executionKind === "capability-skills-overview"
+          : payload.executionKind === "opencow-self-repair-enabled-skills-registry"
+            ? "重点解释 enabled skills registry 已在用户批准 workspace-write 后完成受控修复、修复路径、保留条目、验证结果、审计/回退可见性，以及下一步如何继续安全使用 Skills。不要说这是只读预览。"
+            : payload.executionKind === "opencow-self-repair-workspace-project-runtime-registry"
+              ? "重点解释 workspace project runtime registry 已在用户批准 workspace-write 后完成受控修复、修复路径、保留运行记录、验证结果、审计/回退可见性，以及下一步如何安全检查或启动项目。不要说这是只读预览。"
+              : payload.executionKind === "capability-rag-overview"
+                ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
+                : payload.executionKind === "capability-skills-overview"
               ? "重点解释 Skills 能力当前可用基础、安装/启用边界、缺失项，以及下一步如何安全验证。"
               : payload.executionKind === "capability-npc-overview"
                 ? "重点解释 NPC 协作能力当前可用基础、适合的本地工作流、缺失项，以及下一步如何安全验证。"
@@ -1894,7 +1919,7 @@ export function App() {
             ...validResult,
             auditDetailLines: [
               ...(validResult.auditDetailLines ?? []),
-              `Readonly overview explanation skipped after local model failure: ${normalizeUnknownAssistantError(
+              `Assistant task result explanation skipped after local model failure: ${normalizeUnknownAssistantError(
                 error,
                 "Unknown local model explanation error"
               )}`

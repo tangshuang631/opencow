@@ -286,3 +286,17 @@
 - Regression test: `apps/desktop/src/features/workbench/components/Inspector.test.tsx`
 - Related: This reduces confusing duplicate-recovery wording around the same local-model timeout event while preserving audit detail and the readonly draft route.
 - Status: DONE
+
+## Follow-up: approved self-repair success results use bounded local-model explanation
+
+- Symptom: The self-repair preview and target guidance paths were already model-explained, but the final successful approved repair results for `.opencow/skills/enabled-skills.json` and `.opencow/runtime/workspace-project-runs.json` still surfaced deterministic repaired-path/schema/count summaries directly in the main conversation.
+- Root cause: The App-level explanation hook only covered readonly results. The two self-repair mutation kinds were intentionally excluded to avoid bypassing permission, but there was no post-permission explanation path after the repair had already succeeded.
+- Fix: Extended [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx) so `opencow-self-repair-enabled-skills-registry` and `opencow-self-repair-workspace-project-runtime-registry` use the same bounded 10-second local-model explanation path after the approved repair completes. The prompt explicitly says the result is not a readonly preview and asks the model to explain the approved repair path, preserved entries/runs, verification result, audit visibility, rollback visibility, and safe next step.
+- Safety boundary: Permission is still required before either repair runs. The model explanation happens only after the repair service returns verified success. If the explanation stalls or fails, OpenCow falls back to the original verified repair facts and does not mark the successful task as failed.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.self-repair.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 6 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.task-guard.test.tsx -t "self-repair|repair" --pool forks --poolOptions.forks.singleFork` passed with 72 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 162 tests.
+- Regression test: `apps/desktop/src/app/app.self-repair.test.tsx`
+- Related: This moves another user-visible fixed-output success path through the local model without weakening workspace-write permission, audit, rollback, or anti-stall behavior.
+- Status: DONE

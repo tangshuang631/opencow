@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -64,6 +64,15 @@ function findModelPicker(modelName = "qwen2.5-coder:7b") {
 
 describe("App self-repair mutation continuation", () => {
   it("continues from self-repair preview into permission approval and final registry repair output", async () => {
+    chatWithOllamaModelMock
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "这是本地模型解释的 OpenCow 自修复预览：当前只读取配置、脚本和本地文档，没有写文件；如果继续，需要先经过 workspace-write 提权、审计和回退保护。"
+      })
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "Skills 注册表已在你批准工作区读写后完成受控修复：enabled-skills.json 恢复为可验证 schema，保留条目为 0，后续可以继续启用需要的 Skill。"
+      });
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -160,11 +169,80 @@ describe("App self-repair mutation continuation", () => {
     await waitFor(() => {
       expect(
         screen.getAllByText(
-          /Repair opencow enabled skills registry|enabled-skills\.json|verified default schema|Verified schema version: 1|Verified enabled entries: 0/i
+          /OpenCow Skills 注册表修复说明|Skills 注册表已在你批准工作区读写后完成受控修复|enabled-skills\.json|保留条目为 0/i
         ).length
       ).toBeGreaterThan(0);
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("不要说这是只读预览")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Verified enabled entries: 0")
+    }));
 
+  });
+
+  it("falls back to verified self-repair facts when final local-model explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    repairOpencowEnabledSkillsRegistryMock.mockResolvedValueOnce({
+      query: "diagnose opencow and continue repairing its enabled skills registry",
+      repair_target: "enabled-skills-registry",
+      repaired_path: ".opencow/skills/enabled-skills.json",
+      status: "repaired",
+      preserved_entry_count: 0,
+      verified_version: 1,
+      verified_entry_count: 0,
+      summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    const { container } = render(<App />);
+
+    await findModelPicker();
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "diagnose opencow and continue repairing its enabled skills registry" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/i });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(approvePermissionButton as HTMLButtonElement);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_500);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(repairOpencowEnabledSkillsRegistryMock).toHaveBeenCalled();
+      expect(cancelOllamaChatMock).toHaveBeenCalledWith(
+        expect.stringMatching(/^opencow-self-repair-enabled-skills-registry-explanation-/)
+      );
+      expect(
+        screen.getAllByText(
+          /Repair opencow enabled skills registry|enabled-skills\.json|verified default schema|Verified schema version: 1|Verified enabled entries: 0/i
+        ).length
+      ).toBeGreaterThan(0);
+      expect(screen.queryByText(/OpenCow Skills 注册表修复说明/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/本地任务执行失败|Local task execution failed/i)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -400,6 +478,15 @@ describe("App self-repair permission cancellation", () => {
       verified_entry_count: 0,
       summary: "Opencow self-repair restored the enabled skills registry to a verified default schema."
     });
+    chatWithOllamaModelMock
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "这是本地模型解释的 OpenCow 自修复预览：当前只读取配置、脚本和本地文档，没有写文件；如果继续，需要先经过 workspace-write 提权、审计和回退保护。"
+      })
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "Skills 注册表已完成受控修复：enabled-skills.json 已验证，后续可以继续启用需要的 Skill。"
+      });
 
     const { container } = render(<App />);
 
@@ -447,7 +534,7 @@ describe("App self-repair permission cancellation", () => {
     await waitFor(() => {
       expect(
         screen.getAllByText(
-          /Repair opencow enabled skills registry|enabled-skills\.json|verified default schema|Verified schema version: 1|Verified enabled entries: 0/i
+          /OpenCow Skills 注册表修复说明|Skills 注册表已完成受控修复|enabled-skills\.json/i
         ).length
       ).toBeGreaterThan(0);
     });
@@ -456,6 +543,15 @@ describe("App self-repair permission cancellation", () => {
 
 describe("App self-repair runtime registry continuation", () => {
   it("continues from self-repair preview into permission approval and final runtime registry repair output", async () => {
+    chatWithOllamaModelMock
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "这是本地模型解释的 OpenCow 自修复预览：当前只读取配置、脚本和本地文档，没有写文件；如果继续，需要先经过 workspace-write 提权、审计和回退保护。"
+      })
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "项目运行注册表已在你批准工作区读写后完成受控修复：workspace-project-runs.json 恢复为可验证 schema，当前运行记录为 0。"
+      });
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -551,10 +647,16 @@ describe("App self-repair runtime registry continuation", () => {
     await waitFor(() => {
       expect(
         screen.getAllByText(
-          /Repair opencow workspace project runtime registry|workspace-project-runs\.json|verified default schema|Verified schema version: 1|Verified runtime runs: 0/i
+          /OpenCow 项目运行注册表修复说明|项目运行注册表已在你批准工作区读写后完成受控修复|workspace-project-runs\.json|当前运行记录为 0/i
         ).length
       ).toBeGreaterThan(0);
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("不要说这是只读预览")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Verified runtime runs: 0")
+    }));
 
   });
 });
