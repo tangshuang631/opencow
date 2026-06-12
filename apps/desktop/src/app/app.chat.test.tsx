@@ -1094,6 +1094,38 @@ describe("App chat fallback", () => {
     expect(screen.getByText(/elapsedMs=\d+/i)).toBeInTheDocument();
   });
 
+  it("uses first-token recovery guidance for ordinary chat stalls instead of result-mapping fallback", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockRejectedValueOnce(new Error("Request aborted before the first assistant token."));
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "解释一下课程助手 NPC 适合做什么" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getAllByText(/本地模型已连接，但首轮输出没有在本轮超时前返回/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
+
+    expect(screen.getByText(/建议：本地模型首轮输出超时/)).toBeInTheDocument();
+    expect(screen.queryByText(/结果映射/)).not.toBeInTheDocument();
+    expect(screen.getByText(/streamPhase=waiting-first-chunk/i)).toBeInTheDocument();
+  });
+
   it("keeps streaming local-model chunks out of the pending assistant message before final completion", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,

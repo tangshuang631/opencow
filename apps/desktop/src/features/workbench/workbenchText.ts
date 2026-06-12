@@ -317,11 +317,11 @@ export function getVisibleLocalTaskFailureDetail(detail: string, source?: string
     }
 
     if (detail.includes("streamPhase=waiting-first-chunk")) {
-      return "本地模型已连接，但首轮输出没有在本轮超时前返回；完整模型、输入长度和等待阶段诊断已保留在展开详情中。";
+      return "本地模型已连接，但首轮输出没有在本轮超时前返回；这通常是模型冷启动、上下文过长或当前模型生成过慢。OpenCow 已终止本轮等待并保留模型、输入长度和等待阶段诊断，重试前会重新检测 Ollama，建议先缩短问题或切换更快模型。";
     }
 
     if (detail.includes("streamPhase=streaming")) {
-      return "本地模型已经开始输出，但没有在本轮超时前完整结束；已保留首块耗时和生成阶段诊断，方便继续排查或缩小任务后重试。";
+      return "本地模型已经开始输出，但没有在本轮超时前完整结束；OpenCow 已保留首块耗时和生成阶段诊断。建议让模型分段继续、减少单次输出范围，或切换更快模型后重试。";
     }
 
     return "本地模型本轮没有按时返回完整结果，详细诊断已保留在本地任务失败细节和日志中。";

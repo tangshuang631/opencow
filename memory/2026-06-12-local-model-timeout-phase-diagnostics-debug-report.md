@@ -349,3 +349,31 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This closes another approved low-risk workspace-write fixed-output success path while preserving permission, audit, rollback, and model-stall fallback behavior.
 - Status: DONE
+
+## Follow-up: ordinary local-model first-token stalls get phase-specific Chinese recovery
+
+- Symptom: An ordinary request such as asking for a course assistant NPC could fail with `source=local_model_chat_runner` after the local model connected but returned no first token before timeout. The visible main error said the first output had not arrived, but the action could still degrade to a generic local assistant result-mapping suggestion, which made the failure look like an internal mapping bug rather than a model stall.
+- Root cause: The local-model runner appended `streamPhase=waiting-first-chunk` diagnostics for ordinary chat failures, but the ordinary chat failure action prioritized only broad timeout/connectivity/context checks. When the underlying error did not include the exact timeout wording, first-token stalls could miss the local-model recovery branch.
+- Fix: Updated [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx) so ordinary `local-model-chat` failures recognize `streamPhase=waiting-first-chunk` and `streamPhase=streaming` after higher-priority Ollama errors such as connection refusal, empty response, context overflow, and no-model state. Updated [apps/desktop/src/features/workbench/workbenchText.ts](E:/2026/opencow/apps/desktop/src/features/workbench/workbenchText.ts) so the visible Chinese detail explains likely causes, says OpenCow stopped the wait, and points to shortening the question or switching to a faster model.
+- Safety boundary: This is presentation and recovery guidance only. It does not auto-run a second model request, does not grant permissions, does not write files, and keeps raw model/timeout/input diagnostics available only behind expanded failure details.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.chat.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 47 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 67 tests.
+  - `npm run predesktop:dev` passed.
+- Regression test: `apps/desktop/src/app/app.chat.test.tsx`
+- Related: This directly addresses the latest screenshot failure mode by making a first-token stall explain itself as a recoverable local-model phase problem instead of an execution-result mapping problem.
+- Status: DONE
+
+## Follow-up: approved temp-output creation results use bounded local-model explanation
+
+- Symptom: `workspace-write-create-temp-output` correctly required `workspace-write` approval and created only the controlled `temp-output` directory, but the final visible response still surfaced deterministic shell facts such as `Create temp-output directory`, the PowerShell command, and stdout preview.
+- Root cause: The App-level local-model explanation hook covered readonly outputs and several approved low-risk mutation results, but not this fixed workspace-write shell success path.
+- Fix: Added `workspace-write-create-temp-output` to the App explanation whitelist and post-approval mutation set in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain that the command ran only after `workspace-write` approval, that it was limited to `temp-output` inside the workspace, that audit/rollback visibility remains, and that this is not arbitrary shell access.
+- Safety boundary: Permission approval still happens before the shell command. The model explanation runs only after the controlled shell service reports success. If the explanation stalls, OpenCow cancels the explanation request, falls back to verified command facts, and does not mark the successful write as failed.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 41 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.write.test.ts --pool forks --poolOptions.forks.singleFork` passed with 6 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 67 tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This removes another approved low-risk fixed-output success path while preserving permission, audit, rollback, and model-stall fallback behavior.
+- Status: DONE

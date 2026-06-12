@@ -462,10 +462,6 @@ function getTaskExecutionMessage(task: WorkbenchState["tasks"]["items"][number])
 function createLocalModelChatFailureActionLabel(detail: string): string {
   const normalizedDetail = detail.toLowerCase();
 
-  if (normalizedDetail.includes("maximum execution time") || normalizedDetail.includes("timed out")) {
-    return "本地模型响应超时：长回答保护已启用，OpenCow 会优先使用自动分段、缺题补写和显式重试；如果模型仍超时，请确认 Ollama 进程仍在运行，切换更快模型，或减少单次输入长度后重试。";
-  }
-
   if (
     normalizedDetail.includes("connection refused")
     || normalizedDetail.includes("actively refused")
@@ -490,6 +486,22 @@ function createLocalModelChatFailureActionLabel(detail: string): string {
 
   if (normalizedDetail.includes("no usable local ollama model") || normalizedDetail.includes("未选择模型")) {
     return "当前没有可用的本地 Ollama 模型：请拉取或选择一个模型，然后重新检测 Ollama 后重试。";
+  }
+
+  if (normalizedDetail.includes("streamphase=waiting-first-chunk")) {
+    if (normalizedDetail.includes("maximum execution time") || normalizedDetail.includes("timed out")) {
+      return "本地模型响应超时（首轮输出超时）：模型连接可用但没有吐出第一段内容；长回答保护已启用，OpenCow 会优先使用自动分段、缺题补写和显式重试。请先缩短本轮问题、切换更快模型，或让 OpenCow 分段处理；重试前会重新检测 Ollama，避免卡在同一个失效请求上。";
+    }
+
+    return "本地模型首轮输出超时：模型连接可用但没有吐出第一段内容。请先缩短本轮问题、切换更快模型，或让 OpenCow 分段处理；重试前会重新检测 Ollama，避免卡在同一个失效请求上。";
+  }
+
+  if (normalizedDetail.includes("streamphase=streaming")) {
+    return "本地模型生成中途超时：模型已经开始输出但没有完整结束。请让它分段继续、减少单次输出范围，或切换更快模型后重试。";
+  }
+
+  if (normalizedDetail.includes("maximum execution time") || normalizedDetail.includes("timed out")) {
+    return "本地模型响应超时：长回答保护已启用，OpenCow 会优先使用自动分段、缺题补写和显式重试；如果模型仍超时，请确认 Ollama 进程仍在运行，切换更快模型，或减少单次输入长度后重试。";
   }
 
   return "请检查 Ollama 是否正在运行、本地模型是否已拉取并已选中；如果仍失败，请重新检测 Ollama 或切换模型后重试。";
@@ -875,6 +887,7 @@ type ExplainableReadonlyResultKind =
   | "skills-local-install"
   | "skills-local-enable"
   | "skills-local-disable"
+  | "workspace-write-create-temp-output"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "capability-npc-overview"
@@ -913,6 +926,7 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "skills-local-install"
     || kind === "skills-local-enable"
     || kind === "skills-local-disable"
+    || kind === "workspace-write-create-temp-output"
     || kind === "capability-rag-overview"
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
@@ -950,7 +964,8 @@ function isPostApprovalMutationResultKind(kind: ExplainableReadonlyResultKind): 
   return isSelfRepairMutationResultKind(kind)
     || kind === "skills-local-install"
     || kind === "skills-local-enable"
-    || kind === "skills-local-disable";
+    || kind === "skills-local-disable"
+    || kind === "workspace-write-create-temp-output";
 }
 
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
@@ -1086,6 +1101,10 @@ function getReadonlyOverviewExplanationTitle(
     return "Skill 停用结果说明";
   }
 
+  if (executionKind === "workspace-write-create-temp-output") {
+    return "temp-output 创建结果说明";
+  }
+
   if (executionKind === "capability-rag-overview") {
     return "RAG 能力说明";
   }
@@ -1216,6 +1235,8 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                   ? "重点解释这个 Skill 已在用户批准 workspace-write 后写入本地 enabled skills 注册表、注册表路径、启用状态、下一步如何使用；明确这不是只读预览，也不要暗示已经执行了 Skill。"
                   : payload.executionKind === "skills-local-disable"
                     ? "重点解释这个 Skill 已在用户批准 workspace-write 后从本地 enabled skills 注册表停用、注册表路径、停用状态、下一步如何安全恢复或替代；明确这不是只读预览，也不要暗示删除了 Skill 文件。"
+                    : payload.executionKind === "workspace-write-create-temp-output"
+                      ? "重点解释 temp-output 已在用户批准 workspace-write 后通过受控 shell runner 创建、实际命令、工作区边界、输出预览、审计/回退可见性，以及下一步如何安全使用；明确这不是任意 shell 权限，也不要暗示执行了其他写入。"
                     : payload.executionKind === "capability-rag-overview"
                 ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
                 : payload.executionKind === "capability-skills-overview"

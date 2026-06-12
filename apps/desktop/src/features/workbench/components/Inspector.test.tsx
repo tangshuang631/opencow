@@ -880,9 +880,7 @@ describe("Inspector", () => {
     renderInspector(failed);
 
     expect(screen.queryByText(/Local model chat diagnostics: model=qwen3\.6:35b/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText(
-      "本地模型本轮没有按时返回完整结果，详细诊断已保留在本地任务失败细节和日志中。"
-    ).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/本地模型已连接，但首轮输出没有在本轮超时前返回/).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
 

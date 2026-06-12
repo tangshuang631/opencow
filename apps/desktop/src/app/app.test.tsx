@@ -1388,6 +1388,107 @@ describe("App", () => {
     expect(installLocalSkillMock).toHaveBeenCalledTimes(1);
   }, 15_000);
 
+  it("explains approved temp-output creation through the local model instead of fixed command text", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    runWorkspaceWriteShellCommandMock.mockResolvedValueOnce({
+      command_id: "create-temp-output-dir",
+      command_label: "New-Item -ItemType Directory -Force temp-output",
+      stdout_preview: "temp-output",
+      line_count: 1,
+      summary: "Workspace write shell command completed successfully."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "temp-output 已在你批准工作区读写后由受控 shell runner 创建，命令只作用于工作区内这个输出目录；后续可以把临时产物放进去，删除仍要走确认边界。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "create a temp-output folder for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+    expect(runWorkspaceWriteShellCommandMock).not.toHaveBeenCalled();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("temp-output 创建结果说明")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText(/temp-output 已在你批准工作区读写后/)).toBeInTheDocument();
+    });
+    expect(runWorkspaceWriteShellCommandMock).toHaveBeenCalledWith("create-temp-output-dir");
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^workspace-write-create-temp-output-explanation-/),
+      message: expect.stringContaining("用户批准 workspace-write")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
+    }));
+    expect(within(getConversationRegion()).queryByText(/Workspace write shell command completed successfully/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to verified temp-output command facts when post-approval explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    runWorkspaceWriteShellCommandMock.mockResolvedValueOnce({
+      command_id: "create-temp-output-dir",
+      command_label: "New-Item -ItemType Directory -Force temp-output",
+      stdout_preview: "temp-output",
+      line_count: 1,
+      summary: "Workspace write shell command completed successfully."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "create a temp-output folder for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: expect.stringMatching(/^workspace-write-create-temp-output-explanation-/)
+      }));
+    });
+
+    const conversation = getConversationRegion();
+    expect(await within(conversation).findByText("Create temp-output directory", {}, { timeout: 12_000 })).toBeInTheDocument();
+    expect(within(conversation).getByText(/Workspace write shell command completed successfully/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/New-Item -ItemType Directory -Force temp-output/)).toBeInTheDocument();
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^workspace-write-create-temp-output-explanation-/));
+    expect(runWorkspaceWriteShellCommandMock).toHaveBeenCalledTimes(1);
+  }, 15_000);
+
   it("shows the final enabled skills list result for an explicit readonly skills registry request", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
