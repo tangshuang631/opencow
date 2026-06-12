@@ -16,6 +16,7 @@ type OllamaChunkEmitter = ();
 const OLLAMA_ENDPOINT: &str = "http://127.0.0.1:11434";
 const OLLAMA_TAGS_PATH: &str = "http://127.0.0.1:11434/api/tags";
 const OLLAMA_CHAT_PATH: &str = "http://127.0.0.1:11434/api/chat";
+const OLLAMA_OVERVIEW_REQUEST_TIMEOUT_SECONDS: u64 = 15;
 const OLLAMA_CHAT_REQUEST_TIMEOUT_SECONDS: u64 = 480;
 const MIN_OLLAMA_CHAT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
 const MAX_OLLAMA_CHAT_REQUEST_TIMEOUT_SECONDS: u64 = 600;
@@ -143,7 +144,11 @@ pub async fn ollama_cancel_chat(request_id: String) -> Result<(), String> {
 }
 
 async fn load_ollama_overview() -> Result<OllamaOverview, reqwest::Error> {
-    let payload = reqwest::get(OLLAMA_TAGS_PATH)
+    let payload = reqwest::Client::builder()
+        .timeout(ollama_overview_request_timeout())
+        .build()?
+        .get(OLLAMA_TAGS_PATH)
+        .send()
         .await?
         .error_for_status()?
         .json::<OllamaTagsResponse>()
@@ -501,6 +506,10 @@ fn ollama_chat_request_timeout(timeout_ms: Option<u64>) -> Duration {
     Duration::from_secs(timeout_seconds)
 }
 
+fn ollama_overview_request_timeout() -> Duration {
+    Duration::from_secs(OLLAMA_OVERVIEW_REQUEST_TIMEOUT_SECONDS)
+}
+
 fn format_model_size(size: u64) -> String {
     if size == 0 {
         return "未知大小".to_string();
@@ -633,6 +642,11 @@ mod tests {
         assert_eq!(ollama_chat_request_timeout(Some(480_000)).as_secs(), 480);
         assert_eq!(ollama_chat_request_timeout(Some(1_000)).as_secs(), 30);
         assert_eq!(ollama_chat_request_timeout(Some(900_000)).as_secs(), 600);
+    }
+
+    #[test]
+    fn ollama_overview_request_timeout_matches_startup_probe_budget() {
+        assert_eq!(super::ollama_overview_request_timeout().as_secs(), 15);
     }
 
     #[test]
