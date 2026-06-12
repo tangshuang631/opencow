@@ -141,6 +141,22 @@ describe("local assistant task planner", () => {
     });
   });
 
+  it.each([
+    "帮我检查 browser mcp plugin 为什么本地启动失败",
+    "why did the browser mcp plugin fail to start locally",
+    "帮我修一下 mcp 插件本地启动报错"
+  ])("keeps MCP startup troubleshooting requests on local model chat instead of the real start chain: %s", (message) => {
+    const plan = planLocalAssistantTask({
+      message,
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
   it("keeps ordinary package.json concept questions on local model chat instead of workspace config overview", () => {
     const plan = planLocalAssistantTask({
       message: "package.json 是干嘛的，为什么前端项目里经常会有它",

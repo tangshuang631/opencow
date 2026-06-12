@@ -265,6 +265,42 @@ describe("App chat fallback", () => {
     expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
   });
 
+  it("routes MCP startup troubleshooting questions through the local model instead of the controlled start chain", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "我会先分析浏览器 MCP 插件启动失败的真实原因，而不是直接进入高风险启动链。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "帮我检查 browser mcp plugin 为什么本地启动失败" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        model: "qwen3.6:35b",
+        message: "帮我检查 browser mcp plugin 为什么本地启动失败"
+      }));
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: "帮我检查 browser mcp plugin 为什么本地启动失败"
+    }));
+    expect(screen.queryByText(/Controlled full permission is required before starting a local MCP plugin process/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
+  });
+
   it("shows user-actionable Ollama recovery guidance when ordinary chat fails", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,

@@ -135,6 +135,20 @@ const mcpCapabilityPatterns = [/\bmcp\b/i, /model context protocol/i];
 const mcpLocalPluginInspectPatterns = [/\bshow\b/i, /\bdetail\b/i, /\bdetails\b/i, /\bread\b/i, /\binspect\b/i, /\bopen\b/i];
 const mcpLocalPluginStartPreviewPatterns = [/\bpreview\b/i, /\bstart\b/i, /\blaunch\b/i, /\brun\b/i];
 const mcpLocalPluginScanPatterns = [/\bscan\b/i, /\blist\b/i, /\binventory\b/i, /\bplugins?\b/i, /\bservers?\b/i];
+const troubleshootingQuestionPatterns = [
+  /\bwhy\b/i,
+  /\bfailed?\b/i,
+  /\bfailing\b/i,
+  /\berrors?\b/i,
+  /\bdebug\b/i,
+  /\bdiagnos/i,
+  /\bfix\b/i,
+  /\brepair\b/i,
+  /报错/,
+  /错误/,
+  /失败/,
+  /为什么/
+];
 const localRagSearchPatterns = [/\bsearch\b/i, /\bfind\b/i, /\blookup\b/i, /knowledge/i, /docs?/i, /rules?/i];
 const longDocumentFilePatterns = [/\bpptx?\b/i, /\bdocx?\b/i, /\bmd\b/i, /\bmarkdown\b/i];
 const longDocumentIntentPatterns = [
@@ -1326,11 +1340,22 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (mcpCapabilityPatterns.some((pattern) => pattern.test(message))) {
+    if (troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))) {
+      return {
+        kind: "local-model-chat",
+        title: "本地模型对话",
+        summary: message,
+        auditSummary: "Local assistant kept an MCP troubleshooting request on the ordinary local model chat path.",
+        auditDetail: `Local model chat task: ${message}`
+      };
+    }
+
     if (
       /\bplugins?\b/i.test(message)
       && /\bstart\b/i.test(message)
       && /\b(local|locally)\b/i.test(message)
       && !/\bpreview\b/i.test(message)
+      && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
     ) {
       if (request.permissionMode !== "controlled-full") {
         return {
