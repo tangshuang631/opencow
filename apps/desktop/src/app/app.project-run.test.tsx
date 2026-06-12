@@ -79,7 +79,7 @@ describe("App project run flow", () => {
     const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/workspace-write/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
 
     const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
       name: APPROVE_PERMISSION_NAME
@@ -174,7 +174,7 @@ describe("App project run flow", () => {
     const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/workspace-write/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
 
     const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
       name: APPROVE_PERMISSION_NAME

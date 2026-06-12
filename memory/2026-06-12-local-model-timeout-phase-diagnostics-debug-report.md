@@ -49,3 +49,16 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This keeps RAG retry self-check readonly and recoverable while reducing fixed/template-like capability answers in explicit capability inspection flows.
 - Status: DONE
+
+## Follow-up: network search guidance uses local-model explanation and audit-only facts
+
+- Symptom: Explicit web/latest search requests that reach `network-search-guidance` still exposed fixed English guidance such as "No external network search was run" in the main conversation. When the explanation hook was extended, raw readonly facts could also leak into the main conversation detail lines.
+- Root cause: `network-search-guidance` was not part of the App-level readonly explanation hook, and `auditDetailLines` were used for both main conversation details and audit detail. That made raw execution facts visible in the default conversation surface even when the model-generated answer was present.
+- Fix: Added `network-search-guidance` to the explainable readonly result kinds in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). Added `auditOnlyDetailLines` to [apps/desktop/src/features/assistant/assistantTaskService.ts](E:/2026/opencow/apps/desktop/src/features/assistant/assistantTaskService.ts) and [apps/desktop/src/features/workbench/workbenchState.tasks.ts](E:/2026/opencow/apps/desktop/src/features/workbench/workbenchState.tasks.ts), so raw readonly facts stay in audit while the main conversation shows the local-model explanation.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx src/features/assistant/assistantTaskService.rag-search.test.ts src/features/workbench/taskQueueState.test.ts` passed with 135 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/taskQueueState.test.ts src/features/assistant/assistantTaskService.rag-search.test.ts` passed with 211 tests.
+  - `npm run verify:all` passed, including 582 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This preserves the required capability approval and provider-configuration gate for network search, while making the visible response model-generated and keeping raw diagnostics audit-only.
+- Status: DONE

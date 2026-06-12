@@ -2,6 +2,7 @@ import { Bot, LoaderCircle, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import type { WorkbenchState } from "../workbenchState";
 import {
+  getLocalizedPermissionReason,
   getVisibleLocalTaskFailureActionLabel,
   getVisibleLocalTaskFailureDetail,
   getVisibleLocalTaskFailureTitle,
@@ -92,6 +93,10 @@ function isVisibleSystemEntry(entry: WorkbenchState["conversation"]["entries"][n
 }
 
 function getVisibleSummary(entry: WorkbenchState["conversation"]["entries"][number]) {
+  if (entry.title === "等待权限升级") {
+    return getLocalizedPermissionReason(entry.summary);
+  }
+
   if (isDuplicateLocalTaskSkippedEntry(entry)) {
     return getVisibleDuplicateLocalTaskSkipSummary(entry);
   }

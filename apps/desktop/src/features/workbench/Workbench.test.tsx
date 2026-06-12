@@ -231,7 +231,7 @@ describe("Workbench", () => {
 
     const safetyPanel = screen.getByLabelText("安全");
 
-    expect(within(safetyPanel).getByText("待确认权限: workspace-write")).toBeInTheDocument();
+    expect(within(safetyPanel).getByText("待确认权限: 工作区读写")).toBeInTheDocument();
     expect(within(safetyPanel).getByText(/需要在工作区内写入修复文件/)).toBeInTheDocument();
     expect(within(safetyPanel).getByText(/允许在授权工作区内创建和修改文件/)).toBeInTheDocument();
 

@@ -226,6 +226,10 @@ function createOpencowSelfRepairFailureActionLabel(
 }
 
 function createLocalTaskFailureActionLabel(detail: string, executionKind: string | undefined): string {
+  if (executionKind === "npc-config-write") {
+    return createNpcConfigWriteFailureActionLabel(detail);
+  }
+
   if (executionKind === "local-model-chat") {
     return createLocalModelChatFailureActionLabel(detail);
   }
@@ -243,6 +247,38 @@ function createLocalTaskFailureActionLabel(detail: string, executionKind: string
   }
 
   return `inspect assistantTaskService result mapping for ${executionKind ?? "unknown-task"} before retrying.`;
+}
+
+function createNpcConfigWriteFailureActionLabel(detail: string): string {
+  const normalizedDetail = detail.toLowerCase();
+
+  if (normalizedDetail.includes("maximum execution time") || normalizedDetail.includes("timed out")) {
+    return "本地模型生成 NPC 配置超时：请先缩短这次 NPC 需求描述，或切换更快的本地模型后重试；如果经常卡在首轮输出前，请优先检查 Ollama 是否仍在稳定返回首块内容。";
+  }
+
+  if (
+    normalizedDetail.includes("connection refused")
+    || normalizedDetail.includes("actively refused")
+    || normalizedDetail.includes("fetch failed")
+    || normalizedDetail.includes("error sending request")
+  ) {
+    return "无法连接本地 Ollama，NPC 配置还没有生成：请确认 Ollama 已启动且 http://127.0.0.1:11434 可访问，然后重试。";
+  }
+
+  if (
+    normalizedDetail.includes("context length")
+    || normalizedDetail.includes("context window")
+    || normalizedDetail.includes("prompt too long")
+    || normalizedDetail.includes("input too long")
+  ) {
+    return "NPC 配置需求过长：请先缩小角色说明、工具权限或工作流范围，再让本地模型重新生成。";
+  }
+
+  if (normalizedDetail.includes("no usable local ollama model") || normalizedDetail.includes("未选择模型")) {
+    return "当前没有可用的本地模型来生成 NPC 配置：请先拉取或选择一个 Ollama 模型，然后重试。";
+  }
+
+  return "NPC 配置生成没有完成：请先检查 Ollama 是否稳定运行，再补充更聚焦的角色说明后重试。";
 }
 
 function createShellFailureRecoveryStep(detail: string, executionKind: string | undefined): string | null {
@@ -792,7 +828,8 @@ type ExplainableReadonlyResultKind =
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "capability-npc-overview"
-  | "capability-mcp-overview";
+  | "capability-mcp-overview"
+  | "network-search-guidance";
 
 function isExplainableReadonlyResultKind(kind: string | undefined): kind is ExplainableReadonlyResultKind {
   return kind === "workspace-overview"
@@ -801,7 +838,8 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "capability-rag-overview"
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
-    || kind === "capability-mcp-overview";
+    || kind === "capability-mcp-overview"
+    || kind === "network-search-guidance";
 }
 
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
@@ -845,7 +883,9 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
     auditDetailLines: [
       `Ollama model: ${result.model || selectedModel}`,
       `Ollama done reason: ${result.doneReason || "complete"}`,
-      `Readonly overview explanation: local model generated for ${payload.executionKind} from readonly facts.`,
+      `Readonly overview explanation: local model generated for ${payload.executionKind} from readonly facts.`
+    ],
+    auditOnlyDetailLines: [
       `Readonly workspace facts: ${payload.readonlySummary}`
     ]
   };
@@ -878,6 +918,10 @@ function getReadonlyOverviewExplanationTitle(
     return "MCP 能力说明";
   }
 
+  if (executionKind === "network-search-guidance") {
+    return "联网搜索说明";
+  }
+
   return "工作区说明";
 }
 
@@ -898,7 +942,9 @@ function createReadonlyOverviewExplanationPrompt(payload: {
             ? "重点解释 NPC 协作能力当前可用基础、适合的本地工作流、缺失项，以及下一步如何安全验证。"
             : payload.executionKind === "capability-mcp-overview"
               ? "重点解释 MCP 能力当前可用基础、插件/工具边界、缺失项，以及下一步如何安全验证。"
-              : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+              : payload.executionKind === "network-search-guidance"
+                ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
+                : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [
     "你是 OpenCow 的本地项目说明助手。",
@@ -1542,7 +1588,7 @@ export function App() {
                 }
 
                 return createTaskExecutionFailedState(current, {
-                  summary: "本地模型对话失败",
+                  summary: activeTask.executionKind === "npc-config-write" ? "NPC 配置生成失败" : "本地模型对话失败",
                   detail: diagnosticDetail,
                   actionLabel: createLocalTaskFailureActionLabel(diagnosticDetail, activeTask.executionKind),
                   source: "local_model_chat_runner"
@@ -1605,7 +1651,8 @@ export function App() {
                 error,
                 "Unknown local model explanation error"
               )}`
-            ]
+            ],
+            auditOnlyDetailLines: validResult.auditOnlyDetailLines
           };
         }
       };

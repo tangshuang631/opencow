@@ -78,15 +78,13 @@ describe("App npc local run flow", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before NPC collaboration can launch the matched local project\./i
-    );
-    const permissionSection = permissionReasonMatches[0]?.closest("section");
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准提权" });
+    const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/workspace-write/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
 
-    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+    fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(
@@ -129,15 +127,13 @@ describe("App npc local run flow", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before NPC collaboration can capture a screenshot from the matched local project\./i
-    );
-    const permissionSection = permissionReasonMatches[0]?.closest("section");
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准提权" });
+    const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/workspace-write/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
 
-    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+    fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(
@@ -181,15 +177,13 @@ describe("App npc local run flow", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before NPC collaboration can generate the showcase site for the matched local project\./i
-    );
-    const permissionSection = permissionReasonMatches[0]?.closest("section");
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准提权" });
+    const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/workspace-write/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
 
-    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+    fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(

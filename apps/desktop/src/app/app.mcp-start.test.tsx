@@ -49,7 +49,7 @@ describe("App MCP start flow", () => {
     const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/controlled-full/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 受控完全访问/i)).toBeInTheDocument();
 
     const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
       name: APPROVE_PERMISSION_NAME

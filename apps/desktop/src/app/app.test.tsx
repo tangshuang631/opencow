@@ -620,6 +620,50 @@ describe("App", () => {
     }));
   });
 
+  it("explains disabled network search guidance through the local model without claiming a web search ran", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "本轮没有执行外部联网搜索，因为搜索 provider 还未配置；如果你需要最新资料，需要先在高级设置里配置并批准联网搜索，也可以先用本地 RAG 查工作区资料。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "联网搜索 Provider" }), {
+      target: { value: "Tavily" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存联网搜索配置" }));
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search the web for latest local RAG indexing approaches" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    fireEvent.click(await screen.findByRole("button", { name: "批准能力变更" }));
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("search the web for latest local RAG indexing approaches").length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("联网搜索说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/本轮没有执行外部联网搜索/)).toBeInTheDocument();
+    });
+    expect(within(conversation).queryByText(/No external network search was run/)).not.toBeInTheDocument();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("重点解释本轮没有执行外部联网搜索")
+    }));
+  });
+
   it("shows a visible assistant pending block while an ordinary chat request is still running", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -783,9 +827,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before installing a local skill/i
-    );
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
     const permissionSection = permissionReasonMatches[0]?.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -1047,9 +1089,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before disabling a local skill/i
-    );
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
     const permissionSection = permissionReasonMatches[0]?.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -1102,9 +1142,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Workspace write permission is required before a skill-assisted temp-output creation task can modify the workspace/i
-    );
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
     const permissionSection = permissionReasonMatches[0]?.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -1160,9 +1198,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    const permissionReasonMatches = await screen.findAllByText(
-      /Controlled full permission is required before a skill-assisted destructive shell cleanup task can continue/i
-    );
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予受控完全访问权限/i);
     const permissionSection = permissionReasonMatches[0]?.closest("section");
 
     expect(permissionSection).not.toBeNull();

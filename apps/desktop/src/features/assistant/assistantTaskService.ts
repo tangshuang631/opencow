@@ -466,6 +466,7 @@ export type AssistantTaskExecutionResult = {
   resultTitle: string;
   resultSummary: string;
   auditDetailLines?: string[];
+  auditOnlyDetailLines?: string[];
 };
 
 export type AssistantTaskExecutionContext = {

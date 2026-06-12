@@ -129,11 +129,7 @@ describe("App self-repair mutation continuation", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    expect(
-      screen.getAllByText(
-        /Workspace write permission is required before opencow can repair its workspace-local enabled skills registry at \.opencow\/skills\/enabled-skills\.json\./i
-      ).length
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/需要先授予工作区读写权限/i).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(
         /\.opencow\/skills\/enabled-skills\.json|approve this only if you want opencow to rewrite that file and then verify the schema version and enabled entry count/i
@@ -383,11 +379,7 @@ describe("App self-repair permission cancellation", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    expect(
-      screen.getAllByText(
-        /Workspace write permission is required before opencow can repair its workspace-local enabled skills registry at \.opencow\/skills\/enabled-skills\.json\./i
-      ).length
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/需要先授予工作区读写权限/i).length).toBeGreaterThan(0);
 
     const cancelPermissionButton = await screen.findByRole("button", { name: /^取消提权$/i });
     fireEvent.click(cancelPermissionButton as HTMLButtonElement);
@@ -495,11 +487,7 @@ describe("App self-repair runtime registry continuation", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    expect(
-      screen.getAllByText(
-        /Workspace write permission is required before opencow can repair its workspace project runtime registry at \.opencow\/runtime\/workspace-project-runs\.json\./i
-      ).length
-    ).toBeGreaterThan(0);
+    expect(screen.getAllByText(/需要先授予工作区读写权限/i).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(
         /\.opencow\/runtime\/workspace-project-runs\.json|approve this only if you want opencow to rewrite that file and then verify the schema version and runtime run count/i

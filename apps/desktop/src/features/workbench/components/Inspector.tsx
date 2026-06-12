@@ -3,6 +3,9 @@ import { useState } from "react";
 import { RollbackPanel } from "./RollbackPanel";
 import type { StorageCleanupTarget, WorkbenchState } from "../workbenchState";
 import {
+  getLocalizedPermissionModeLabel,
+  getLocalizedPermissionReason,
+  getLocalizedPermissionRiskSummary,
   getVisibleLocalTaskFailureActionLabel,
   getVisibleLocalTaskFailureDetail,
   getVisibleLocalTaskFailureTitle,
@@ -491,9 +494,9 @@ export function Inspector({
           <p className="muted">{normalizeWorkbenchText(state.permission.confirmationSummary)}</p>
         {state.permission.pendingModeChange ? (
           <>
-            <p className="muted">{TEXT.permissionPending}: {state.permission.pendingModeChange.targetMode}</p>
-            <p className="muted">{TEXT.permissionReason}: {getPendingApprovalTextPreview(state.permission.pendingModeChange.reason)}</p>
-            <p className="muted">{TEXT.permissionRisk}: {getPendingApprovalTextPreview(state.permission.pendingModeChange.riskSummary)}</p>
+            <p className="muted">{TEXT.permissionPending}: {getLocalizedPermissionModeLabel(state.permission.pendingModeChange.targetMode)}</p>
+            <p className="muted">{TEXT.permissionReason}: {getPendingApprovalTextPreview(getLocalizedPermissionReason(state.permission.pendingModeChange.reason))}</p>
+            <p className="muted">{TEXT.permissionRisk}: {getPendingApprovalTextPreview(getLocalizedPermissionRiskSummary(state.permission.pendingModeChange.riskSummary))}</p>
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
                 {TEXT.approvePrivilege}

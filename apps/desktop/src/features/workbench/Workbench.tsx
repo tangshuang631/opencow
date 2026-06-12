@@ -5,6 +5,11 @@ import { Inspector } from "./components/Inspector";
 import { MainConversation } from "./components/MainConversation";
 import { Sidebar, type WorkbenchViewId } from "./components/Sidebar";
 import {
+  getLocalizedPermissionModeLabel,
+  getLocalizedPermissionReason,
+  getLocalizedPermissionRiskSummary
+} from "./workbenchText";
+import {
   getShellDialogRecoveryNarrative,
   getShellRecoveryChecklist,
   shellCapabilityGroups
@@ -123,9 +128,9 @@ function SafetyPanel({
         ) : null}
         {pendingPermission ? (
           <>
-            <p>待确认权限: {pendingPermission.targetMode}</p>
-            <p>{pendingPermission.reason}</p>
-            <p>{pendingPermission.riskSummary}</p>
+            <p>待确认权限: {getLocalizedPermissionModeLabel(pendingPermission.targetMode)}</p>
+            <p>{getLocalizedPermissionReason(pendingPermission.reason)}</p>
+            <p>{getLocalizedPermissionRiskSummary(pendingPermission.riskSummary)}</p>
             <div className="action-row">
               <button className="action-button action-button-primary" type="button" onClick={onApprovePermissionRequest}>
                 批准提权

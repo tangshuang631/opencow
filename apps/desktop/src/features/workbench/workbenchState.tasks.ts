@@ -524,6 +524,7 @@ export function createTaskExecutionSucceededState(
     resultTitle: string;
     resultSummary: string;
     auditDetailLines?: string[];
+    auditOnlyDetailLines?: string[];
   }
 ): WorkbenchState {
   const activeTaskId = state.tasks.activeTaskId;
@@ -543,7 +544,7 @@ export function createTaskExecutionSucceededState(
   }
 
   const taskEventId = createTaskEventId(state, activeTaskId, "completed");
-  const completionTraceLines = [
+  const visibleCompletionTraceLines = [
     `Input summary: ${activeTask.summary}`,
     activeTask.executionKind ? `Execution kind: ${activeTask.executionKind}` : null,
     activeTask.executionTitle ? `Execution title: ${activeTask.executionTitle}` : null,
@@ -554,6 +555,10 @@ export function createTaskExecutionSucceededState(
     activeTask.lastFailureActionLabel ? `Previous failure recovery hint: ${activeTask.lastFailureActionLabel}` : null,
     ...(payload.auditDetailLines ?? []),
     `Result summary: ${payload.resultSummary}`
+  ].filter((line): line is string => line !== null);
+  const completionTraceLines = [
+    ...visibleCompletionTraceLines,
+    ...(payload.auditOnlyDetailLines ?? [])
   ].filter((line): line is string => line !== null);
   const completionTraceDetail = completionTraceLines.join(" ");
 
@@ -589,7 +594,7 @@ export function createTaskExecutionSucceededState(
             summary: payload.resultSummary,
             actionLabel: "预览回退到本次任务执行前",
             rollbackTargetId: taskEventId,
-            detailLines: completionTraceLines
+            detailLines: visibleCompletionTraceLines
           })
         },
         audit: {

@@ -1555,7 +1555,7 @@ describe("App local task guard", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     expect(planAssistantTaskMock).toHaveBeenCalledTimes(1);
-    expect(screen.getAllByText(/Workspace write permission is required before creating temp-output\./i)).not.toHaveLength(0);
+    expect(screen.getAllByText(/需要先授予工作区读写权限/i)).not.toHaveLength(0);
     expect(screen.getAllByRole("button", { name: APPROVE_PERMISSION_NAME })).toHaveLength(1);
     expect(executeAssistantTaskMock).not.toHaveBeenCalled();
   });
