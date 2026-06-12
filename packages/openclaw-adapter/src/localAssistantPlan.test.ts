@@ -106,8 +106,26 @@ describe("local assistant task planner", () => {
   it.each([
     "帮我配置一个本地 RAG 知识库",
     "帮我配置一个文档处理 skill",
-    "帮我配置一个 mcp 插件工作流"
+    "帮我配置一个 mcp 插件工作流",
+    "帮我检查 RAG 为什么没有检索出内容",
+    "帮我检查 mcp 插件工作流为什么启动失败"
   ])("keeps configuration-style capability requests on local model chat unless a controlled config flow exists: %s", (message) => {
+    const plan = planLocalAssistantTask({
+      message,
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
+  it.each([
+    "帮我检查 package.json 为什么启动脚本报错",
+    "帮我配置 package.json scripts 让桌面端更稳定",
+    "帮我检查 packages 里哪个模块容易导致启动卡住"
+  ])("keeps troubleshooting-style workspace config requests on local model chat: %s", (message) => {
     const plan = planLocalAssistantTask({
       message,
       permissionMode: "readonly"

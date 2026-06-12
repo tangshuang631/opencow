@@ -57,10 +57,7 @@ const configOverviewIntentPatterns = [
   /\bcheck\b/i,
   /\bworkspace config\b/i,
   /\broot scripts?\b/i,
-  /配置/,
-  /概览/,
-  /检查/,
-  /脚本/
+  /概览/
 ];
 const opencowSelfRepairPatterns = [/\bopencow\b/i, /自修复/, /修复自己/, /fix yourself/i, /repair yourself/i];
 const diagnosticPreviewPatterns = [/\bdiagnos/i, /\binspect\b/i, /\bpreview\b/i, /\brepair\b/i, /\bfix\b/i, /报错/, /错误/];
@@ -76,7 +73,6 @@ const packagesOverviewIntentPatterns = [
   /\bsummar/i,
   /\bscan\b/i,
   /\bworkspace packages?\b/i,
-  /检查/,
   /概览/,
   /列出/,
   /查看/
@@ -92,8 +88,7 @@ const capabilityOverviewIntentPatterns = [
   /能力/,
   /概览/,
   /就绪/,
-  /接线/,
-  /检查/
+  /接线/
 ];
 const networkSearchIntentPatterns = [
   /\bweb search\b/i,
