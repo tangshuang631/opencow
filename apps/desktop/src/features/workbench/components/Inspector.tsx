@@ -277,6 +277,10 @@ function getVisibleErrorActionLabel(error: NonNullable<WorkbenchState["error"]>)
     return "已停止重复执行，避免死循环。请查看失败详情、改写请求，或先帮助 opencow 修复缺失依赖。";
   }
 
+  if (error.source === "local_model_chat_runner") {
+    return getVisibleLocalModelChatFailureActionLabel(error.detail, error.actionLabel);
+  }
+
   if (
     error.module === "tasks"
     && (isLocalTaskExecutionErrorSource(error.source) || isLocalAssistantPlannerFailureSource(error.source))
@@ -293,6 +297,44 @@ function getVisibleErrorTitle(error: NonNullable<WorkbenchState["error"]>) {
   }
 
   return normalizeWorkbenchText(error.summary);
+}
+
+function getVisibleTaskFailureSummary(task: WorkbenchState["tasks"]["items"][number]) {
+  return getVisibleLocalTaskFailureTitle(
+    task.lastFailureSummary ?? "",
+    task.lastFailureSource,
+    task.lastFailureDetail ?? ""
+  );
+}
+
+function getVisibleTaskFailureActionLabel(task: WorkbenchState["tasks"]["items"][number]) {
+  if (task.lastFailureSource === "local_model_chat_runner") {
+    return getVisibleLocalModelChatFailureActionLabel(task.lastFailureDetail ?? "", task.lastFailureActionLabel ?? "");
+  }
+
+  return getVisibleLocalTaskFailureActionLabel(task.lastFailureActionLabel ?? "");
+}
+
+function getVisibleLocalModelChatFailureActionLabel(detail: string, fallbackActionLabel: string) {
+  const normalizedDetail = detail.toLowerCase();
+
+  if (normalizedDetail.includes("streamphase=waiting-first-chunk")) {
+    return "本地模型首轮输出超时：请先确认 Ollama 进程仍在生成或切换更快模型；如果要继续同一任务，建议缩短输入、拆分目标，或重试本地任务。";
+  }
+
+  if (normalizedDetail.includes("streamphase=streaming")) {
+    return "本地模型生成中途超时：请缩小本轮输出范围、要求分段回答，或切换更快模型后重试。";
+  }
+
+  if (
+    normalizedDetail.includes("maximum execution time")
+    || normalizedDetail.includes("timed out")
+    || normalizedDetail.includes("local model chat diagnostics")
+  ) {
+    return "本地模型响应超时：长回答保护已启用；请确认 Ollama 仍在运行，切换更快模型，或减少单次输入长度后重试。";
+  }
+
+  return getVisibleLocalTaskFailureActionLabel(fallbackActionLabel);
 }
 
 function getConciseVisibleOutputSummary(summary: string) {
@@ -582,13 +624,13 @@ export function Inspector({
                           <p className="muted">{`来源：${normalizeWorkbenchText(task.lastFailureSource)}`}</p>
                         ) : null}
                         {task.lastFailureSummary ? (
-                          <p className="muted">{`摘要：${normalizeWorkbenchText(task.lastFailureSummary)}`}</p>
+                          <p className="muted">{`摘要：${getVisibleTaskFailureSummary(task)}`}</p>
                         ) : null}
                         {task.lastFailureDetail ? (
                           <p className="muted">{`详情：${normalizeWorkbenchText(task.lastFailureDetail)}`}</p>
                         ) : null}
                         {task.lastFailureActionLabel ? (
-                          <p className="muted">{`建议：${normalizeWorkbenchText(task.lastFailureActionLabel)}`}</p>
+                          <p className="muted">{`建议：${getVisibleTaskFailureActionLabel(task)}`}</p>
                         ) : null}
                       </div>
                     ) : null}

@@ -10,6 +10,7 @@ const {
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
   searchLocalKnowledgeMock,
+  scanLocalSkillsMock,
   inspectLocalSkillMock,
   enableLocalSkillMock,
   installLocalSkillMock,
@@ -27,6 +28,7 @@ const {
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
   searchLocalKnowledgeMock: vi.fn(),
+  scanLocalSkillsMock: vi.fn(),
   inspectLocalSkillMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
     searchLocalKnowledge: searchLocalKnowledgeMock,
+    scanLocalSkills: scanLocalSkillsMock,
     inspectLocalSkill: inspectLocalSkillMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
@@ -92,6 +95,7 @@ describe("App", () => {
     loadWorkspacePackagesOverviewMock.mockReset();
     loadWorkspaceConfigOverviewMock.mockReset();
     searchLocalKnowledgeMock.mockReset();
+    scanLocalSkillsMock.mockReset();
     inspectLocalSkillMock.mockReset();
     enableLocalSkillMock.mockReset();
     installLocalSkillMock.mockReset();
@@ -942,6 +946,64 @@ describe("App", () => {
     }));
   });
 
+  it("explains local skill scan results through the selected local model", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    scanLocalSkillsMock.mockResolvedValueOnce({
+      summary: "Local skills scan found 3 skills across 2 scanned roots.",
+      total_count: 3,
+      scanned_root_count: 2,
+      items: [
+        {
+          name: "coding-agent",
+          path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+          source: "vendor-openclaw-skill",
+          description: "OpenClaw coding agent workflow",
+          enabled: true
+        },
+        {
+          name: "browser-automation",
+          path: "vendor/openclaw/extensions/browser/skills/browser-automation/SKILL.md",
+          source: "vendor-openclaw-extension-skill",
+          description: "OpenClaw browser automation skill",
+          enabled: false
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "当前扫描到 3 个本地 Skills，其中 coding-agent 已启用，browser-automation 还只是可用候选；后续启用或安装仍要经过权限链。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "scan local skills and list available skill entries" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skills 扫描说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/coding-agent 已启用/)).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("browser-automation")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("已启用项")
+    }));
+  });
+
   it("shows the final local skill detail result for an explicit readonly skill inspection request", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -966,6 +1028,10 @@ describe("App", () => {
         }
       ]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "coding-agent 是一个已启用的 OpenClaw 编码协作 Skill，适合实现聚焦代码任务和读取仓库上下文，但真正修改文件仍要进入受控权限链。"
+    });
 
     render(<App />);
 
@@ -976,11 +1042,19 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
+    const conversation = getConversationRegion();
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Local Skill detail|coding-agent|OpenClaw coding agent workflow|Enabled: yes/i).length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("Skill 详情说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/coding-agent 是一个已启用/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("Use this skill when implementing focused coding tasks")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("启用状态")
+    }));
   });
 
   it("shows the final skill-assisted readonly RAG result for an explicit enabled docs skill request", async () => {

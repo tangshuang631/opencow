@@ -96,3 +96,31 @@
 - Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.skills-enabled-list.test.ts`, `apps/desktop/src/features/assistant/assistantTaskService.skills-enabled-match.test.ts`
 - Related: This removes another ordinary readonly fixed-output path while keeping the registry facts auditable and bounded.
 - Status: DONE
+
+## Follow-up: local Skill scan and detail readbacks use local-model explanation
+
+- Symptom: Explicit local Skill inventory and Skill detail requests still surfaced deterministic scan/detail strings directly in the main conversation, including raw names, enabled flags, descriptions, and previews.
+- Root cause: `skills-local-scan` and `skills-local-inspect` were readonly user-facing information tasks, but they were not part of the App-level readonly explanation hook.
+- Fix: Added both execution kinds to [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The selected local model now explains scanned local Skills, enabled status, intended use, content preview, and safe next steps from readonly facts instead of showing field-concatenated summaries as the final answer.
+- Safety boundary: The desktop assistant service still returns structured scan/detail facts, and mutation paths such as install, enable, disable, shell execution, and NPC config writes remain outside this readonly explanation hook.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx` passed with 28 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-scan.test.ts src/features/assistant/assistantTaskService.skills-inspect.test.ts` passed with 4 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/assistant/assistantTaskService.skills-enabled-list.test.ts src/features/assistant/assistantTaskService.skills-enabled-match.test.ts src/features/assistant/assistantTaskService.skills-rag.test.ts` passed with 112 tests.
+  - `npm run verify:all` passed, including 584 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.skills-scan.test.ts`, `apps/desktop/src/features/assistant/assistantTaskService.skills-inspect.test.ts`
+- Related: This further reduces ordinary fixed readback paths while preserving auditable local Skill facts and permission-gated mutations.
+- Status: DONE
+
+## Follow-up: local-model timeout task details avoid misleading mapping recovery
+
+- Symptom: A waiting-first-chunk local model failure could show the correct Chinese timeout detail in the main conversation while the right-side local task failure details still suggested checking `assistantTaskService` result mapping. That was misleading for real Ollama stalls.
+- Root cause: The Inspector task-list failure details rendered `lastFailureActionLabel` through generic normalization. If an older or fallback action label contained the generic result-mapping hint, the local-model-specific timeout phase diagnostics did not override it.
+- Fix: Added source-aware Inspector recovery labels for `local_model_chat_runner`, using `streamPhase=waiting-first-chunk`, `streamPhase=streaming`, and timeout diagnostics to show concrete Chinese Ollama recovery guidance. The raw diagnostic detail remains available in expanded failure details for debugging.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/features/workbench/components/Inspector.test.tsx` passed with 33 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/workbench/components/Inspector.test.tsx src/features/workbench/components/MainConversation.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx` passed with 168 tests.
+  - `npm run verify:all` passed, including 584 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/features/workbench/components/Inspector.test.tsx`, `apps/desktop/src/app/app.task-guard.test.tsx`
+- Related: This keeps timeout failures recoverable and Chinese-first, without hiding the low-level Ollama diagnostics needed for deeper troubleshooting.
+- Status: DONE

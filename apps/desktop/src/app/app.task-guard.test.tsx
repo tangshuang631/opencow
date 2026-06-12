@@ -2900,7 +2900,7 @@ describe("App local task guard", () => {
       )
     ).toBeInTheDocument();
     expect(
-      within(taskItem as HTMLElement).getByText(/建议：inspect assistantTaskService result mapping/i)
+      within(taskItem as HTMLElement).getByText(/建议：请先检查本地助手执行结果映射，再重试。/)
     ).toBeInTheDocument();
   });
 

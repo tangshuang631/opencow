@@ -751,7 +751,7 @@ describe("Inspector", () => {
     expect(screen.getByText("来源：local_model_chat_runner")).toBeInTheDocument();
     expect(screen.getByText("摘要：本地模型对话失败")).toBeInTheDocument();
     expect(screen.getByText("详情：Local task exceeded the maximum execution time of 480 seconds.")).toBeInTheDocument();
-    expect(screen.getByText("建议：请检查 Ollama 是否正在运行、本地模型是否已拉取并已选中；如果仍失败，请重新检测 Ollama 或切换模型后重试。")).toBeInTheDocument();
+    expect(screen.getByText(/建议：本地模型响应超时/)).toBeInTheDocument();
     expect(screen.queryByText(/Previous failure source:/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Previous failure detail:/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Previous failure recovery hint:/i)).not.toBeInTheDocument();
@@ -829,8 +829,8 @@ describe("Inspector", () => {
       {
         summary: "本地模型对话失败",
         detail:
-          "Local task exceeded the maximum execution time of 480 seconds. Local model chat diagnostics: model=qwen3.6:35b; timeout=480s; inputLength=7; longAnswerProtection=enabled.",
-        actionLabel: "本地模型响应超时：请确认 Ollama 进程仍在运行，或切换更快模型后重试。",
+          "Local task exceeded the maximum execution time of 480 seconds. Local model chat diagnostics: model=qwen3.6:35b; timeout=480s; inputLength=7; streamPhase=waiting-first-chunk; elapsedMs=480000; firstChunkAfterMs=none; longAnswerProtection=enabled.",
+        actionLabel: "inspect assistantTaskService result mapping for local-model-chat before retrying.",
         source: "local_model_chat_runner"
       }
     );
@@ -844,6 +844,9 @@ describe("Inspector", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
 
+    expect(screen.getByText("摘要：本地模型对话失败")).toBeInTheDocument();
+    expect(screen.getByText(/建议：本地模型首轮输出超时/)).toBeInTheDocument();
+    expect(screen.queryByText(/结果映射/)).not.toBeInTheDocument();
     expect(screen.getByText(/Local model chat diagnostics: model=qwen3\.6:35b/i)).toBeInTheDocument();
     expect(screen.getByText(/timeout=480s/i)).toBeInTheDocument();
     expect(screen.getByText(/inputLength=7/i)).toBeInTheDocument();
