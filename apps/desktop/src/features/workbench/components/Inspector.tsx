@@ -99,6 +99,8 @@ const EMPTY_OUTPUT_TITLE = "暂无产物";
 const EMPTY_OUTPUT_SUMMARY = "等待工具执行结果或本地产物摘要。";
 const LOCAL_MODEL_CHAT_CONCISE_FAILURE_DETAIL =
   "本地模型本轮没有按时返回完整结果，详细诊断已保留在本地任务失败细节和日志中。";
+const NPC_CONFIG_MODEL_CONCISE_FAILURE_DETAIL =
+  "本地模型没有按时生成 NPC 配置，配置尚未写入；完整模型、输入长度和等待阶段诊断已保留在本地任务失败细节和日志中。";
 
 function isLocalTaskExecutionErrorSource(source: string) {
   return source === "local_task_runner"
@@ -205,6 +207,10 @@ function getVisibleOutputSummary(state: WorkbenchState) {
 
   if (state.error?.module === "tasks") {
     if (state.error.source === "local_model_chat_runner") {
+      if (isNpcConfigModelFailure(state.error.detail)) {
+        return NPC_CONFIG_MODEL_CONCISE_FAILURE_DETAIL;
+      }
+
       return LOCAL_MODEL_CHAT_CONCISE_FAILURE_DETAIL;
     }
 
@@ -318,6 +324,14 @@ function getVisibleTaskFailureActionLabel(task: WorkbenchState["tasks"]["items"]
 function getVisibleLocalModelChatFailureActionLabel(detail: string, fallbackActionLabel: string) {
   const normalizedDetail = detail.toLowerCase();
 
+  if (isNpcConfigModelFailure(detail) && normalizedDetail.includes("streamphase=waiting-first-chunk")) {
+    return "NPC 配置生成卡在首轮输出前：配置还没有写入。请先缩短角色需求、拆分工具权限，或切换更快的 Ollama 模型后重试。";
+  }
+
+  if (isNpcConfigModelFailure(detail) && normalizedDetail.includes("streamphase=streaming")) {
+    return "NPC 配置生成中途超时：配置还没有写入。请缩小 NPC 职责范围、要求分阶段生成，或切换更快模型后重试。";
+  }
+
   if (normalizedDetail.includes("streamphase=waiting-first-chunk")) {
     return "本地模型首轮输出超时：请先确认 Ollama 进程仍在生成或切换更快模型；如果要继续同一任务，建议缩短输入、拆分目标，或重试本地任务。";
   }
@@ -335,6 +349,10 @@ function getVisibleLocalModelChatFailureActionLabel(detail: string, fallbackActi
   }
 
   return getVisibleLocalTaskFailureActionLabel(fallbackActionLabel);
+}
+
+function isNpcConfigModelFailure(detail: string) {
+  return detail.toLowerCase().includes("executionkind=npc-config-write");
 }
 
 function getConciseVisibleOutputSummary(summary: string) {

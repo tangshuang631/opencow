@@ -168,3 +168,19 @@
 - Regression tests: `apps/desktop/src/app/app.project-run.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.project-status.test.ts`
 - Related: This reduces fixed lifecycle readbacks while preserving permission gates around starting and stopping local processes.
 - Status: DONE
+
+## Follow-up: NPC config first-token timeout diagnosis is specific and non-templated
+
+- Symptom: Creating an NPC such as `课程助手npc` could fail after the selected local model connected but did not return a first chunk before the timeout. The visible failure still looked like a generic local task failure and could point users toward result mapping instead of the real Ollama first-token stall.
+- Root cause: `npc-config-write` reused the local model chat runner diagnostics, but the failure detail did not include the execution kind. The visible workbench text therefore could not distinguish ordinary local chat timeout from NPC config generation timeout.
+- Fix: Added `executionKind=npc-config-write` to local model timeout diagnostics in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx), then made [apps/desktop/src/features/workbench/workbenchText.ts](E:/2026/opencow/apps/desktop/src/features/workbench/workbenchText.ts) and [apps/desktop/src/features/workbench/components/Inspector.tsx](E:/2026/opencow/apps/desktop/src/features/workbench/components/Inspector.tsx) show NPC-specific Chinese title, detail, concise output, and recovery guidance for waiting-first-chunk and streaming timeouts.
+- Safety boundary: The assistant still does not write NPC config unless the selected local model returns content and the existing permission-approved write path succeeds. No fixed NPC template or fake success fallback was introduced.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "surfaces NPC config first-token" --pool forks --poolOptions.forks.singleFork` passed with the full `app.test.tsx` file reporting 33 tests passed.
+  - `npm --workspace apps/desktop exec vitest run src/features/workbench/components/Inspector.test.tsx src/features/workbench/workbenchState.conversation.test.ts --pool forks --poolOptions.forks.singleFork` passed with 37 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 201 tests.
+  - `npm --workspace packages/openclaw-adapter run build` passed, confirming the startup-blocking adapter TypeScript build no longer reproduces.
+  - `npm run verify:all` passed, including 589 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This keeps the user-facing path model-first for NPC creation while making the no-first-token failure actionable, auditable, Chinese-first, and explicit that no config was written.
+- Status: DONE

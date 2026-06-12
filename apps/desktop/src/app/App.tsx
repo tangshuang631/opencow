@@ -492,6 +492,7 @@ function createLocalModelChatFailureDetail(payload: {
   detail: string;
   model: string;
   message: string;
+  executionKind: string | undefined;
   timeoutMs: number;
   elapsedMs: number;
   hasReceivedFirstChunk: boolean;
@@ -503,7 +504,7 @@ function createLocalModelChatFailureDetail(payload: {
 
   return [
     normalizedDetail,
-    `Local model chat diagnostics: model=${payload.model.trim() || "unselected"}; timeout=${formatTimeoutSeconds(payload.timeoutMs)}s; inputLength=${payload.message.trim().length}; streamPhase=${streamPhase}; elapsedMs=${payload.elapsedMs}; firstChunkAfterMs=${firstChunkAfterMs}; longAnswerProtection=enabled.`
+    `Local model chat diagnostics: executionKind=${payload.executionKind ?? "unknown"}; model=${payload.model.trim() || "unselected"}; timeout=${formatTimeoutSeconds(payload.timeoutMs)}s; inputLength=${payload.message.trim().length}; streamPhase=${streamPhase}; elapsedMs=${payload.elapsedMs}; firstChunkAfterMs=${firstChunkAfterMs}; longAnswerProtection=enabled.`
   ].join(" ");
 }
 
@@ -1704,6 +1705,7 @@ export function App() {
               detail,
               model: localModelDiagnosticModel,
               message: localModelMessage,
+              executionKind: activeTask.executionKind,
               timeoutMs: localModelChatTimeoutMs,
               elapsedMs: Date.now() - progressStartedAt,
               hasReceivedFirstChunk,

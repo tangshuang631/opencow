@@ -325,6 +325,52 @@ describe("App", () => {
     expect(within(conversation).getByText(/请继续补充资料或让模型重新生成/)).toBeInTheDocument();
   });
 
+  it("surfaces NPC config first-token timeouts with specific recovery guidance and does not write config", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能帮我创建一个课程助手npc吗" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const approveButton = await screen.findByRole("button", { name: "批准提权" });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(approveButton);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(480_500);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(within(getConversationRegion()).getByText("NPC 配置生成失败")).toBeInTheDocument();
+      expect(
+        within(getConversationRegion()).getByText(/本地模型已接到 NPC 配置生成请求，但首轮输出没有在本轮超时前返回/)
+      ).toBeInTheDocument();
+      expect(screen.getAllByText(/NPC 配置生成卡在首轮输出前/).length).toBeGreaterThan(0);
+      fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
+      expect(screen.getAllByText(/executionKind=npc-config-write/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/streamPhase=waiting-first-chunk/).length).toBeGreaterThan(0);
+      expect(writeNpcConfigMock).not.toHaveBeenCalled();
+      expect(screen.queryByText("NPC 配置已保存")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts an in-flight NPC config generation when the user stops the task", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,

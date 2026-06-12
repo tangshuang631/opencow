@@ -194,6 +194,10 @@ function isUnknownLocalExecutionFailure(value: string): boolean {
   return value.toLowerCase().includes("unknown local assistant execution error");
 }
 
+function isNpcConfigModelFailure(value: string): boolean {
+  return value.toLowerCase().includes("executionkind=npc-config-write");
+}
+
 export function isLocalAssistantPlannerFailureSource(source?: string): boolean {
   return source === "local_assistant_planner"
     || source === "local_assistant_self_check_planner"
@@ -211,6 +215,10 @@ export function getVisibleLocalTaskFailureTitle(summary: string, source?: string
 
   if (source === "local_task_timeout" || summary === "Local task execution timed out") {
     return summary;
+  }
+
+  if (source === "local_model_chat_runner" && (summary === "NPC 配置生成失败" || isNpcConfigModelFailure(detail))) {
+    return "NPC 配置生成失败";
   }
 
   if (
@@ -298,6 +306,14 @@ export function getVisibleLocalTaskFailureDetail(detail: string, source?: string
 
     if (actionableDetail) {
       return actionableDetail;
+    }
+
+    if (isNpcConfigModelFailure(detail) && detail.includes("streamPhase=waiting-first-chunk")) {
+      return "本地模型已接到 NPC 配置生成请求，但首轮输出没有在本轮超时前返回；NPC 配置尚未写入，完整模型、输入长度和等待阶段诊断已保留在展开详情中。";
+    }
+
+    if (isNpcConfigModelFailure(detail) && detail.includes("streamPhase=streaming")) {
+      return "本地模型已经开始生成 NPC 配置，但没有在本轮超时前完整结束；NPC 配置尚未写入，已保留首块耗时和生成阶段诊断，方便缩小需求后重试。";
     }
 
     if (detail.includes("streamPhase=waiting-first-chunk")) {
