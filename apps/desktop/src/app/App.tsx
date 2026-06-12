@@ -872,6 +872,7 @@ type ExplainableReadonlyResultKind =
   | "opencow-self-repair-target-guidance"
   | "opencow-self-repair-enabled-skills-registry"
   | "opencow-self-repair-workspace-project-runtime-registry"
+  | "skills-local-install"
   | "skills-local-enable"
   | "skills-local-disable"
   | "capability-rag-overview"
@@ -909,6 +910,7 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "opencow-self-repair-target-guidance"
     || kind === "opencow-self-repair-enabled-skills-registry"
     || kind === "opencow-self-repair-workspace-project-runtime-registry"
+    || kind === "skills-local-install"
     || kind === "skills-local-enable"
     || kind === "skills-local-disable"
     || kind === "capability-rag-overview"
@@ -946,6 +948,7 @@ function isSelfRepairMutationResultKind(kind: ExplainableReadonlyResultKind): bo
 
 function isPostApprovalMutationResultKind(kind: ExplainableReadonlyResultKind): boolean {
   return isSelfRepairMutationResultKind(kind)
+    || kind === "skills-local-install"
     || kind === "skills-local-enable"
     || kind === "skills-local-disable";
 }
@@ -1069,6 +1072,10 @@ function getReadonlyOverviewExplanationTitle(
 
   if (executionKind === "opencow-self-repair-workspace-project-runtime-registry") {
     return "OpenCow 项目运行注册表修复说明";
+  }
+
+  if (executionKind === "skills-local-install") {
+    return "Skill 安装结果说明";
   }
 
   if (executionKind === "skills-local-enable") {
@@ -1203,11 +1210,13 @@ function createReadonlyOverviewExplanationPrompt(payload: {
             ? "重点解释 enabled skills registry 已在用户批准 workspace-write 后完成受控修复、修复路径、保留条目、验证结果、审计/回退可见性，以及下一步如何继续安全使用 Skills。不要说这是只读预览。"
             : payload.executionKind === "opencow-self-repair-workspace-project-runtime-registry"
               ? "重点解释 workspace project runtime registry 已在用户批准 workspace-write 后完成受控修复、修复路径、保留运行记录、验证结果、审计/回退可见性，以及下一步如何安全检查或启动项目。不要说这是只读预览。"
-              : payload.executionKind === "skills-local-enable"
-                ? "重点解释这个 Skill 已在用户批准 workspace-write 后写入本地 enabled skills 注册表、注册表路径、启用状态、下一步如何使用；明确这不是只读预览，也不要暗示已经执行了 Skill。"
-                : payload.executionKind === "skills-local-disable"
-                  ? "重点解释这个 Skill 已在用户批准 workspace-write 后从本地 enabled skills 注册表停用、注册表路径、停用状态、下一步如何安全恢复或替代；明确这不是只读预览，也不要暗示删除了 Skill 文件。"
-              : payload.executionKind === "capability-rag-overview"
+              : payload.executionKind === "skills-local-install"
+                ? "重点解释这个 Skill 已在用户批准 workspace-write 后复制到本地 workspace skills 目录、安装路径、来源路径、安装状态、下一步如何启用或检查；明确这不是只读预览，也不要暗示已经执行了 Skill。"
+                : payload.executionKind === "skills-local-enable"
+                  ? "重点解释这个 Skill 已在用户批准 workspace-write 后写入本地 enabled skills 注册表、注册表路径、启用状态、下一步如何使用；明确这不是只读预览，也不要暗示已经执行了 Skill。"
+                  : payload.executionKind === "skills-local-disable"
+                    ? "重点解释这个 Skill 已在用户批准 workspace-write 后从本地 enabled skills 注册表停用、注册表路径、停用状态、下一步如何安全恢复或替代；明确这不是只读预览，也不要暗示删除了 Skill 文件。"
+                    : payload.executionKind === "capability-rag-overview"
                 ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
                 : payload.executionKind === "capability-skills-overview"
               ? "重点解释 Skills 能力当前可用基础、安装/启用边界、缺失项，以及下一步如何安全验证。"

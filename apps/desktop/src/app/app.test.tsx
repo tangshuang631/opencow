@@ -1300,6 +1300,11 @@ describe("App", () => {
       status: "installed",
       summary: "Local skill installation copied gpt-taste into the workspace skills directory."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "gpt-taste 已在批准工作区读写后复制到 workspace skills 目录。下一步可以检查 Skill 内容并决定是否启用，但这一步没有执行 Skill。"
+    });
 
     render(<App />);
 
@@ -1318,9 +1323,70 @@ describe("App", () => {
     fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Install local skill|gpt-taste|skills\/gpt-taste\/SKILL\.md/i).length).toBeGreaterThan(0);
+      expect(within(getConversationRegion()).getByText("Skill 安装结果说明")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText(/gpt-taste 已在批准工作区读写后复制到 workspace skills 目录/)).toBeInTheDocument();
     });
+    expect(installLocalSkillMock).toHaveBeenCalledTimes(1);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("用户批准 workspace-write")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Local skill installation copied gpt-taste")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("vendor/openclaw/skills/gpt-taste/SKILL.md")
+    }));
   });
+
+  it("falls back to verified skill install facts when post-approval explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    installLocalSkillMock.mockResolvedValueOnce({
+      query: "install the gpt-taste skill into this workspace skills folder",
+      installed_skill_name: "gpt-taste",
+      installed_skill_path: "skills/gpt-taste/SKILL.md",
+      source_skill_path: "vendor/openclaw/skills/gpt-taste/SKILL.md",
+      status: "installed",
+      summary: "Local skill installation copied gpt-taste into the workspace skills directory."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "install the gpt-taste skill into this workspace skills folder" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const permissionReasonMatches = await screen.findAllByText(/需要先授予工作区读写权限/i);
+    const permissionSection = permissionReasonMatches[0]?.closest("section");
+
+    expect(permissionSection).not.toBeNull();
+
+    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: expect.stringMatching(/^skills-local-install-explanation-/)
+      }));
+    });
+
+    const conversation = getConversationRegion();
+    expect(await within(conversation).findByText("Install local skill", {}, { timeout: 12_000 })).toBeInTheDocument();
+    expect(within(conversation).getByText(/Local skill installation copied gpt-taste/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/Installed path: skills\/gpt-taste\/SKILL\.md/)).toBeInTheDocument();
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^skills-local-install-explanation-/));
+    expect(installLocalSkillMock).toHaveBeenCalledTimes(1);
+  }, 15_000);
 
   it("shows the final enabled skills list result for an explicit readonly skills registry request", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({

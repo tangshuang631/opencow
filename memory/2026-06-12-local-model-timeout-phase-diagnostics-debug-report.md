@@ -332,3 +332,20 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This moves another user-visible fixed-output approved-success path through the local model without weakening permission, audit, rollback, or anti-stall fallback behavior.
 - Status: DONE
+
+## Follow-up: approved Skill install results use bounded local-model explanation
+
+- Symptom: `skills-local-install` correctly required `workspace-write` approval and copied a Skill into the workspace Skills directory, but the final visible response still surfaced deterministic install facts such as `Install local skill`, installed path, source path, and status directly.
+- Root cause: The App-level post-approval explanation set covered Skill enable/disable registry mutations, but not the adjacent Skill install mutation. Successful installs therefore remained another fixed-output path even after permission-gated execution completed.
+- Fix: Extended [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx) so `skills-local-install` uses the bounded local-model explanation hook after `installLocalSkill` succeeds. The prompt asks the model to explain the approved copy into the workspace skills directory, installed path, source path, status, next enable/check step, and to avoid implying that the Skill was executed.
+- Safety boundary: Permission approval is still required before installation. Explanation happens only after the install service returns verified success. If explanation stalls, OpenCow falls back to the verified install facts and does not fail the successful task.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "skill install|verified skill install facts" --pool forks --poolOptions.forks.singleFork` passed with 39 tests reported.
+  - `npm run predesktop:dev` passed.
+  - `npm --workspace apps/desktop exec tsc -b` passed.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-install.test.ts src/features/assistant/assistantTaskService.skills-enable.test.ts src/features/assistant/assistantTaskService.skills-disable.test.ts --pool forks --poolOptions.forks.singleFork` passed with 6 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 165 tests.
+  - `npm run verify:all` passed, including 601 desktop tests, repository build, encoding check, health check, and 71 desktop Tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This closes another approved low-risk workspace-write fixed-output success path while preserving permission, audit, rollback, and model-stall fallback behavior.
+- Status: DONE
