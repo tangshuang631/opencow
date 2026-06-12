@@ -947,6 +947,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   if (
     localRagSearchPatterns.some((pattern) => pattern.test(message))
     && (/knowledge/i.test(message) || /docs?/i.test(message) || /rules?/i.test(message))
+    && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
   ) {
     return {
       kind: "rag-local-doc-search",
@@ -1131,6 +1132,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   if (
     ragCapabilityPatterns.some((pattern) => pattern.test(message))
     && capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+    && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
   ) {
     return {
       kind: "capability-rag-overview",
@@ -1145,6 +1147,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     /\bskills?\b/i.test(message)
     && localEnabledSkillsPatterns.some((pattern) => pattern.test(message))
     && localEnabledSkillMatchPatterns.some((pattern) => pattern.test(message))
+    && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
   ) {
     return {
       kind: "skills-local-enabled-match",

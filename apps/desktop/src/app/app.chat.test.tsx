@@ -301,6 +301,38 @@ describe("App chat fallback", () => {
     expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
   });
 
+  it("routes RAG troubleshooting questions through the local model instead of eager local retrieval execution", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "我会先分析本地 RAG 检索失败的原因，而不是直接重复触发同一条检索链。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "帮我检查本地 RAG rules search 为什么失败" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        model: "qwen3.6:35b",
+        message: "帮我检查本地 RAG rules search 为什么失败"
+      }));
+    });
+    expect(screen.queryByText("Local RAG document search")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
+  });
+
   it("shows user-actionable Ollama recovery guidance when ordinary chat fails", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
