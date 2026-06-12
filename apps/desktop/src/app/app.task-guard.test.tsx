@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -31,13 +31,23 @@ function expandInspectorRollbackRecords() {
   fireEvent.click(screen.getByRole("button", { name: "展开回退记录" }));
 }
 
-const { loadOllamaOverviewMock, planAssistantTaskMock, executeAssistantTaskMock } = vi.hoisted(() => ({
+const {
+  cancelOllamaChatMock,
+  chatWithOllamaModelMock,
+  loadOllamaOverviewMock,
+  planAssistantTaskMock,
+  executeAssistantTaskMock
+} = vi.hoisted(() => ({
+  cancelOllamaChatMock: vi.fn(),
+  chatWithOllamaModelMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
   planAssistantTaskMock: vi.fn(),
   executeAssistantTaskMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  cancelOllamaChat: cancelOllamaChatMock,
+  chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
 
@@ -56,9 +66,12 @@ vi.mock("../features/assistant/assistantTaskService", async () => {
 describe("App local task guard", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    cancelOllamaChatMock.mockReset();
+    chatWithOllamaModelMock.mockReset();
     loadOllamaOverviewMock.mockReset();
     planAssistantTaskMock.mockReset();
     executeAssistantTaskMock.mockReset();
+    chatWithOllamaModelMock.mockRejectedValue(new Error("local model explanation disabled in this test"));
   });
 
   afterEach(() => {
@@ -1141,6 +1154,173 @@ describe("App local task guard", () => {
       })
     );
   });
+
+  it("explains confirmed temp-output removal through the local model after dangerous approval", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    planAssistantTaskMock.mockReturnValue({
+      kind: "confirmation",
+      title: "Confirm temp-output removal",
+      summary: "Remove temp-output inside the approved workspace.",
+      commandPreview: "Remove-Item -LiteralPath temp-output -Recurse -Force",
+      impact: "Delete temp-output only after explicit confirmation.",
+      requiredMode: "controlled-full",
+      safetySummary: "Requires rollback snapshot availability before destructive execution.",
+      queuedExecutionKind: "controlled-full-remove-temp-output",
+      queuedExecutionTitle: "Remove temp-output directory",
+      queuedExecutionAuditSummary: "Local assistant planned a controlled-full temp-output removal task.",
+      queuedExecutionAuditDetail: "Controlled-full shell command task: remove temp-output directory",
+      queuedMessage: "remove the temp-output folder from this workspace"
+    });
+    executeAssistantTaskMock.mockResolvedValueOnce({
+      resultTitle: "Remove temp-output directory",
+      resultSummary:
+        "Controlled full shell command completed successfully. Command: Remove-Item -LiteralPath temp-output -Recurse -Force. Output: temp-output removed."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "temp-output 已在你授予受控完全访问并确认高风险操作后删除，命令只针对工作区内 temp-output；下一步请用只读检查确认，不要把这理解成任意 shell 权限。"
+    });
+
+    const { container } = render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "remove the temp-output folder from this workspace" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    expect(executeAssistantTaskMock).not.toHaveBeenCalled();
+
+    fireEvent.click(await screen.findByRole("button", { name: APPROVE_DANGEROUS_NAME }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("temp-output 删除结果说明")).not.toHaveLength(0);
+      expect(screen.getAllByText(/temp-output 已在你授予受控完全访问并确认高风险操作后删除/)).not.toHaveLength(0);
+    });
+    expect(executeAssistantTaskMock).toHaveBeenCalledTimes(1);
+    expect(executeAssistantTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "controlled-full-remove-temp-output",
+        title: "Remove temp-output directory"
+      }),
+      expect.objectContaining({
+        snapshotAvailable: true
+      })
+    );
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^controlled-full-remove-temp-output-explanation-/),
+      message: expect.stringContaining("授予 controlled-full 并确认高风险操作")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Remove-Item -LiteralPath temp-output -Recurse -Force")
+    }));
+    expect(screen.queryByText(/Controlled full shell command completed successfully/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to verified temp-output removal facts when post-confirmation explanation stalls", async () => {
+    vi.useFakeTimers();
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    planAssistantTaskMock.mockReturnValue({
+      kind: "confirmation",
+      title: "Confirm temp-output removal",
+      summary: "Remove temp-output inside the approved workspace.",
+      commandPreview: "Remove-Item -LiteralPath temp-output -Recurse -Force",
+      impact: "Delete temp-output only after explicit confirmation.",
+      requiredMode: "controlled-full",
+      safetySummary: "Requires rollback snapshot availability before destructive execution.",
+      queuedExecutionKind: "controlled-full-remove-temp-output",
+      queuedExecutionTitle: "Remove temp-output directory",
+      queuedExecutionAuditSummary: "Local assistant planned a controlled-full temp-output removal task.",
+      queuedExecutionAuditDetail: "Controlled-full shell command task: remove temp-output directory",
+      queuedMessage: "remove the temp-output folder from this workspace"
+    });
+    executeAssistantTaskMock.mockResolvedValueOnce({
+      resultTitle: "Remove temp-output directory",
+      resultSummary:
+        "Controlled full shell command completed successfully. Command: Remove-Item -LiteralPath temp-output -Recurse -Force. Output: temp-output removed."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    const { container } = render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "remove the temp-output folder from this workspace" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: APPROVE_DANGEROUS_NAME }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^controlled-full-remove-temp-output-explanation-/)
+    }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getAllByText(/Remove temp-output directory/i)).not.toHaveLength(0);
+    expect(screen.getAllByText(/Controlled full shell command completed successfully/i)).not.toHaveLength(0);
+    expect(screen.getAllByText(/Remove-Item -LiteralPath temp-output -Recurse -Force/i)).not.toHaveLength(0);
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^controlled-full-remove-temp-output-explanation-/)
+    );
+    expect(executeAssistantTaskMock).toHaveBeenCalledTimes(1);
+  }, 10_000);
 
   it("surfaces controlled-full object-shaped shell failures with rollback recovery guidance after confirmation", async () => {
     loadOllamaOverviewMock.mockResolvedValue({

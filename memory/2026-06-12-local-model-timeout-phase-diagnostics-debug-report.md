@@ -394,3 +394,18 @@
 - Regression test: `apps/desktop/src/app/app.project-run.test.tsx`
 - Related: This removes another user-visible fixed-output approved-success path while keeping process lifecycle actions strictly permission-gated, audit-visible, and fallback-safe when the explanation model stalls.
 - Status: DONE
+
+## Follow-up: confirmed controlled-full temp-output deletion results use bounded local-model explanation
+
+- Symptom: `controlled-full-remove-temp-output` correctly required both `controlled-full` permission and the high-risk confirmation before deleting the workspace-local `temp-output` directory, but its successful visible response still surfaced deterministic shell facts such as `Remove temp-output directory`, the PowerShell command, and stdout preview.
+- Root cause: The App-level local-model explanation whitelist covered readonly outputs and several approved mutation results, but not the confirmed destructive temp-output cleanup path. The first attempted regression test also used a natural-language App entry point that did not deterministically route to this direct controlled-full confirmation flow, so the test failed before reaching the intended post-confirmation execution path.
+- Fix: Added `controlled-full-remove-temp-output` to the App explanation whitelist and post-approval mutation set in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain that `temp-output` was removed only after `controlled-full` approval plus high-risk confirmation, through the controlled shell runner, with the exact command, workspace boundary, output preview, audit/rollback snapshot visibility, and safe next confirmation step. Regression coverage was moved into [apps/desktop/src/app/app.task-guard.test.tsx](E:/2026/opencow/apps/desktop/src/app/app.task-guard.test.tsx), where the planner mock can force the direct dangerous confirmation chain.
+- Safety boundary: The local model still does not decide whether deletion is allowed and does not run before the destructive command. The command remains behind permission approval, high-risk confirmation, command allowlisting, snapshot context, and service success. If the explanation stalls, OpenCow cancels that explanation request, falls back to verified command facts, and does not execute the deletion a second time or mark the successful deletion as failed.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.task-guard.test.tsx -t "falls back to verified temp-output removal facts|explains confirmed temp-output removal" --pool forks --poolOptions.forks.singleFork` passed with 61 tests reported.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 41 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.write.test.ts --pool forks --poolOptions.forks.singleFork` passed with 6 tests.
+  - `npm run predesktop:dev` passed.
+- Regression test: `apps/desktop/src/app/app.task-guard.test.tsx`
+- Related: This closes another fixed-output success path while preserving the destructive-action confirmation chain and adding anti-stall recovery for the post-success explanation layer.
+- Status: DONE

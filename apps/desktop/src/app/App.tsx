@@ -890,6 +890,7 @@ type ExplainableReadonlyResultKind =
   | "workspace-write-create-temp-output"
   | "workspace-project-run"
   | "workspace-project-stop"
+  | "controlled-full-remove-temp-output"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "capability-npc-overview"
@@ -931,6 +932,7 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "workspace-write-create-temp-output"
     || kind === "workspace-project-run"
     || kind === "workspace-project-stop"
+    || kind === "controlled-full-remove-temp-output"
     || kind === "capability-rag-overview"
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
@@ -971,7 +973,8 @@ function isPostApprovalMutationResultKind(kind: ExplainableReadonlyResultKind): 
     || kind === "skills-local-disable"
     || kind === "workspace-write-create-temp-output"
     || kind === "workspace-project-run"
-    || kind === "workspace-project-stop";
+    || kind === "workspace-project-stop"
+    || kind === "controlled-full-remove-temp-output";
 }
 
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
@@ -1119,6 +1122,10 @@ function getReadonlyOverviewExplanationTitle(
     return "本地项目停止结果说明";
   }
 
+  if (executionKind === "controlled-full-remove-temp-output") {
+    return "temp-output 删除结果说明";
+  }
+
   if (executionKind === "capability-rag-overview") {
     return "RAG 能力说明";
   }
@@ -1255,6 +1262,8 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                         ? "重点解释本地项目已在用户批准 workspace-write 后通过受控项目运行链路启动、匹配项目、命令、工作目录、预期 URL、PID/预览输出、审计/回退可见性，以及下一步如何安全检查状态或停止；明确这不是任意 shell 权限，也不要暗示启动了其他项目。"
                         : payload.executionKind === "workspace-project-stop"
                           ? "重点解释本地项目已在用户批准 workspace-write 后通过受控项目停止链路停止、匹配项目、命令、工作目录、PID、状态、预览输出、审计/回退可见性，以及下一步如何安全确认状态；明确这不是任意 shell 权限，也不要暗示删除了项目文件。"
+                          : payload.executionKind === "controlled-full-remove-temp-output"
+                            ? "重点解释 temp-output 已在用户授予 controlled-full 并确认高风险操作后通过受控 shell runner 删除、实际命令、工作区边界、输出预览、审计/回退快照可见性，以及下一步如何安全确认；明确这不是任意 shell 权限，也不要暗示删除了其他路径。"
                     : payload.executionKind === "capability-rag-overview"
                 ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
                 : payload.executionKind === "capability-skills-overview"
