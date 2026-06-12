@@ -242,6 +242,51 @@ describe("App", () => {
     expect(within(conversation).queryByText("OpenClaw NPC capability overview")).not.toBeInTheDocument();
   });
 
+  it("marks malformed local-model NPC config output as a reviewable wrapped config", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "我建议创建一个文档处理 NPC，但这次没有输出 JSON。"
+    });
+    writeNpcConfigMock.mockResolvedValueOnce({
+      npc_name: "文档处理 NPC",
+      config_path: ".opencow/npcs/document-npc.json",
+      status: "saved",
+      summary: "Saved wrapped LLM-generated NPC config."
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能帮我配置一个文档处理npc吗" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    fireEvent.click(await screen.findByRole("button", { name: "批准提权" }));
+
+    await waitFor(() => {
+      expect(writeNpcConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        config: expect.objectContaining({
+          unparsed_model_output: "我建议创建一个文档处理 NPC，但这次没有输出 JSON。"
+        })
+      }));
+    });
+
+    const conversation = getConversationRegion();
+    expect(await within(conversation).findByText("NPC 配置已保存")).toBeInTheDocument();
+    expect(within(conversation).getByText(/没有输出可直接解析的 JSON/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/安全包装配置/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/请继续补充资料或让模型重新生成/)).toBeInTheDocument();
+  });
+
   it("routes an explicit workspace inspection request into the workspace overview result instead of generic help copy", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,

@@ -754,6 +754,14 @@ Local-model-first requirement:
 - prompts, planner branches, previews, and repair suggestions should be narrower and more deterministic than the upstream openclaw default
 - opencow should raise the practical quality floor on local models through stronger boundaries, better defaults, and better execution scaffolding rather than assuming the model alone will compensate
 
+Current NPC config generation guardrail:
+
+- NPC config creation still asks the selected local model to generate the configuration after workspace-write approval.
+- If the model returns a valid JSON object, opencow saves that generated object.
+- If the model returns prose or malformed JSON, opencow saves a reviewable safety wrapper that keeps the original model output in `unparsed_model_output` instead of losing it.
+- The main conversation must explicitly tell the user that the saved config was wrapped and needs review, rather than presenting the result as a clean structured generation.
+- The audit detail records the NPC config parse status so later repair or regeneration can distinguish `parsed` from `wrapped` output.
+
 ## 6.16 Desktop continuity improvement: continue from latest RAG shell preview
 
 The desktop mainline now carries forward the latest previewable RAG-to-shell intent so the user can continue without repeating the full original request text.

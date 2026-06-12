@@ -735,19 +735,25 @@ async function executeNpcConfigWriteTask(payload: {
     signal: payload.signal,
     onChunk: payload.onChunk
   });
-  const config = extractNpcConfigFromModelOutput(result.message);
+  const configResult = extractNpcConfigFromModelOutput(result.message);
   const writeResult = await writeNpcConfig({
     query: payload.message,
     modelOutput: result.message,
-    config
+    config: configResult.config
   });
+  const parseStatusLines = configResult.status === "wrapped"
+    ? [
+        "注意：本地模型没有输出可直接解析的 JSON，opencow 已保存一个带原文的安全包装配置。",
+        "请继续补充资料或让模型重新生成，我会再次经过本地大模型更新，而不是套固定模板。"
+      ]
+    : ["你可以继续补充资料、约束、工具权限或工作流，我会再次经过大模型更新配置，而不是套固定模板。"];
 
   return {
     resultTitle: "NPC 配置已保存",
     resultSummary: [
       `已由本地模型 ${result.model || selectedModel} 生成 NPC 配置，并保存到 ${writeResult.config_path}。`,
       `NPC 名称：${writeResult.npc_name}。`,
-      "你可以继续补充资料、约束、工具权限或工作流，我会再次经过大模型更新配置，而不是套固定模板。",
+      ...parseStatusLines,
       "",
       "模型生成摘要：",
       result.message
@@ -756,7 +762,8 @@ async function executeNpcConfigWriteTask(payload: {
       `Ollama model: ${result.model || selectedModel}`,
       `Ollama done reason: ${result.doneReason || "complete"}`,
       `NPC config path: ${writeResult.config_path}`,
-      `NPC config status: ${writeResult.status}`
+      `NPC config status: ${writeResult.status}`,
+      `NPC config parse status: ${configResult.status}`
     ]
   };
 }
@@ -780,7 +787,10 @@ function createNpcConfigGenerationPrompt(userRequest: string): string {
   ].join("\n");
 }
 
-function extractNpcConfigFromModelOutput(modelOutput: string): Record<string, unknown> {
+function extractNpcConfigFromModelOutput(modelOutput: string): {
+  readonly status: "parsed" | "wrapped";
+  readonly config: Record<string, unknown>;
+} {
   const trimmed = modelOutput.trim();
   const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const candidate = fencedMatch?.[1]?.trim() ?? extractFirstJsonObject(trimmed);
@@ -789,26 +799,32 @@ function extractNpcConfigFromModelOutput(modelOutput: string): Record<string, un
     const parsed = JSON.parse(candidate);
 
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
+      return {
+        status: "parsed",
+        config: parsed as Record<string, unknown>
+      };
     }
   } catch {
     // Fall through to a safe wrapper so model prose is still auditable instead of being lost.
   }
 
   return {
-    name: inferNpcNameFromText(modelOutput),
-    purpose: "根据用户请求生成的 NPC 配置需要人工复核。",
-    persona: "中文、谨慎、先询问缺失信息再执行。",
-    capabilities: ["理解用户提供的任务背景", "整理下一步需要的资料", "在获得权限后更新本地配置"],
-    workflow: ["读取用户补充信息", "完善 NPC 配置", "需要写入或联网前先确认"],
-    required_inputs: ["请补充这个 NPC 的具体使用场景、资料来源和权限边界"],
-    permissions: {
-      readonly: "可以规划、追问和总结",
-      workspace_write: "只有用户批准后才写入或更新本地配置",
-      network: "只有用户单独开启联网搜索后才查询外部资料"
+    status: "wrapped",
+    config: {
+      name: inferNpcNameFromText(modelOutput),
+      purpose: "根据用户请求生成的 NPC 配置需要人工复核。",
+      persona: "中文、谨慎、先询问缺失信息再执行。",
+      capabilities: ["理解用户提供的任务背景", "整理下一步需要的资料", "在获得权限后更新本地配置"],
+      workflow: ["读取用户补充信息", "完善 NPC 配置", "需要写入或联网前先确认"],
+      required_inputs: ["请补充这个 NPC 的具体使用场景、资料来源和权限边界"],
+      permissions: {
+        readonly: "可以规划、追问和总结",
+        workspace_write: "只有用户批准后才写入或更新本地配置",
+        network: "只有用户单独开启联网搜索后才查询外部资料"
+      },
+      first_message: "我已经有一个初始配置，请补充这个 NPC 要处理的资料范围和默认工作流。",
+      unparsed_model_output: modelOutput
     },
-    first_message: "我已经有一个初始配置，请补充这个 NPC 要处理的资料范围和默认工作流。",
-    unparsed_model_output: modelOutput
   };
 }
 
