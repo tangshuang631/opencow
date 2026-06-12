@@ -364,6 +364,60 @@ describe("App", () => {
     expect(screen.queryByText("迟到 NPC")).not.toBeInTheDocument();
   });
 
+  it("does not write a late NPC config result after starting a new conversation", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    let resolveNpcConfigGeneration: (value: { model: string; message: string }) => void = () => undefined;
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise((resolve) => {
+      resolveNpcConfigGeneration = resolve;
+    }));
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能帮我配置一个文档处理npc吗" }
+    });
+    fireEvent.click(getComposerSendButton());
+    fireEvent.click(await screen.findByRole("button", { name: "批准提权" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+    });
+
+    const request = chatWithOllamaModelMock.mock.calls.at(-1)?.[0] as { requestId?: string; signal?: AbortSignal };
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    await waitFor(() => {
+      expect(request.signal?.aborted).toBe(true);
+    });
+    expect(request.requestId).toMatch(/^local-model-chat-/);
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(request.requestId);
+
+    await act(async () => {
+      resolveNpcConfigGeneration({
+        model: "qwen3.6:35b",
+        message: JSON.stringify({
+          name: "新对话后的迟到 NPC",
+          purpose: "这次迟到成功不能写入配置"
+        })
+      });
+      await Promise.resolve();
+    });
+
+    expect(writeNpcConfigMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("NPC 配置已保存")).not.toBeInTheDocument();
+    expect(screen.queryByText("新对话后的迟到 NPC")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
+  });
+
   it("routes an explicit workspace inspection request into the workspace overview result instead of generic help copy", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
