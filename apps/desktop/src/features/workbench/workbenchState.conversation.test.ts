@@ -3,6 +3,9 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createNewConversationState,
+  createTaskExecutionCancelledState,
+  createTaskExecutionStartedState,
+  createUserTaskSubmittedState,
   requestRollbackPreviewState,
   requestPermissionModeChangeState
 } from "./workbenchState";
@@ -40,6 +43,7 @@ describe("createNewConversationState", () => {
     expect(next.permission.mode).toBe("readonly");
     expect(next.audit.lastEvent.source).toBe("conversation_new");
     expect(next.audit.lastEvent.detail).toContain("cleared pending permission and confirmation gates");
+    expect(next.audit.lastEvent.detail).toContain("No active local task queue was preserved.");
   });
 
   it("records that a new conversation clears pending rollback previews", () => {
@@ -51,5 +55,41 @@ describe("createNewConversationState", () => {
     expect(next.rollback.pendingPreview).toBeNull();
     expect(next.audit.lastEvent.source).toBe("conversation_new");
     expect(next.audit.lastEvent.detail).toContain("cleared pending rollback preview");
+  });
+
+  it("records when a blank conversation has no active local task queue to preserve", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "generate an NPC config",
+        executionKind: "npc-config-write",
+        executionTitle: "Generate NPC config"
+      })
+    );
+    const cancelled = createTaskExecutionCancelledState(running);
+
+    const next = createNewConversationState(cancelled);
+
+    expect(next.tasks.activeTaskId).toBeNull();
+    expect(next.tasks.pendingCount).toBe(0);
+    expect(next.tasks.items).toHaveLength(0);
+    expect(next.audit.lastEvent.detail).toContain("No active local task queue was preserved.");
+    expect(next.audit.lastEvent.detail).not.toContain("active local task queue were preserved");
+  });
+
+  it("records preserved queued and running task counts when a caller keeps them", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "inspect workspace"
+    });
+    const secondQueued = createUserTaskSubmittedState(queued, {
+      message: "scan local skills"
+    });
+    const running = createTaskExecutionStartedState(secondQueued);
+
+    const next = createNewConversationState(running);
+
+    expect(next.tasks.activeTaskId).toBe(running.tasks.activeTaskId);
+    expect(next.tasks.pendingCount).toBe(1);
+    expect(next.tasks.items).toHaveLength(2);
+    expect(next.audit.lastEvent.detail).toContain("Preserved active local task queue: queued=1, running=1.");
   });
 });

@@ -5,6 +5,21 @@ const EMPTY_OUTPUT = {
   summary: "等待工具执行结果或本地产物摘要。"
 } as const;
 
+function createNewConversationAuditDetail(preservedTasks: WorkbenchState["tasks"]["items"]): string {
+  const queuedCount = preservedTasks.filter((item) => item.status === "queued").length;
+  const runningCount = preservedTasks.filter((item) => item.status === "running").length;
+  const taskQueueDetail =
+    preservedTasks.length > 0
+      ? `Preserved active local task queue: queued=${queuedCount}, running=${runningCount}.`
+      : "No active local task queue was preserved.";
+
+  return [
+    "Started a blank conversation and cleared pending permission and confirmation gates, plus cleared pending rollback preview.",
+    "Model, permission mode, settings, and rollback history were preserved.",
+    taskQueueDetail
+  ].join(" ");
+}
+
 export function createNewConversationState(state: WorkbenchState): WorkbenchState {
   const activeTask = state.tasks.activeTaskId
     ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId)
@@ -44,8 +59,7 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
       summary: "已新建空白对话",
       lastEvent: {
         module: "conversation",
-        detail:
-          "Started a blank conversation and cleared pending permission and confirmation gates, plus cleared pending rollback preview. Model, permission mode, settings, rollback history, and active local task queue were preserved.",
+        detail: createNewConversationAuditDetail(preservedTasks),
         timestamp: "ready",
         source: "conversation_new"
       }
