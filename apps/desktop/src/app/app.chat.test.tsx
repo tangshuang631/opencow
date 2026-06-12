@@ -178,6 +178,39 @@ describe("App chat fallback", () => {
     expect(screen.queryByText(/I can help with local chat/i)).not.toBeInTheDocument();
   });
 
+  it("routes Chinese capability follow-up questions through the local model instead of fixed capability overviews", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "我会结合当前上下文解释 RAG 能力，而不是直接输出固定能力概览。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "RAG 能力怎么样，适合帮我做什么" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/结合当前上下文解释 RAG 能力/)).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: "RAG 能力怎么样，适合帮我做什么"
+    }));
+    expect(screen.queryByText("OpenClaw RAG capability overview")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
+  });
+
   it("shows user-actionable Ollama recovery guidance when ordinary chat fails", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,

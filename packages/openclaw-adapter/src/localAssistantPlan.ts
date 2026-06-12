@@ -84,8 +84,6 @@ const capabilityOverviewIntentPatterns = [
   /\breadiness\b/i,
   /\bwiring\b/i,
   /\bfoundation\b/i,
-  /\bcapability\b/i,
-  /能力/,
   /概览/,
   /就绪/,
   /接线/

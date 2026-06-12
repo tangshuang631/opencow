@@ -90,7 +90,11 @@ describe("local assistant task planner", () => {
     "什么是 RAG，和普通搜索有什么区别",
     "skills 在这个项目里是干嘛的",
     "npc 是什么意思，和普通助手有什么不同",
-    "mcp 是什么，为什么要接入它"
+    "mcp 是什么，为什么要接入它",
+    "RAG 能力怎么样，适合帮我做什么",
+    "Skills 能力现在能做到什么程度",
+    "NPC 能力是不是已经像 OpenClaw 一样成熟",
+    "MCP 能力对本地助手有什么帮助"
   ])("keeps ordinary capability concept questions on local model chat: %s", (message) => {
     const plan = planLocalAssistantTask({
       message,
