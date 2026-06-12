@@ -439,3 +439,19 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This moves another NPC collaboration success path away from fixed command output while preserving permission, confirmation, audit, rollback, and model-stall fallback behavior.
 - Status: DONE
+
+## Follow-up: pure local RAG shell creation results use bounded local-model explanation
+
+- Symptom: Pure local RAG shell handoff previews were already explained through the selected local model, but after the user continued and approved the workspace-write creation step, the final success response still surfaced fixed facts such as `Local RAG handoff temp-output creation`, matched docs, command label, and stdout preview.
+- Root cause: The App-level explanation whitelist included the readonly `rag-local-shell-handoff-preview`, but not the approved `rag-local-shell-create-temp-output` continuation execution kind. Separately, App permission inference treated `*-remove-temp-output` kinds that did not literally contain `controlled-full` as readonly, which weakened the fallback policy checks even though the planner still requested controlled-full and dangerous confirmation.
+- Fix: Added `rag-local-shell-create-temp-output` to the App explanation whitelist and post-approval mutation set in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now tells the model to explain that local RAG only supplied rules/evidence and the actual create step still ran through the controlled shell runner after workspace-write approval. Also updated App permission inference so any `remove-temp-output` execution kind is treated as `controlled-full`.
+- Safety boundary: RAG does not execute commands or grant permission. The model explanation runs only after verified workspace-write shell success. Destructive `remove-temp-output` kinds now have a stricter inferred permission floor for App-level policy checks.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.continuation.test.tsx -t "local RAG shell handoff plan wording|local RAG shell handoff preview" --pool forks --poolOptions.forks.singleFork` passed with 8 tests reported.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.task-guard.test.tsx -t "scope|controlled-full|dangerous confirmation|workspace-write" --pool forks --poolOptions.forks.singleFork` passed with 61 tests reported.
+  - `npm --workspace apps/desktop exec tsc -b` passed.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-rag-shell-handoff.test.ts src/features/assistant/assistantTaskService.skills-rag-shell-write.test.ts --pool forks --poolOptions.forks.singleFork` passed with 10 tests.
+  - `npm run predesktop:dev` passed.
+- Regression test: `apps/desktop/src/app/app.continuation.test.tsx`
+- Related: This tightens the preview-to-approved-execution handoff so one more fixed success output is model-explained, while the destructive continuation policy check becomes stricter.
+- Status: DONE

@@ -1,12 +1,16 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { loadOllamaOverviewMock } = vi.hoisted(() => ({
+const { cancelOllamaChatMock, chatWithOllamaModelMock, loadOllamaOverviewMock } = vi.hoisted(() => ({
+  cancelOllamaChatMock: vi.fn(),
+  chatWithOllamaModelMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  cancelOllamaChat: cancelOllamaChatMock,
+  chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
 
@@ -22,6 +26,13 @@ async function waitForSelectedLocalModel() {
 }
 
 describe("App continuation flow", () => {
+  beforeEach(() => {
+    cancelOllamaChatMock.mockReset();
+    chatWithOllamaModelMock.mockReset();
+    loadOllamaOverviewMock.mockReset();
+    chatWithOllamaModelMock.mockRejectedValue(new Error("local model explanation disabled in this test"));
+  });
+
   it("continues from the latest local RAG shell handoff plan wording without repeating the full request", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
@@ -54,6 +65,12 @@ describe("App continuation flow", () => {
         screen.getAllByText(/04-permission-safety-shell\.md|OPENCOW_CORE_RULES\.md|New-Item|workspace-write/i).length
       ).toBeGreaterThan(0);
     });
+    chatWithOllamaModelMock.mockClear();
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "本地 RAG 只提供了权限规则依据；temp-output 是在你批准工作区读写后由受控 shell runner 创建，命令只作用于工作区内目录。"
+    });
 
     fireEvent.change(composerInput as HTMLTextAreaElement, {
       target: { value: "continue" }
@@ -73,10 +90,17 @@ describe("App continuation flow", () => {
       expect(within(permissionSection as HTMLElement).queryByRole("button", { name: APPROVE_PERMISSION_NAME })).not.toBeInTheDocument();
     });
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/04-permission-safety-shell\.md|temp-output|Local RAG handoff temp-output creation/i).length
-      ).toBeGreaterThan(0);
+      expect(screen.getAllByText("RAG 交接创建结果说明").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/本地 RAG 只提供了权限规则依据/).length).toBeGreaterThan(0);
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^rag-local-shell-create-temp-output-explanation-/),
+      message: expect.stringContaining("本地 RAG 只提供规则依据和交接计划")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
+    }));
+    expect(screen.queryByText(/Workspace write shell command completed successfully/)).not.toBeInTheDocument();
   });
 
   it("continues from the latest local RAG shell handoff preview without repeating the full request", async () => {
