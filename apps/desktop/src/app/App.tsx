@@ -842,6 +842,7 @@ type ExplainableReadonlyResultKind =
   | "npc-local-project-showcase-publish-preview"
   | "npc-local-project-showcase-git-confirmation-preview"
   | "npc-local-shell-plan-preview"
+  | "workspace-project-status"
   | "mcp-local-plugin-scan"
   | "mcp-local-plugin-inspect"
   | "mcp-local-plugin-start-preview"
@@ -866,6 +867,7 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "npc-local-project-showcase-publish-preview"
     || kind === "npc-local-project-showcase-git-confirmation-preview"
     || kind === "npc-local-shell-plan-preview"
+    || kind === "workspace-project-status"
     || kind === "mcp-local-plugin-scan"
     || kind === "mcp-local-plugin-inspect"
     || kind === "mcp-local-plugin-start-preview"
@@ -974,6 +976,10 @@ function getReadonlyOverviewExplanationTitle(
     return "NPC 协作预览说明";
   }
 
+  if (executionKind === "workspace-project-status") {
+    return "本地项目状态说明";
+  }
+
   if (executionKind === "mcp-local-plugin-start-preview") {
     return "MCP 插件启动预览说明";
   }
@@ -1044,27 +1050,29 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                       ? "重点解释 NPC Shell 计划预览、匹配 Skill、命令意图、权限等级、回退/审计边界，以及为什么本轮没有执行命令。"
                       : payload.executionKind === "npc-local-collaboration-preview"
                         ? "重点解释 NPC 协作预览当前可用能力、已启用 Skills、本地文档依据、适合的下一步，以及哪些动作仍需要审批。"
-                        : payload.executionKind === "mcp-local-plugin-start-preview"
-                          ? "重点解释这个 MCP 插件启动预览说明了什么、为什么只是预览、缺少什么启动器或配置、继续启动前必须经过哪些权限边界。"
-                          : payload.executionKind === "mcp-local-plugin-inspect"
-                            ? "重点解释匹配到的 MCP 插件用途、激活方式、工具/Skill 暴露情况、配置边界和下一步安全验证建议。"
-                            : payload.executionKind === "mcp-local-plugin-scan"
-                              ? "重点解释扫描到的本地 MCP 插件生态、插件入口、激活方式线索、可用工具边界和下一步安全验证建议。"
-                              : payload.executionKind === "network-search-guidance"
-                                ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
-                                : payload.executionKind === "skills-local-enabled-rag-doc-search"
-                                  ? "重点根据已匹配 Skill 和本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
-                                  : payload.executionKind === "skills-local-inspect"
-                                    ? "重点解释这个 Skill 的用途、启用状态、适合任务、内容预览和后续使用边界。"
-                                    : payload.executionKind === "skills-local-scan"
-                                      ? "重点解释当前扫描到的本地 Skills 生态、已启用项、可用入口和下一步安全使用建议。"
-                                      : payload.executionKind === "skills-local-enabled-match"
-                                        ? "重点解释推荐哪个已启用 Skill、为什么匹配、可做什么、不能越过哪些权限边界。"
-                                        : payload.executionKind === "skills-local-enabled-list"
-                                          ? "重点解释当前已启用 Skills 的用途、注册表位置、适合的下一步，以及哪些动作仍需要审批。"
-                                          : payload.executionKind === "rag-local-doc-search"
-                                            ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
-                                            : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+                        : payload.executionKind === "workspace-project-status"
+                          ? "重点解释匹配到的本地项目、运行命令、PID/状态、预览输出含义、下一步如何安全处理；不要暗示已经启动或停止进程。"
+                          : payload.executionKind === "mcp-local-plugin-start-preview"
+                            ? "重点解释这个 MCP 插件启动预览说明了什么、为什么只是预览、缺少什么启动器或配置、继续启动前必须经过哪些权限边界。"
+                            : payload.executionKind === "mcp-local-plugin-inspect"
+                              ? "重点解释匹配到的 MCP 插件用途、激活方式、工具/Skill 暴露情况、配置边界和下一步安全验证建议。"
+                              : payload.executionKind === "mcp-local-plugin-scan"
+                                ? "重点解释扫描到的本地 MCP 插件生态、插件入口、激活方式线索、可用工具边界和下一步安全验证建议。"
+                                : payload.executionKind === "network-search-guidance"
+                                  ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
+                                  : payload.executionKind === "skills-local-enabled-rag-doc-search"
+                                    ? "重点根据已匹配 Skill 和本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                                    : payload.executionKind === "skills-local-inspect"
+                                      ? "重点解释这个 Skill 的用途、启用状态、适合任务、内容预览和后续使用边界。"
+                                      : payload.executionKind === "skills-local-scan"
+                                        ? "重点解释当前扫描到的本地 Skills 生态、已启用项、可用入口和下一步安全使用建议。"
+                                        : payload.executionKind === "skills-local-enabled-match"
+                                          ? "重点解释推荐哪个已启用 Skill、为什么匹配、可做什么、不能越过哪些权限边界。"
+                                          : payload.executionKind === "skills-local-enabled-list"
+                                            ? "重点解释当前已启用 Skills 的用途、注册表位置、适合的下一步，以及哪些动作仍需要审批。"
+                                            : payload.executionKind === "rag-local-doc-search"
+                                              ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                                              : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [
     "你是 OpenCow 的本地项目说明助手。",

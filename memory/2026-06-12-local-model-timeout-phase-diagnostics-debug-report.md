@@ -153,3 +153,18 @@
 - Regression tests: `apps/desktop/src/app/app.test.tsx`, `apps/desktop/src/app/app.npc-showcase.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.npc-preview.test.ts`, `apps/desktop/src/features/assistant/assistantTaskService.npc-showcase.test.ts`
 - Related: This removes another user-visible fixed-output path in the NPC workflow while preserving the safety gates around real local process, artifact, and git side effects.
 - Status: DONE
+
+## Follow-up: readonly workspace project status uses local-model explanation
+
+- Symptom: Explicit local project lifecycle status requests still surfaced deterministic fields such as `Matched local project status`, `Command`, `PID`, `Status`, and `Preview` directly in the main conversation.
+- Root cause: `workspace-project-status` is a readonly information task, but it was not included in the App-level readonly explanation hook.
+- Fix: Added `workspace-project-status` to [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The selected local model now explains the matched project, run command, PID/status, expected URL, preview output, and safe next step from readonly status facts.
+- Safety boundary: `workspace-project-run` and `workspace-project-stop` remain outside this hook and still use the existing permission-backed lifecycle chain.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.project-run.test.tsx` passed with 3 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-status.test.ts src/features/assistant/assistantTaskService.project-run.test.ts src/features/assistant/assistantTaskService.project-stop.test.ts` passed with 6 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.project-run.test.tsx src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx` passed with 170 tests.
+  - `npm run verify:all` passed, including 588 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression tests: `apps/desktop/src/app/app.project-run.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.project-status.test.ts`
+- Related: This reduces fixed lifecycle readbacks while preserving permission gates around starting and stopping local processes.
+- Status: DONE

@@ -1,20 +1,23 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const {
   loadOllamaOverviewMock,
+  chatWithOllamaModelMock,
   runWorkspaceProjectMock,
   getWorkspaceProjectStatusMock,
   stopWorkspaceProjectMock
 } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
+  chatWithOllamaModelMock: vi.fn(),
   runWorkspaceProjectMock: vi.fn(),
   getWorkspaceProjectStatusMock: vi.fn(),
   stopWorkspaceProjectMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
 
@@ -41,6 +44,14 @@ async function waitForSelectedLocalModel() {
 }
 
 describe("App project run flow", () => {
+  beforeEach(() => {
+    loadOllamaOverviewMock.mockReset();
+    chatWithOllamaModelMock.mockReset();
+    runWorkspaceProjectMock.mockReset();
+    getWorkspaceProjectStatusMock.mockReset();
+    stopWorkspaceProjectMock.mockReset();
+  });
+
   it("runs a matched local project through permission approval and final assistant output", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
@@ -112,6 +123,10 @@ describe("App project run flow", () => {
       stdout_preview: "pid:4242",
       summary: "Workspace project status found an active local process handle for the matched project."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message: "desktop 项目的本地运行状态是 running，当前记录的 PID 是 4242，命令是 npm run dev，预期地址是 http://127.0.0.1:1420；这里只是读取状态，没有启动或停止进程。"
+    });
 
     const { container } = render(<App />);
 
@@ -128,12 +143,19 @@ describe("App project run flow", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
+    const conversation = screen.getByRole("region", { name: "会话" });
+
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Matched local project status|apps\/desktop|npm run dev|http:\/\/127\.0\.0\.1:1420|4242|running/i)
-          .length
-      ).toBeGreaterThan(0);
+      expect(within(conversation).getByText("本地项目状态说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/没有启动或停止进程/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("PID: 4242")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("不要暗示已经启动或停止进程")
+    }));
   });
 
   it("continues from matched local project stop permission approval into the final stopped result", async () => {
