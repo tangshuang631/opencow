@@ -332,11 +332,11 @@ function getVisibleLocalModelChatFailureActionLabel(detail: string, fallbackActi
   const normalizedDetail = detail.toLowerCase();
 
   if (isNpcConfigModelFailure(detail) && normalizedDetail.includes("streamphase=waiting-first-chunk")) {
-    return "NPC 配置生成卡在首轮输出前：配置还没有写入。请先缩短角色需求、拆分工具权限，或切换更快的 Ollama 模型后重试。";
+    return "NPC 配置生成卡在首轮输出前：配置还没有写入。请先把 NPC 职责缩小成一两句话，或改问“先给我课程助手 NPC 的只读草案”，确认方向后再保存；也可以切换更快的 Ollama 模型后重试。";
   }
 
   if (isNpcConfigModelFailure(detail) && normalizedDetail.includes("streamphase=streaming")) {
-    return "NPC 配置生成中途超时：配置还没有写入。请缩小 NPC 职责范围、要求分阶段生成，或切换更快模型后重试。";
+    return "NPC 配置生成中途超时：配置还没有写入。请先要求本地模型分阶段生成更短的 NPC JSON，确认角色、能力和权限边界后再保存。";
   }
 
   if (normalizedDetail.includes("streamphase=waiting-first-chunk")) {

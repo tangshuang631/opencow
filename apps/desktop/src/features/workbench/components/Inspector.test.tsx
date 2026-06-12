@@ -893,4 +893,35 @@ describe("Inspector", () => {
     expect(screen.getByText(/timeout=480s/i)).toBeInTheDocument();
     expect(screen.getByText(/inputLength=7/i)).toBeInTheDocument();
   });
+
+  it("points NPC config first-token failures toward a readonly draft before retrying writes", () => {
+    const failed = createTaskExecutionFailedState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "你能帮我创建一个课程助手npc吗",
+          executionKind: "npc-config-write",
+          executionTitle: "大模型生成并保存 NPC 配置",
+          executionAuditSummary: "Local assistant planned an LLM-generated NPC configuration write.",
+          executionAuditDetail: "LLM-generated NPC configuration write task: 你能帮我创建一个课程助手npc吗"
+        })
+      ),
+      {
+        summary: "NPC 配置生成失败",
+        detail:
+          "Local task exceeded the maximum execution time of 480 seconds. Local model chat diagnostics: executionKind=npc-config-write; model=qwen3.6:35b; timeout=480s; inputLength=15; streamPhase=waiting-first-chunk; elapsedMs=480000; firstChunkAfterMs=none; longAnswerProtection=enabled.",
+        actionLabel: "NPC 配置生成卡在首轮输出前：配置尚未写入。请先把 NPC 职责缩小成一两句话，或改问“先给我课程助手 NPC 的只读草案”，确认方向后再保存；也可以切换更快的本地模型后重试。",
+        source: "local_model_chat_runner"
+      }
+    );
+
+    renderInspector(failed);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
+
+    expect(screen.getByText("摘要：NPC 配置生成失败")).toBeInTheDocument();
+    expect(screen.getByText(/建议：NPC 配置生成卡在首轮输出前/)).toBeInTheDocument();
+    expect(screen.getAllByText(/只读草案/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/配置还没有写入/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/结果映射/)).not.toBeInTheDocument();
+  });
 });

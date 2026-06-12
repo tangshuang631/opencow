@@ -273,3 +273,16 @@
 - Regression tests: `apps/desktop/src/features/workbench/components/MainConversation.test.tsx`, `apps/desktop/src/features/workbench/components/Inspector.test.tsx`, `apps/desktop/src/features/assistant/assistantTaskService.npc-preview.test.ts`
 - Related: This does not make a slow local model produce tokens faster, but it removes the hidden-stall UI gap and gives users a safe readonly draft route before attempting the permission-backed NPC config write again.
 - Status: DONE
+
+## Follow-up: NPC timeout recovery copy is consistent between main error and task details
+
+- Symptom: After the NPC config first-token timeout recovery was improved, the main conversation could suggest asking for a readonly NPC draft before retrying the write, but the right-side task details still used the older "shorten/switch model/retry" wording. That made the recovery path feel inconsistent and could still push users back into the same permission-backed write attempt.
+- Root cause: [apps/desktop/src/features/workbench/components/Inspector.tsx](E:/2026/opencow/apps/desktop/src/features/workbench/components/Inspector.tsx) has a source-aware local-model failure action override for expanded task details. It did not share the newer NPC timeout wording from [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx).
+- Fix: Updated the Inspector local-model failure action labels for `executionKind=npc-config-write` waiting-first-chunk and streaming timeout phases so they match the safer recovery path: no config was written, first ask for a readonly draft or a shorter staged NPC JSON, then save only after direction and permissions are clear.
+- Safety boundary: This is presentation-only. It does not retry automatically, does not call the model again, does not grant permission, and does not write NPC config.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 36 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/assistant/assistantTaskService.npc-preview.test.ts --pool forks --poolOptions.forks.singleFork` passed with 72 tests.
+- Regression test: `apps/desktop/src/features/workbench/components/Inspector.test.tsx`
+- Related: This reduces confusing duplicate-recovery wording around the same local-model timeout event while preserving audit detail and the readonly draft route.
+- Status: DONE
