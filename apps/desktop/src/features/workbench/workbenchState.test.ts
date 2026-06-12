@@ -358,10 +358,10 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.confirmation.pending).toBeNull();
     expect(updated.audit.summary).toBe("用户已取消高风险操作");
     expect(updated.audit.lastEvent.source).toBe("permission_confirmation_cancelled");
-    expect(updated.output.summary).toContain("Cancellation details are kept in audit and expanded details.");
+    expect(updated.output.summary).toContain("取消细节已保留在审计和展开详情中。");
     expect(updated.output.summary).not.toContain("Recovery visibility:");
-    expect(updated.audit.lastEvent.detail).toContain("Recovery visibility: rollback preview is available");
-    expect(detail).toContain("Recovery visibility: rollback preview is available");
+    expect(updated.audit.lastEvent.detail).toContain("恢复可见性：");
+    expect(detail).toContain("恢复可见性：");
     expect(updated.rollback.entries[0]?.label).toBe("已取消操作");
   });
 
@@ -1766,11 +1766,11 @@ describe("capability toggle cancellation", () => {
     expect(updated.rollback.entries[0]?.id).toContain("capability-toggle-cancelled");
     expect(updated.output.summary).toContain("Capability change was cancelled");
     expect(updated.output.summary).toContain("Current capability state was preserved");
-    expect(updated.audit.lastEvent.detail).toContain("Capability change was cancelled");
-    expect(updated.audit.lastEvent.detail).toContain("Current capability state was preserved");
-    expect(updated.audit.lastEvent.detail).toContain("Cancelled request:");
-    expect(updated.audit.lastEvent.detail).toContain("Feature: search");
-    expect(updated.audit.lastEvent.detail).toContain("Requested enabled: true");
+    expect(updated.audit.lastEvent.detail).toContain("能力变更已取消");
+    expect(updated.audit.lastEvent.detail).toContain("当前能力状态保持不变");
+    expect(updated.audit.lastEvent.detail).toContain("已取消请求：");
+    expect(updated.audit.lastEvent.detail).toContain("能力：search");
+    expect(updated.audit.lastEvent.detail).toContain("请求启用：true");
   });
 
   it("keeps remote api disabled when enabling remote api is cancelled", () => {
@@ -1795,11 +1795,11 @@ describe("capability toggle cancellation", () => {
     expect(updated.rollback.entries[0]?.id).toContain("capability-toggle-cancelled");
     expect(updated.output.summary).toContain("Capability change was cancelled");
     expect(updated.output.summary).toContain("Current capability state was preserved");
-    expect(updated.audit.lastEvent.detail).toContain("Capability change was cancelled");
-    expect(updated.audit.lastEvent.detail).toContain("Current capability state was preserved");
-    expect(updated.audit.lastEvent.detail).toContain("Cancelled request:");
-    expect(updated.audit.lastEvent.detail).toContain("Feature: remote-api");
-    expect(updated.audit.lastEvent.detail).toContain("Requested enabled: true");
+    expect(updated.audit.lastEvent.detail).toContain("能力变更已取消");
+    expect(updated.audit.lastEvent.detail).toContain("当前能力状态保持不变");
+    expect(updated.audit.lastEvent.detail).toContain("已取消请求：");
+    expect(updated.audit.lastEvent.detail).toContain("能力：remote-api");
+    expect(updated.audit.lastEvent.detail).toContain("请求启用：true");
   });
 
   it("generates unique trace ids across repeated capability cancellations", () => {
@@ -1847,10 +1847,10 @@ describe("capability toggle cancellation", () => {
 
     expect(updated.output.summary).toContain("Capability change was cancelled");
     expect(updated.output.summary).toContain("Current capability state was preserved");
-    expect(updated.output.summary).toContain("Cancellation details are kept in audit and expanded details.");
+    expect(updated.output.summary).toContain("取消细节已保留在审计和展开详情中。");
     expect(updated.output.summary).not.toContain("Recovery visibility:");
-    expect(updated.audit.lastEvent.detail).toContain("Recovery visibility: rollback preview is available");
-    expect(detail).toContain("Recovery visibility: rollback preview is available");
+    expect(updated.audit.lastEvent.detail).toContain("恢复可见性：");
+    expect(detail).toContain("恢复可见性：");
   });
 });
 
@@ -1883,7 +1883,7 @@ describe("duplicate pending approval trace output", () => {
     expect(detail).toContain("Queued execution title: Create temp-output directory");
     expect(detail).toContain("Queued execution audit detail: Workspace-write shell command task: create temp-output directory");
     expect(detail).toContain("Queued message: create a temp-output folder for this workspace");
-    expect(detail).toContain("Approval type: permission");
+    expect(detail).toContain("审批类型: permission");
     expect(skipped.output.summary).toContain("已有审批正在等待处理，已跳过这次重复请求。");
     expect(skipped.output.summary).not.toContain("Queued execution kind:");
     expect(skipped.output.summary).not.toContain("Queued execution audit detail:");
@@ -1893,8 +1893,8 @@ describe("duplicate pending approval trace output", () => {
     expect(skipped.audit.summary).toBe("重复审批请求已跳过");
     expect(skipped.rollback.entries[0]?.label).toBe("重复审批请求已跳过");
     expect(skipped.conversation.entries[0]?.rollbackTargetId).toBe(skipped.rollback.entries[0]?.id);
-    expect(skipped.audit.lastEvent.detail).toContain("Recovery visibility: rollback preview is available");
-    expect(detail).toContain("Recovery visibility: rollback preview is available");
+    expect(skipped.audit.lastEvent.detail).toContain("恢复可见性：");
+    expect(detail).toContain("恢复可见性：");
   });
 
   it("keeps queued execution trace when skipping a duplicate pending dangerous confirmation", () => {
@@ -1927,7 +1927,7 @@ describe("duplicate pending approval trace output", () => {
     expect(detail).toContain("Queued execution title: Remove temp-output directory");
     expect(detail).toContain("Queued execution audit detail: Controlled-full shell command task: remove temp-output directory");
     expect(detail).toContain("Queued message: remove the temp-output folder from this workspace");
-    expect(detail).toContain("Approval type: dangerous-confirmation");
+    expect(detail).toContain("审批类型: dangerous-confirmation");
     expect(skipped.output.summary).toContain("已有审批正在等待处理，已跳过这次重复请求。");
     expect(skipped.output.summary).not.toContain("Queued execution kind:");
     expect(skipped.output.summary).not.toContain("Queued execution audit detail:");
@@ -1958,7 +1958,7 @@ describe("duplicate pending approval trace output", () => {
     expect(detail).toContain("Requested enabled: true");
     expect(detail).toContain("Provider/configuration: Tavily");
     expect(detail).toContain("Queued message: web search latest docs");
-    expect(detail).toContain("Approval type: capability");
+    expect(detail).toContain("审批类型: capability");
     expect(skipped.output.summary).toContain("已有审批正在等待处理，已跳过这次重复请求。");
     expect(skipped.output.summary).not.toContain("Capability: search");
     expect(skipped.output.summary).not.toContain("Provider/configuration:");
@@ -2005,15 +2005,15 @@ describe("permission cancellation recovery output", () => {
 
     const updated = cancelPendingConfirmationState(pending);
 
-    expect(updated.output.summary).toContain("No command was executed");
-    expect(updated.output.summary).toContain("rewrite the request");
-    expect(updated.output.summary).toContain("preview the safe step again");
-    expect(updated.output.summary).toContain("Cancellation details are kept in audit and expanded details.");
+    expect(updated.output.summary).toContain("未执行任何命令");
+    expect(updated.output.summary).toContain("改写请求");
+    expect(updated.output.summary).toContain("重新预览安全步骤");
+    expect(updated.output.summary).toContain("取消细节已保留在审计和展开详情中。");
     expect(updated.output.summary).not.toContain("Recovery visibility:");
-    expect(updated.audit.lastEvent.detail).toContain("No command was executed");
+    expect(updated.audit.lastEvent.detail).toContain("未执行任何命令");
     expect(updated.audit.lastEvent.detail).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(updated.audit.lastEvent.detail).toContain("Required permission: controlled-full");
-    expect(updated.audit.lastEvent.detail).toContain("rewrite the request");
+    expect(updated.audit.lastEvent.detail).toContain("所需权限：controlled-full");
+    expect(updated.audit.lastEvent.detail).toContain("改写请求");
   });
 
   it("keeps queued execution trace when cancelling a dangerous confirmation", () => {
@@ -2057,17 +2057,17 @@ describe("permission cancellation recovery output", () => {
     const updated = cancelPermissionModeChangeState(requested);
     const detail = updated.conversation.entries[0]?.detailLines?.join("\n") ?? "";
 
-    expect(updated.output.summary).toContain("Permission mode was not changed");
-    expect(updated.output.summary).toContain("send a narrower request");
-    expect(updated.output.summary).toContain("ask again with explicit permission intent");
-    expect(updated.audit.lastEvent.detail).toContain("Permission mode was not changed");
-    expect(updated.audit.lastEvent.detail).toContain("Target permission: workspace-write");
+    expect(updated.output.summary).toContain("权限模式没有改变");
+    expect(updated.output.summary).toContain("发送更窄的请求");
+    expect(updated.output.summary).toContain("再次明确申请提权");
+    expect(updated.audit.lastEvent.detail).toContain("权限模式没有改变");
+    expect(updated.audit.lastEvent.detail).toContain("目标权限：workspace-write");
     expect(updated.audit.lastEvent.detail).toContain("Workspace write permission is required before creating temp-output.");
-    expect(updated.audit.lastEvent.detail).toContain("ask again with explicit permission intent");
-    expect(updated.output.summary).toContain("Cancellation details are kept in audit and expanded details.");
+    expect(updated.audit.lastEvent.detail).toContain("再次明确申请提权");
+    expect(updated.output.summary).toContain("取消细节已保留在审计和展开详情中。");
     expect(updated.output.summary).not.toContain("Recovery visibility:");
-    expect(updated.audit.lastEvent.detail).toContain("Recovery visibility: rollback preview is available");
-    expect(detail).toContain("Recovery visibility: rollback preview is available");
+    expect(updated.audit.lastEvent.detail).toContain("恢复可见性：");
+    expect(detail).toContain("恢复可见性：");
   });
 
   it("keeps queued execution trace when cancelling a permission upgrade", () => {

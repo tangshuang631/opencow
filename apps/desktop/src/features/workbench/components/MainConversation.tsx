@@ -128,9 +128,12 @@ function getVisibleSummary(entry: WorkbenchState["conversation"]["entries"][numb
 }
 
 function getDuplicatePendingApprovalType(entry: WorkbenchState["conversation"]["entries"][number]) {
-  return entry.detailLines
-    ?.find((line) => line.startsWith("Approval type: "))
-    ?.replace("Approval type: ", "");
+  const approvalTypeLine = entry.detailLines
+    ?.find((line) => line.startsWith("Approval type: ") || line.startsWith("审批类型: "));
+
+  return approvalTypeLine
+    ?.replace("Approval type: ", "")
+    .replace("审批类型: ", "");
 }
 
 function getVisibleDuplicateLocalTaskSkipSummary(entry: WorkbenchState["conversation"]["entries"][number]) {

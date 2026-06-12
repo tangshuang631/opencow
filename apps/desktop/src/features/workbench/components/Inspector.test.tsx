@@ -250,7 +250,7 @@ describe("Inspector", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开配置与记录" }));
     fireEvent.click(screen.getByRole("button", { name: "展开日志细节" }));
 
-    expect(screen.getByText(/Recovery visibility: rollback preview is available/i)).toBeInTheDocument();
+    expect(screen.getByText(/恢复可见性：本次已取消的能力变更可以预览回退/)).toBeInTheDocument();
   });
 
   it("keeps local task failure output concise by default while logs remain traceable", () => {

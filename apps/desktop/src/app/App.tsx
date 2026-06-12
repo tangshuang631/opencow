@@ -396,6 +396,34 @@ function isLocalModelContextOverflowFailure(
     || normalizedDetail.includes("input too long");
 }
 
+function isLocalModelTimeoutFailure(
+  task: WorkbenchState["tasks"]["items"][number] | undefined
+): task is WorkbenchState["tasks"]["items"][number] {
+  if (!task?.lastFailureDetail) {
+    return false;
+  }
+
+  const normalizedDetail = task.lastFailureDetail.toLowerCase();
+
+  return normalizedDetail.includes("streamphase=waiting-first-chunk")
+    || normalizedDetail.includes("streamphase=streaming")
+    || normalizedDetail.includes("maximum execution time")
+    || normalizedDetail.includes("timed out");
+}
+
+function looksLikeNpcConfigRequest(task: WorkbenchState["tasks"]["items"][number]): boolean {
+  const normalizedRequest = `${task.summary}\n${task.executionMessage ?? ""}\n${task.executionAuditDetail ?? ""}`.toLowerCase();
+
+  return /\bnpc\b/i.test(normalizedRequest)
+    && (
+      /配置|创建|设定|设置|帮我/.test(normalizedRequest)
+      || /\bconfig(?:ure)?\b/i.test(normalizedRequest)
+      || /\bcreate\b/i.test(normalizedRequest)
+      || /\bsetup\b/i.test(normalizedRequest)
+      || /\bset up\b/i.test(normalizedRequest)
+    );
+}
+
 function createLocalModelContextOverflowRagRetryState(
   state: WorkbenchState,
   failedTask: WorkbenchState["tasks"]["items"][number]
@@ -418,21 +446,53 @@ function createLocalModelContextOverflowRagRetryState(
   });
 }
 
+function createNpcReadonlyDraftRecoveryState(
+  state: WorkbenchState,
+  taskId: string | undefined,
+  npcReadonlyDraftRetryMessage: string
+): WorkbenchState {
+  const failedTask = state.tasks.items.find((item) =>
+    taskId ? item.id === taskId && item.status === "failed" : item.status === "failed"
+  );
+  const assistantPlan = assertValidAssistantTaskPlanResult(
+    planAssistantTask(npcReadonlyDraftRetryMessage, "readonly")
+  );
+
+  if (assistantPlan.kind !== "npc-local-collaboration-preview") {
+    return createAssistantPlanningFailedState(state, {
+      message: npcReadonlyDraftRetryMessage,
+      detail:
+        `NPC timeout recovery must return npc-local-collaboration-preview. Planner returned ${assistantPlan.kind}, so the failed NPC request was not retried as a write.`,
+      actionLabel: "请先修复 NPC 只读草案恢复路由，再重试生成或保存配置。",
+      source: "local_task_retry_npc_config_recovery_planner"
+    });
+  }
+
+  return createUserTaskSubmittedState(state, {
+    message: npcReadonlyDraftRetryMessage,
+    executionKind: assistantPlan.kind,
+    executionTitle: assistantPlan.title,
+    executionAuditSummary: assistantPlan.auditSummary,
+    executionAuditDetail: [
+      assistantPlan.auditDetail,
+      "Recovered from an NPC local-model timeout by switching to a readonly NPC draft preview before any config write retry.",
+      failedTask?.lastFailureDetail ? `Previous failure: ${failedTask.lastFailureDetail}` : null
+    ].filter((line): line is string => line !== null).join(" ")
+  });
+}
+
 function getNpcConfigReadonlyDraftRetryMessage(
   task: WorkbenchState["tasks"]["items"][number] | undefined
 ): string | null {
-  if (task?.executionKind !== "npc-config-write" || !task.lastFailureDetail) {
+  if (!task?.lastFailureDetail) {
     return null;
   }
 
-  const normalizedDetail = task.lastFailureDetail.toLowerCase();
-  const isTimeoutRecovery =
-    normalizedDetail.includes("streamphase=waiting-first-chunk")
-    || normalizedDetail.includes("streamphase=streaming")
-    || normalizedDetail.includes("maximum execution time")
-    || normalizedDetail.includes("timed out");
+  const isNpcConfigTimeout =
+    task.executionKind === "npc-config-write"
+    || (task.executionKind === "local-model-chat" && looksLikeNpcConfigRequest(task));
 
-  if (!isTimeoutRecovery) {
+  if (!isNpcConfigTimeout || !isLocalModelTimeoutFailure(task)) {
     return null;
   }
 
@@ -2514,6 +2574,19 @@ export function App() {
     );
 
     if (failedTaskSnapshot?.executionKind === "local-model-chat") {
+      const npcReadonlyDraftRetryMessage = getNpcConfigReadonlyDraftRetryMessage(failedTaskSnapshot);
+
+      if (npcReadonlyDraftRetryMessage) {
+        startTransition(() => {
+          setState((current) => createNpcReadonlyDraftRecoveryState(
+            current,
+            taskId,
+            npcReadonlyDraftRetryMessage
+          ));
+        });
+        return;
+      }
+
       if (isLocalModelContextOverflowFailure(failedTaskSnapshot)) {
         startTransition(() => {
           setState((current) => {
@@ -2545,31 +2618,7 @@ export function App() {
           const npcReadonlyDraftRetryMessage = getNpcConfigReadonlyDraftRetryMessage(failedTask);
 
           if (npcReadonlyDraftRetryMessage) {
-            const assistantPlan = assertValidAssistantTaskPlanResult(
-              planAssistantTask(npcReadonlyDraftRetryMessage, "readonly")
-            );
-
-            if (assistantPlan.kind !== "npc-local-collaboration-preview") {
-              return createAssistantPlanningFailedState(current, {
-                message: npcReadonlyDraftRetryMessage,
-                detail:
-                  `NPC config timeout recovery must return npc-local-collaboration-preview. Planner returned ${assistantPlan.kind}, so the failed config write was not retried.`,
-                actionLabel: "请先修复 NPC 只读草案恢复路由，再重试生成配置。",
-                source: "local_task_retry_npc_config_recovery_planner"
-              });
-            }
-
-            return createUserTaskSubmittedState(current, {
-              message: npcReadonlyDraftRetryMessage,
-              executionKind: assistantPlan.kind,
-              executionTitle: assistantPlan.title,
-              executionAuditSummary: assistantPlan.auditSummary,
-              executionAuditDetail: [
-                assistantPlan.auditDetail,
-                "Recovered from an NPC config timeout by switching to a readonly NPC draft preview before any config write retry.",
-                failedTask?.lastFailureDetail ? `Previous failure: ${failedTask.lastFailureDetail}` : null
-              ].filter((line): line is string => line !== null).join(" ")
-            });
+            return createNpcReadonlyDraftRecoveryState(current, taskId, npcReadonlyDraftRetryMessage);
           }
 
           return createTaskExecutionRetriedState(current, taskId);

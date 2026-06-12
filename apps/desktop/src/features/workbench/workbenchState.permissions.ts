@@ -17,22 +17,22 @@ type CapabilityToggleRequest = {
 };
 
 const DANGEROUS_CONFIRMATION_CANCELLED_SUMMARY =
-  "No command was executed. You can rewrite the request, ask for a readonly explanation, or preview the safe step again before approving any mutation.";
+  "未执行任何命令。你可以改写请求、先要一个只读说明，或重新预览安全步骤后再决定是否批准变更。";
 
 const PERMISSION_UPGRADE_CANCELLED_SUMMARY =
-  "Permission mode was not changed. You can send a narrower request, ask for a readonly preview, or ask again with explicit permission intent.";
+  "权限模式没有改变。你可以发送更窄的请求、先要一个只读预览，或在确认意图后再次明确申请提权。";
 
 const DANGEROUS_CONFIRMATION_CANCELLED_RECOVERY =
-  "Recovery visibility: rollback preview is available for this cancelled confirmation; audit trail keeps the cancelled request, command preview, required permission, and queued execution trace.";
+  "恢复可见性：本次已取消的高风险确认可以预览回退；审计记录保留已取消请求、命令预览、所需权限和排队执行轨迹。";
 
 const PERMISSION_UPGRADE_CANCELLED_RECOVERY =
-  "Recovery visibility: rollback preview is available for this cancelled permission request; audit trail keeps the target permission, risk summary, and queued execution trace.";
+  "恢复可见性：本次已取消的提权请求可以预览回退；审计记录保留目标权限、风险摘要和排队执行轨迹。";
 
 const CAPABILITY_TOGGLE_CANCELLED_RECOVERY =
-  "Recovery visibility: rollback preview is available for this cancelled capability change; audit trail keeps the capability, requested state, provider/configuration context, and queued execution trace.";
+  "恢复可见性：本次已取消的能力变更可以预览回退；审计记录保留能力类型、请求状态、提供方/配置上下文和排队执行轨迹。";
 
 const CANCELLATION_DETAILS_COLLAPSED_SUMMARY =
-  "Cancellation details are kept in audit and expanded details.";
+  "取消细节已保留在审计和展开详情中。";
 
 const COMMAND_POLICY_BLOCKED_VISIBLE_SUMMARY =
   "权限策略已拦截这次操作，未执行任何命令。详细原因已保留在日志和展开详情中。";
@@ -251,8 +251,8 @@ export function createDuplicatePendingApprovalSkippedState(
       : [];
   const traceLines = [...capabilityTraceLines, ...queuedTraceLines];
   const recoveryVisibility =
-    `Recovery visibility: rollback preview is available for this duplicate pending approval skip; rollback snapshot id: ${duplicateId}. ` +
-    "Recovery visibility: audit trail keeps the skipped request and queued approval trace.";
+    `恢复可见性：本次重复审批跳过可以预览回退；回退快照 id: ${duplicateId}。` +
+    "恢复可见性：审计记录保留被跳过的请求和排队审批轨迹。";
   const tracedDetail = appendQueuedExecutionTrace(`${detail} ${recoveryVisibility}`, traceLines);
   const visibleTitle = "重复审批请求已跳过";
   const visibleSummary = "已有审批正在等待处理，已跳过这次重复请求。";
@@ -275,8 +275,8 @@ export function createDuplicatePendingApprovalSkippedState(
           detailLines: [
             "Module: permission",
             "Source: duplicate_pending_approval_skipped",
-            `Approval type: ${payload.approvalType}`,
-            "Suggestion: approve or cancel the existing pending request before submitting the same request again.",
+            `审批类型: ${payload.approvalType}`,
+            "建议: 请先批准或取消当前等待中的审批，再提交同一个请求。",
             recoveryVisibility,
             ...traceLines
           ]
@@ -662,7 +662,7 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
           lastEvent: {
             module: "permission",
             detail: appendQueuedExecutionTrace(
-              `Capability change was cancelled. Current capability state was preserved. ${CAPABILITY_TOGGLE_CANCELLED_RECOVERY} Cancelled request: ${pending.summary} Feature: ${pending.requestedFeature}. Requested enabled: ${pending.requestedEnabled ?? false}.`,
+              `能力变更已取消，当前能力状态保持不变。${CAPABILITY_TOGGLE_CANCELLED_RECOVERY} 已取消请求：${pending.summary}。能力：${pending.requestedFeature}。请求启用：${pending.requestedEnabled ?? false}。`,
               queuedTraceLines
             ),
             timestamp: "已取消",
@@ -688,7 +688,7 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
         pending: null
       },
       output: {
-        title: "Permission action cancelled",
+        title: "已取消权限操作",
         summary: `${DANGEROUS_CONFIRMATION_CANCELLED_SUMMARY} ${CANCELLATION_DETAILS_COLLAPSED_SUMMARY}`
       },
       conversation: {
@@ -707,7 +707,7 @@ export function cancelPendingConfirmationState(state: WorkbenchState): Workbench
           lastEvent: {
             module: "permission",
             detail: appendQueuedExecutionTrace(
-            `${DANGEROUS_CONFIRMATION_CANCELLED_SUMMARY} ${DANGEROUS_CONFIRMATION_CANCELLED_RECOVERY} Cancelled request: ${pending.summary} Command preview: ${pending.commandPreview}. Required permission: ${pending.requiredMode}.`,
+            `${DANGEROUS_CONFIRMATION_CANCELLED_SUMMARY} ${DANGEROUS_CONFIRMATION_CANCELLED_RECOVERY} 已取消请求：${pending.summary}。命令预览：${pending.commandPreview}。所需权限：${pending.requiredMode}。`,
             queuedTraceLines
           ),
           timestamp: "已取消",
@@ -844,7 +844,7 @@ export function cancelPermissionModeChangeState(state: WorkbenchState): Workbenc
         pendingModeChange: null
       },
       output: {
-        title: "Permission upgrade cancelled",
+        title: "已取消权限升级",
         summary: `${PERMISSION_UPGRADE_CANCELLED_SUMMARY} ${CANCELLATION_DETAILS_COLLAPSED_SUMMARY}`
       },
       conversation: {
@@ -863,7 +863,7 @@ export function cancelPermissionModeChangeState(state: WorkbenchState): Workbenc
           lastEvent: {
             module: "permission",
             detail: appendQueuedExecutionTrace(
-            `${PERMISSION_UPGRADE_CANCELLED_SUMMARY} ${PERMISSION_UPGRADE_CANCELLED_RECOVERY} Cancelled request: ${pendingModeChange.reason} Target permission: ${pendingModeChange.targetMode}. Risk summary: ${pendingModeChange.riskSummary}.`,
+            `${PERMISSION_UPGRADE_CANCELLED_SUMMARY} ${PERMISSION_UPGRADE_CANCELLED_RECOVERY} 已取消请求：${pendingModeChange.reason}。目标权限：${pendingModeChange.targetMode}。风险摘要：${pendingModeChange.riskSummary}。`,
             queuedTraceLines
           ),
           timestamp: "已取消",
