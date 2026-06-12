@@ -145,6 +145,60 @@ describe("App chat fallback", () => {
     });
   });
 
+  it("does not cancel an in-flight local-model chat when preflight refresh updates the selected model", async () => {
+    loadOllamaOverviewMock
+      .mockResolvedValueOnce({
+        reachable: true,
+        endpoint: "http://127.0.0.1:11434",
+        selectedModel: "",
+        diagnostic: "",
+        models: []
+      })
+      .mockResolvedValueOnce({
+        reachable: true,
+        endpoint: "http://127.0.0.1:11434",
+        selectedModel: "gemma:26b",
+        diagnostic: "",
+        models: [{ name: "gemma:26b", sizeLabel: "17 GB" }]
+      });
+    let resolveChat: (value: { model: string; message: string }) => void = () => {};
+    const chatPromise = new Promise<{ model: string; message: string }>((resolve) => {
+      resolveChat = resolve;
+    });
+    chatWithOllamaModelMock.mockReturnValue(chatPromise);
+
+    render(<App />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "解释一下享元模式" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(2);
+      expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
+    });
+
+    const request = chatWithOllamaModelMock.mock.calls[0]?.[0] as { signal?: AbortSignal; model?: string };
+
+    expect(request.model).toBe("gemma:26b");
+    expect(request.signal?.aborted).toBe(false);
+    expect(cancelOllamaChatMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveChat({
+        model: "gemma:26b",
+        message: "预检刷新模型状态后，这次回答仍然正常完成。"
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("预检刷新模型状态后，这次回答仍然正常完成。")).toBeInTheDocument();
+    });
+    expect(cancelOllamaChatMock).not.toHaveBeenCalled();
+  });
+
   it("routes capability questions through the selected local model instead of fixed help copy", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,

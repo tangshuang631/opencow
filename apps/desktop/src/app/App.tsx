@@ -1157,6 +1157,10 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => () => {
+    cancelActiveLocalModelRequest();
+  }, []);
+
   useEffect(() => {
     if (!shouldScheduleLocalTaskStart(state) && !shouldRecoverStaleActiveTaskSlot(state)) {
       return;
@@ -1476,7 +1480,6 @@ export function App() {
       window.clearTimeout(finishTimer);
       clearExecutionTimeout();
       clearProgressInterval();
-      cancelActiveLocalModelRequest();
     };
   }, [state.model.activeModel, state.storage.snapshotCount, activeTaskExecutionDependency]);
 
