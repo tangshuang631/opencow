@@ -2051,6 +2051,65 @@ describe("App local task guard", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("passes an abort signal into local assistant execution and aborts it when the user stops the task", async () => {
+    vi.useFakeTimers();
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    planAssistantTaskMock.mockReturnValue({
+      kind: "workspace-overview",
+      title: "Workspace overview",
+      summary: "Inspect the current workspace",
+      auditSummary: "Local assistant planned a workspace overview task.",
+      auditDetail: "Readonly workspace overview task."
+    });
+    executeAssistantTaskMock.mockReturnValueOnce(new Promise(() => {}));
+
+    const { container } = render(<App />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const composerInput = container.querySelector("textarea");
+    const sendButton = container.querySelector("button.send-button");
+
+    expect(composerInput).not.toBeNull();
+    expect(sendButton).not.toBeNull();
+
+    fireEvent.change(composerInput as HTMLTextAreaElement, {
+      target: { value: "inspect the workspace and keep going" }
+    });
+    fireEvent.click(sendButton as HTMLButtonElement);
+
+    await act(async () => {
+      vi.advanceTimersByTime(80);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(120);
+      await Promise.resolve();
+    });
+
+    expect(executeAssistantTaskMock).toHaveBeenCalledTimes(1);
+    const executionContext = executeAssistantTaskMock.mock.calls[0]?.[1] as { signal?: AbortSignal };
+    expect(executionContext.signal).toBeInstanceOf(AbortSignal);
+    expect(executionContext.signal?.aborted).toBe(false);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /停止任务/i })[0] as HTMLButtonElement);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(executionContext.signal?.aborted).toBe(true);
+    expect(screen.getAllByText(/本地任务已停止/i)).not.toHaveLength(0);
+  });
+
   it("ignores a stale task result after the user cancels that task and starts another one", async () => {
     vi.useFakeTimers();
     loadOllamaOverviewMock.mockResolvedValue({

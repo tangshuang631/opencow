@@ -85,4 +85,43 @@ describe("assistantTaskService readonly shell execution", () => {
       /Shell execution failed in assistantTaskService\. Command id: git-status\. Required permission: readonly\. Underlying error: Tauri readonly_command failed: git executable unavailable\. Next step: verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying\./i
     );
   });
+
+  it("aborts readonly shell execution when the assistant task signal is cancelled", async () => {
+    let resolveCommand: (value: {
+      command_id: string;
+      command_label: string;
+      stdout_preview: string;
+      line_count: number;
+      summary: string;
+    }) => void = () => {};
+    runReadonlyShellCommandMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCommand = resolve;
+      })
+    );
+    const abortController = new AbortController();
+    const executionPromise = executeAssistantTask(
+      {
+        kind: "readonly-shell-git-status",
+        title: "Workspace git status",
+        summary: "Inspect current workspace git changes before deeper assistant execution.",
+        auditSummary: "Local assistant planned a readonly git status command.",
+        auditDetail: "Readonly shell command task: git status --short"
+      },
+      {
+        signal: abortController.signal
+      }
+    );
+
+    abortController.abort();
+    resolveCommand({
+      command_id: "git-status",
+      command_label: "git status --short",
+      stdout_preview: " M apps/desktop/src/app/App.tsx",
+      line_count: 1,
+      summary: "Readonly shell command completed successfully."
+    });
+
+    await expect(executionPromise).rejects.toThrow(/Assistant task execution aborted/i);
+  });
 });

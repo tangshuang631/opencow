@@ -1220,6 +1220,7 @@ export function App() {
     const executingAttemptCount = activeTask.attemptCount;
     let executionTimeoutId: number | null = null;
     let progressIntervalId: number | null = null;
+    let assistantTaskAbortController: AbortController | null = null;
     const clearExecutionTimeout = () => {
       if (executionTimeoutId !== null) {
         window.clearTimeout(executionTimeoutId);
@@ -1407,9 +1408,12 @@ export function App() {
         auditSummary: activeTask.executionAuditSummary ?? "Local assistant planned a task.",
         auditDetail: activeTask.executionAuditDetail ?? activeTask.summary
       } as AssistantTaskPlanResult;
+      assistantTaskAbortController = new AbortController();
+      const currentAssistantTaskAbortController = assistantTaskAbortController;
 
       const timeoutPromise = new Promise<never>((_, reject) => {
         executionTimeoutId = window.setTimeout(() => {
+          currentAssistantTaskAbortController.abort();
           reject(
             new Error(
               `Local task exceeded the maximum execution time of ${Math.floor(LOCAL_TASK_TIMEOUT_MS / 1000)} seconds.`
@@ -1420,7 +1424,8 @@ export function App() {
 
       void Promise.race([
         executeAssistantTask(executionPlan, {
-          snapshotAvailable: state.storage.snapshotCount > 0
+          snapshotAvailable: state.storage.snapshotCount > 0,
+          signal: currentAssistantTaskAbortController.signal
         }),
         timeoutPromise
       ])
@@ -1480,6 +1485,7 @@ export function App() {
       window.clearTimeout(finishTimer);
       clearExecutionTimeout();
       clearProgressInterval();
+      assistantTaskAbortController?.abort();
     };
   }, [state.model.activeModel, state.storage.snapshotCount, activeTaskExecutionDependency]);
 
