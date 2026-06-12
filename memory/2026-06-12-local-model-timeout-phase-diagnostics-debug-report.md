@@ -409,3 +409,18 @@
 - Regression test: `apps/desktop/src/app/app.task-guard.test.tsx`
 - Related: This closes another fixed-output success path while preserving the destructive-action confirmation chain and adding anti-stall recovery for the post-success explanation layer.
 - Status: DONE
+
+## Follow-up: Skill-assisted shell execution results use bounded local-model explanation
+
+- Symptom: Skill-assisted shell create/delete flows correctly matched an enabled local Skill and reused the existing permission or high-risk confirmation chain, but their final visible responses still surfaced deterministic service facts such as `Skill-assisted temp-output creation`, `shell-automation`, registry path, command label, and stdout preview directly.
+- Root cause: The App-level explanation whitelist covered direct `workspace-write-create-temp-output` and `controlled-full-remove-temp-output`, but not the Skill-assisted shell execution kinds. These paths were safe to explain only after successful permission-backed execution, but they still bypassed the selected local model and therefore looked like fixed templates.
+- Fix: Added `skills-local-enabled-shell-create-temp-output` and `skills-local-enabled-shell-remove-temp-output` to the App explanation whitelist and post-approval mutation set in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now tells the model to explain that the enabled Skill is only used for capability matching, while the actual create/delete still runs through the controlled shell runner after `workspace-write` approval or `controlled-full` plus dangerous confirmation.
+- Safety boundary: The local model still does not choose the Skill, grant permission, choose the command, or run the shell action. It only explains verified post-success facts. If the explanation stalls, OpenCow cancels the explanation request, falls back to the verified Skill+shell facts, and does not run the shell command a second time.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "skill-assisted .*final" --pool forks --poolOptions.forks.singleFork` passed with 41 tests reported.
+  - `npm --workspace apps/desktop exec tsc -b` passed.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-shell-write.test.ts src/features/assistant/assistantTaskService.skills-rag-shell-write.test.ts --pool forks --poolOptions.forks.singleFork` passed with 12 tests.
+  - `npm run predesktop:dev` passed.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This further reduces fixed/template-like approved-success output while preserving permission, confirmation, audit, rollback, and model-stall fallback behavior.
+- Status: DONE

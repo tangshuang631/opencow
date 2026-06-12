@@ -2090,6 +2090,11 @@ describe("App", () => {
       line_count: 1,
       summary: "Workspace write shell command completed successfully."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "shell-automation 只是用于匹配已启用的本地能力；temp-output 已在你批准工作区读写后通过受控 shell runner 创建，命令只作用于工作区内这个目录。"
+    });
 
     render(<App />);
 
@@ -2108,11 +2113,17 @@ describe("App", () => {
     fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
 
     await waitFor(() => {
-      expect(
-        screen.getAllByText(/Skill-assisted temp-output creation|shell-automation|temp-output|enabled-skills\.json/i)
-          .length
-      ).toBeGreaterThan(0);
+      expect(screen.getAllByText("Skill 辅助创建结果说明").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/shell-automation 只是用于匹配已启用的本地能力/).length).toBeGreaterThan(0);
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^skills-local-enabled-shell-create-temp-output-explanation-/),
+      message: expect.stringContaining("已启用 Skill 只是用于匹配合适的本地能力")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
+    }));
+    expect(screen.queryByText(/Workspace write shell command completed successfully/)).not.toBeInTheDocument();
   });
 
   it("continues from a skill-assisted destructive request through permission and dangerous confirmation into the final removal result", async () => {
@@ -2146,6 +2157,7 @@ describe("App", () => {
       line_count: 1,
       summary: "Controlled full shell command completed successfully."
     });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
 
     render(<App />);
 
@@ -2173,6 +2185,15 @@ describe("App", () => {
         screen.getAllByText(/Skill-assisted temp-output removal|shell-automation|temp-output removed|enabled-skills\.json/i)
           .length
       ).toBeGreaterThan(0);
-    });
-  });
+    }, { timeout: 12_000 });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^skills-local-enabled-shell-remove-temp-output-explanation-/),
+      message: expect.stringContaining("授予 controlled-full 并确认高风险操作")
+    }));
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(
+      expect.stringMatching(/^skills-local-enabled-shell-remove-temp-output-explanation-/)
+    );
+    expect(runControlledFullShellCommandMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+  }, 15_000);
 });
