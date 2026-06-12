@@ -79,6 +79,9 @@ if "!EXIT_CODE!"=="0" (
 )
 echo.
 echo [done] launcher finished with errors (exit !EXIT_CODE!)
+if /I "%MODE%"=="check" (
+  exit /b !EXIT_CODE!
+)
 echo [hint] press any key to close this window
 pause >nul
 exit /b !EXIT_CODE!

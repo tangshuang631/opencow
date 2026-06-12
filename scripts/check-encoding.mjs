@@ -5,6 +5,7 @@ const files = [
   "OPENCOW_CORE_RULES.md",
   "README.md",
   "package.json",
+  "start-opencow-test.bat",
   "apps/desktop/package.json",
   "apps/desktop/index.html"
 ];

@@ -67,6 +67,17 @@ describe("desktop dev server contract", () => {
     expect(launcher).not.toContain("cargo run --no-default-features");
   });
 
+  it("keeps check-mode launcher failures non-interactive", () => {
+    const launcher = readRepoFile("start-opencow-test.bat");
+
+    const checkModeExitIndex = launcher.indexOf('if /I "%MODE%"=="check"');
+    const pauseIndex = launcher.indexOf("pause >nul");
+
+    expect(checkModeExitIndex).toBeGreaterThanOrEqual(0);
+    expect(pauseIndex).toBeGreaterThanOrEqual(0);
+    expect(checkModeExitIndex).toBeLessThan(pauseIndex);
+  });
+
   it("refreshes the OpenClaw adapter build before launching the desktop runtime", () => {
     const launcher = readRepoFile("start-opencow-test.bat");
 

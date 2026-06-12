@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const requiredPaths = [
   "OPENCOW_CORE_RULES.md",
+  "start-opencow-test.bat",
   "docs/v1.0/00-overview.md",
   "docs/v1.0/10-openclaw-adapter.md",
   "apps/desktop/package.json",
@@ -33,6 +34,18 @@ const missing = requiredPaths.filter((path) => !existsSync(path));
 
 if (missing.length > 0) {
   throw new Error(`Missing required paths: ${missing.join(", ")}`);
+}
+
+const launcher = readFileSync("start-opencow-test.bat", "utf8");
+const checkModeExitIndex = launcher.indexOf('if /I "%MODE%"=="check"');
+const pauseIndex = launcher.indexOf("pause >nul");
+
+if (checkModeExitIndex === -1) {
+  throw new Error("Desktop launcher check mode must exit without waiting for user input on failure");
+}
+
+if (pauseIndex === -1 || checkModeExitIndex > pauseIndex) {
+  throw new Error("Desktop launcher pause must remain behind the check-mode failure exit");
 }
 
 console.log("health check passed");
