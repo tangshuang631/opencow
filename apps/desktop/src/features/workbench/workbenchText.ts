@@ -196,6 +196,14 @@ export function getVisibleLocalTaskFailureDetail(detail: string, source?: string
       return actionableDetail;
     }
 
+    if (detail.includes("streamPhase=waiting-first-chunk")) {
+      return "本地模型已连接，但首轮输出没有在本轮超时前返回；完整模型、输入长度和等待阶段诊断已保留在展开详情中。";
+    }
+
+    if (detail.includes("streamPhase=streaming")) {
+      return "本地模型已经开始输出，但没有在本轮超时前完整结束；已保留首块耗时和生成阶段诊断，方便继续排查或缩小任务后重试。";
+    }
+
     return "本地模型本轮没有按时返回完整结果，详细诊断已保留在本地任务失败细节和日志中。";
   }
 

@@ -452,6 +452,66 @@ describe("MainConversation", () => {
     expect(screen.queryByText(/Local model chat diagnostics/i)).not.toBeInTheDocument();
   });
 
+  it("surfaces waiting-first-chunk local-model timeout guidance without leaking raw diagnostics", () => {
+    const failed = createTaskExecutionFailedState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "解释一下享元模式",
+          executionKind: "local-model-chat",
+          executionTitle: "本地模型对话",
+          executionAuditSummary: "Local assistant planned an ordinary local model chat response.",
+          executionAuditDetail: "Local model chat task: 解释一下享元模式"
+        })
+      ),
+      {
+        summary: "本地模型对话失败",
+        detail:
+          "Local task exceeded the maximum execution time of 480 seconds. Local model chat diagnostics: model=qwen3.6:35b; timeout=480s; inputLength=8; streamPhase=waiting-first-chunk; elapsedMs=480000; firstChunkAfterMs=none; longAnswerProtection=enabled.",
+        actionLabel:
+          "本地模型响应超时：长回答保护已启用，OpenCow 会优先使用自动分段、缺题补写和显式重试；如果模型仍超时，请确认 Ollama 进程仍在运行，切换更快模型，或减少单次输入长度后重试。",
+        source: "local_model_chat_runner"
+      }
+    );
+
+    render(<MainConversation state={failed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByText("本地模型对话失败")).toBeInTheDocument();
+    expect(screen.getByText(/本地模型已连接，但首轮输出没有在本轮超时前返回/)).toBeInTheDocument();
+    expect(screen.queryByText(/streamPhase=waiting-first-chunk/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/firstChunkAfterMs=none/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Local model chat diagnostics/i)).not.toBeInTheDocument();
+  });
+
+  it("surfaces streaming local-model timeout guidance without leaking raw diagnostics", () => {
+    const failed = createTaskExecutionFailedState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "开源协议有哪些",
+          executionKind: "local-model-chat",
+          executionTitle: "本地模型对话",
+          executionAuditSummary: "Local assistant planned an ordinary local model chat response.",
+          executionAuditDetail: "Local model chat task: 开源协议有哪些"
+        })
+      ),
+      {
+        summary: "本地模型对话失败",
+        detail:
+          "Local task exceeded the maximum execution time of 480 seconds. Local model chat diagnostics: model=qwen3.6:35b; timeout=480s; inputLength=7; streamPhase=streaming; elapsedMs=480000; firstChunkAfterMs=1200; longAnswerProtection=enabled.",
+        actionLabel:
+          "本地模型响应超时：长回答保护已启用，OpenCow 会优先使用自动分段、缺题补写和显式重试；如果模型仍超时，请确认 Ollama 进程仍在运行，切换更快模型，或减少单次输入长度后重试。",
+        source: "local_model_chat_runner"
+      }
+    );
+
+    render(<MainConversation state={failed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByText("本地模型对话失败")).toBeInTheDocument();
+    expect(screen.getByText(/本地模型已经开始输出，但没有在本轮超时前完整结束/)).toBeInTheDocument();
+    expect(screen.queryByText(/streamPhase=streaming/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/firstChunkAfterMs=1200/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Local model chat diagnostics/i)).not.toBeInTheDocument();
+  });
+
   it("keeps successful assistant replies concise in the main conversation", () => {
     const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "你能帮我做什么",

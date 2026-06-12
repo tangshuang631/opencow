@@ -1029,7 +1029,7 @@ describe("App chat fallback", () => {
     });
 
     await act(async () => {
-      vi.advanceTimersByTime(200);
+      await vi.advanceTimersByTimeAsync(200);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -1056,6 +1056,42 @@ describe("App chat fallback", () => {
     pending = screen.getByLabelText("assistant-pending");
     expect(within(pending).getByText(/Ollama 仍在生成，已等待约 \d+ 秒。/)).toBeInTheDocument();
     expect(within(pending).queryByText(/Ollama 已连接，正在等待首轮输出/)).not.toBeInTheDocument();
+  });
+
+  it("records whether a local-model timeout happened before or after the first streamed chunk", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockImplementation(
+      (request: { onChunk?: (chunk: string) => void }) =>
+        new Promise((_, reject) => {
+          request.onChunk?.("已经开始输出，");
+          reject(new Error("Local task exceeded the maximum execution time of 480 seconds."));
+        })
+    );
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "开源协议有哪些" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
+
+    expect(screen.getByText(/streamPhase=streaming/i)).toBeInTheDocument();
+    expect(screen.getByText(/firstChunkAfterMs=\d+/i)).toBeInTheDocument();
+    expect(screen.getByText(/elapsedMs=\d+/i)).toBeInTheDocument();
   });
 
   it("keeps streaming local-model chunks out of the pending assistant message before final completion", async () => {

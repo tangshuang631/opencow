@@ -171,7 +171,7 @@ function getVisibleErrorDetail(error: NonNullable<WorkbenchState["error"]>) {
       ?? error.detail;
     const visibleDetail = getVisibleLocalTaskFailureDetail(failureDetail, error.source);
 
-    return visibleDetail.startsWith("Ollama error:")
+    return visibleDetail.startsWith("Ollama error:") || failureDetail.includes("streamPhase=")
       ? visibleDetail
       : "本地模型本轮没有按时返回完整结果，详细诊断已保留在右侧任务详情和日志中。";
   }

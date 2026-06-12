@@ -426,6 +426,10 @@ describe("App", () => {
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这个项目是一个桌面优先的本地助手工作区，当前重点在对话主链、受控执行和恢复能力。"
+    });
 
     render(<App />);
 
@@ -440,8 +444,13 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("inspect the current workspace and summarize it").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("Workspace overview")).toBeInTheDocument();
+      expect(within(conversation).getByText("工作区说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/桌面优先的本地助手工作区/)).toBeInTheDocument();
     });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("只读工作区事实：")
+    }));
   });
 
   it("routes a generic project summary request into the workspace overview result instead of generic help copy", async () => {
@@ -451,6 +460,10 @@ describe("App", () => {
       selectedModel: "qwen3.6:35b",
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这个项目目前更像在持续压实中的本地主机助手，重点模块围绕 OpenCow 桌面端、适配层和安全链路展开。"
     });
 
     render(<App />);
@@ -466,7 +479,8 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("summarize this project").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("Workspace overview")).toBeInTheDocument();
+      expect(within(conversation).getByText("工作区说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/持续压实中的本地主机助手/)).toBeInTheDocument();
     });
   });
 

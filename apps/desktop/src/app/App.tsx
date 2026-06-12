@@ -449,12 +449,17 @@ function createLocalModelChatFailureDetail(payload: {
   model: string;
   message: string;
   timeoutMs: number;
+  elapsedMs: number;
+  hasReceivedFirstChunk: boolean;
+  firstChunkAfterMs: number | null;
 }): string {
   const normalizedDetail = normalizeLocalModelTimeoutDetail(payload.detail, payload.timeoutMs);
+  const streamPhase = payload.hasReceivedFirstChunk ? "streaming" : "waiting-first-chunk";
+  const firstChunkAfterMs = payload.firstChunkAfterMs === null ? "none" : String(payload.firstChunkAfterMs);
 
   return [
     normalizedDetail,
-    `Local model chat diagnostics: model=${payload.model.trim() || "unselected"}; timeout=${formatTimeoutSeconds(payload.timeoutMs)}s; inputLength=${payload.message.trim().length}; longAnswerProtection=enabled.`
+    `Local model chat diagnostics: model=${payload.model.trim() || "unselected"}; timeout=${formatTimeoutSeconds(payload.timeoutMs)}s; inputLength=${payload.message.trim().length}; streamPhase=${streamPhase}; elapsedMs=${payload.elapsedMs}; firstChunkAfterMs=${firstChunkAfterMs}; longAnswerProtection=enabled.`
   ].join(" ");
 }
 
@@ -778,6 +783,65 @@ async function executeNpcConfigWriteTask(payload: {
       `NPC config parse status: ${configResult.status}`
     ]
   };
+}
+
+async function explainWorkspaceOverviewResultWithLocalModel(payload: {
+  model: string;
+  availableModels: WorkbenchState["model"]["availableModels"];
+  requestMessage: string;
+  readonlyTitle: string;
+  readonlySummary: string;
+  requestId?: string;
+  signal?: AbortSignal;
+}): Promise<AssistantTaskExecutionResult> {
+  const selectedModel = resolveUsableOllamaChatModel(payload.model, payload.availableModels);
+
+  if (!selectedModel || typeof chatWithOllamaModel !== "function") {
+    return {
+      resultTitle: payload.readonlyTitle,
+      resultSummary: payload.readonlySummary,
+      auditDetailLines: [
+        selectedModel
+          ? "Workspace overview explanation skipped: local model bridge was unavailable in this runtime."
+          : "Workspace overview explanation skipped: no usable local Ollama model was selected."
+      ]
+    };
+  }
+
+  const result = await chatWithOllamaModel({
+    model: selectedModel,
+    message: createWorkspaceOverviewExplanationPrompt(payload.requestMessage, payload.readonlySummary),
+    requestId: payload.requestId,
+    signal: payload.signal
+  });
+
+  return {
+    resultTitle: "工作区说明",
+    resultSummary: result.message,
+    auditDetailLines: [
+      `Ollama model: ${result.model || selectedModel}`,
+      `Ollama done reason: ${result.doneReason || "complete"}`,
+      "Workspace overview explanation: local model generated from readonly workspace facts.",
+      `Readonly workspace facts: ${payload.readonlySummary}`
+    ]
+  };
+}
+
+function createWorkspaceOverviewExplanationPrompt(
+  userRequest: string,
+  readonlySummary: string
+): string {
+  return [
+    "你是 OpenCow 的本地项目说明助手。",
+    "请根据下面给出的只读工作区事实，用中文直接解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。",
+    "不要编造不存在的目录、包或功能，不要输出模板化套话，不要说你已经做了联网搜索。",
+    "保持回答像真正看过项目后的自然总结，简洁但有判断。",
+    "",
+    `用户请求：${userRequest.trim()}`,
+    "",
+    "只读工作区事实：",
+    readonlySummary
+  ].join("\n");
 }
 
 function createNpcConfigGenerationPrompt(userRequest: string): string {
@@ -1250,7 +1314,10 @@ export function App() {
         return;
       }
 
-      if (activeTask.executionKind === "local-model-chat" || activeTask.executionKind === "npc-config-write") {
+      if (
+        activeTask.executionKind === "local-model-chat"
+        || activeTask.executionKind === "npc-config-write"
+      ) {
         const localModelMessage = getTaskExecutionMessage(activeTask);
         const localModelChatTimeoutMs = getLocalModelChatTimeoutMs(localModelMessage);
         let localModelDiagnosticModel = state.model.activeModel;
@@ -1261,6 +1328,7 @@ export function App() {
         activeLocalModelRequestIdRef.current = localModelRequestId;
         const progressStartedAt = Date.now();
         let hasReceivedFirstChunk = false;
+        let firstChunkAfterMs: number | null = null;
         progressIntervalId = window.setInterval(() => {
           startTransition(() => {
             setState((current) => {
@@ -1328,8 +1396,9 @@ export function App() {
               requestId: localModelRequestId,
               signal: localModelAbortController.signal,
               onChunk: (chunk: string) => {
-                if (chunk.trim()) {
+                if (chunk.trim() && !hasReceivedFirstChunk) {
                   hasReceivedFirstChunk = true;
+                  firstChunkAfterMs = Date.now() - progressStartedAt;
                 }
 
                 startTransition(() => {
@@ -1347,9 +1416,11 @@ export function App() {
               }
             };
 
-          return activeTask.executionKind === "npc-config-write"
-            ? executeNpcConfigWriteTask(commonPayload)
-            : executeLocalModelChatTask(commonPayload);
+          if (activeTask.executionKind === "npc-config-write") {
+            return executeNpcConfigWriteTask(commonPayload);
+          }
+
+          return executeLocalModelChatTask(commonPayload);
         };
 
         void Promise.race([
@@ -1390,7 +1461,10 @@ export function App() {
               detail,
               model: localModelDiagnosticModel,
               message: localModelMessage,
-              timeoutMs: localModelChatTimeoutMs
+              timeoutMs: localModelChatTimeoutMs,
+              elapsedMs: Date.now() - progressStartedAt,
+              hasReceivedFirstChunk,
+              firstChunkAfterMs
             });
             startTransition(() => {
               setState((current) => {
@@ -1431,11 +1505,43 @@ export function App() {
         }, LOCAL_TASK_TIMEOUT_MS);
       });
 
-      void Promise.race([
-        executeAssistantTask(executionPlan, {
+      const executeAssistantTaskWithOptionalExplanation = async () => {
+        const result = await executeAssistantTask(executionPlan, {
           snapshotAvailable: state.storage.snapshotCount > 0,
           signal: currentAssistantTaskAbortController.signal
-        }),
+        });
+        const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
+
+        if (activeTask.executionKind !== "workspace-overview") {
+          return validResult;
+        }
+
+        try {
+          return await explainWorkspaceOverviewResultWithLocalModel({
+            model: state.model.activeModel,
+            availableModels: state.model.availableModels,
+            requestMessage: getTaskExecutionMessage(activeTask),
+            readonlyTitle: validResult.resultTitle,
+            readonlySummary: validResult.resultSummary,
+            requestId: `workspace-overview-explanation-${activeTask.id}-${activeTask.attemptCount}`,
+            signal: currentAssistantTaskAbortController.signal
+          });
+        } catch (error: unknown) {
+          return {
+            ...validResult,
+            auditDetailLines: [
+              ...(validResult.auditDetailLines ?? []),
+              `Workspace overview explanation skipped after local model failure: ${normalizeUnknownAssistantError(
+                error,
+                "Unknown local model explanation error"
+              )}`
+            ]
+          };
+        }
+      };
+
+      void Promise.race([
+        executeAssistantTaskWithOptionalExplanation(),
         timeoutPromise
       ])
         .then((result) => {
