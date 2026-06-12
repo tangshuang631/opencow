@@ -643,8 +643,12 @@ function formatTimeoutSeconds(timeoutMs: number): number {
   return Math.floor(timeoutMs / 1000);
 }
 
-function formatLocalModelProgressSummary(elapsedMs: number): string {
+function formatLocalModelProgressSummary(elapsedMs: number, hasReceivedFirstChunk: boolean): string {
   const elapsedSeconds = Math.max(1, Math.floor(elapsedMs / 1000));
+
+  if (!hasReceivedFirstChunk) {
+    return `Ollama 已连接，正在等待首轮输出，已等待约 ${elapsedSeconds} 秒。`;
+  }
 
   return `Ollama 仍在生成，已等待约 ${elapsedSeconds} 秒。`;
 }
@@ -1256,6 +1260,7 @@ export function App() {
         activeLocalModelAbortControllerRef.current = localModelAbortController;
         activeLocalModelRequestIdRef.current = localModelRequestId;
         const progressStartedAt = Date.now();
+        let hasReceivedFirstChunk = false;
         progressIntervalId = window.setInterval(() => {
           startTransition(() => {
             setState((current) => {
@@ -1265,7 +1270,7 @@ export function App() {
 
               return createTaskExecutionProgressState(current, {
                 taskId: executingTaskId,
-                progressSummary: formatLocalModelProgressSummary(Date.now() - progressStartedAt)
+                progressSummary: formatLocalModelProgressSummary(Date.now() - progressStartedAt, hasReceivedFirstChunk)
               });
             });
           });
@@ -1323,6 +1328,10 @@ export function App() {
               requestId: localModelRequestId,
               signal: localModelAbortController.signal,
               onChunk: (chunk: string) => {
+                if (chunk.trim()) {
+                  hasReceivedFirstChunk = true;
+                }
+
                 startTransition(() => {
                   setState((current) => {
                     if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {

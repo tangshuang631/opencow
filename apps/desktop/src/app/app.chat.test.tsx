@@ -994,10 +994,68 @@ describe("App chat fallback", () => {
 
     const pending = screen.getByLabelText("assistant-pending");
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).getByText(/Ollama 仍在生成，已等待约 \d+ 秒。/)).toBeInTheDocument();
+    expect(within(pending).getByText(/Ollama 已连接，正在等待首轮输出，已等待约 \d+ 秒。/)).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).not.toBeInTheDocument();
     expect(screen.queryByText("本地模型对话失败")).not.toBeInTheDocument();
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("switches from waiting-for-first-chunk to generating progress after the first streamed chunk arrives", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    let emitChunk: ((chunk: string) => void) | undefined;
+    chatWithOllamaModelMock.mockImplementation((request: { onChunk?: (chunk: string) => void }) => {
+      emitChunk = request.onChunk;
+      return new Promise(() => undefined);
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    vi.useFakeTimers();
+
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+        target: { value: "解释一下享元模式" }
+      });
+      fireEvent.click(screen.getByRole("button", { name: "发送" }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    let pending = screen.getByLabelText("assistant-pending");
+    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    pending = screen.getByLabelText("assistant-pending");
+    expect(within(pending).getByText(/Ollama 已连接，正在等待首轮输出，已等待约 \d+ 秒。/)).toBeInTheDocument();
+
+    await act(async () => {
+      emitChunk?.("第一段，");
+      vi.advanceTimersByTime(15_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    pending = screen.getByLabelText("assistant-pending");
+    expect(within(pending).getByText(/Ollama 仍在生成，已等待约 \d+ 秒。/)).toBeInTheDocument();
+    expect(within(pending).queryByText(/Ollama 已连接，正在等待首轮输出/)).not.toBeInTheDocument();
   });
 
   it("keeps streaming local-model chunks out of the pending assistant message before final completion", async () => {
