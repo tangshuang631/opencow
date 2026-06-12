@@ -785,15 +785,27 @@ async function executeNpcConfigWriteTask(payload: {
   };
 }
 
-function isReadonlyOverviewExplanationKind(kind: string | undefined): kind is
+type ExplainableReadonlyResultKind =
   | "workspace-overview"
   | "packages-overview"
-  | "workspace-config-overview" {
-  return kind === "workspace-overview" || kind === "packages-overview" || kind === "workspace-config-overview";
+  | "workspace-config-overview"
+  | "capability-rag-overview"
+  | "capability-skills-overview"
+  | "capability-npc-overview"
+  | "capability-mcp-overview";
+
+function isExplainableReadonlyResultKind(kind: string | undefined): kind is ExplainableReadonlyResultKind {
+  return kind === "workspace-overview"
+    || kind === "packages-overview"
+    || kind === "workspace-config-overview"
+    || kind === "capability-rag-overview"
+    || kind === "capability-skills-overview"
+    || kind === "capability-npc-overview"
+    || kind === "capability-mcp-overview";
 }
 
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
-  executionKind: "workspace-overview" | "packages-overview" | "workspace-config-overview";
+  executionKind: ExplainableReadonlyResultKind;
   model: string;
   availableModels: WorkbenchState["model"]["availableModels"];
   requestMessage: string;
@@ -840,7 +852,7 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
 }
 
 function getReadonlyOverviewExplanationTitle(
-  executionKind: "workspace-overview" | "packages-overview" | "workspace-config-overview"
+  executionKind: ExplainableReadonlyResultKind
 ): string {
   if (executionKind === "packages-overview") {
     return "包与脚本说明";
@@ -850,11 +862,27 @@ function getReadonlyOverviewExplanationTitle(
     return "配置说明";
   }
 
+  if (executionKind === "capability-rag-overview") {
+    return "RAG 能力说明";
+  }
+
+  if (executionKind === "capability-skills-overview") {
+    return "Skills 能力说明";
+  }
+
+  if (executionKind === "capability-npc-overview") {
+    return "NPC 能力说明";
+  }
+
+  if (executionKind === "capability-mcp-overview") {
+    return "MCP 能力说明";
+  }
+
   return "工作区说明";
 }
 
 function createReadonlyOverviewExplanationPrompt(payload: {
-  executionKind: "workspace-overview" | "packages-overview" | "workspace-config-overview";
+  executionKind: ExplainableReadonlyResultKind;
   userRequest: string;
   readonlySummary: string;
 }): string {
@@ -862,7 +890,15 @@ function createReadonlyOverviewExplanationPrompt(payload: {
     ? "重点解释包结构、脚本数量、可运行入口和下一步开发排查重点。"
     : payload.executionKind === "workspace-config-overview"
       ? "重点解释配置文件、根脚本、包管理线索和启动/验证链路重点。"
-      : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+      : payload.executionKind === "capability-rag-overview"
+        ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
+        : payload.executionKind === "capability-skills-overview"
+          ? "重点解释 Skills 能力当前可用基础、安装/启用边界、缺失项，以及下一步如何安全验证。"
+          : payload.executionKind === "capability-npc-overview"
+            ? "重点解释 NPC 协作能力当前可用基础、适合的本地工作流、缺失项，以及下一步如何安全验证。"
+            : payload.executionKind === "capability-mcp-overview"
+              ? "重点解释 MCP 能力当前可用基础、插件/工具边界、缺失项，以及下一步如何安全验证。"
+              : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [
     "你是 OpenCow 的本地项目说明助手。",
@@ -1545,7 +1581,7 @@ export function App() {
         });
         const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
 
-        if (!isReadonlyOverviewExplanationKind(activeTask.executionKind)) {
+        if (!isExplainableReadonlyResultKind(activeTask.executionKind)) {
           return validResult;
         }
 

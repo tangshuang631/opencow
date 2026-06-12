@@ -36,3 +36,16 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This further reduces fixed/template-like ordinary inspection answers while preserving the anti-stall fallback behavior and readonly safety boundary.
 - Status: DONE
+
+## Follow-up: capability overviews use local-model explanation
+
+- Symptom: OpenClaw capability catalog tasks such as `capability-rag-overview` still surfaced fixed catalog copy (`OpenClaw RAG capability overview`) in ordinary inspection flows, even after workspace/packages/config overviews moved to readonly facts plus local-model explanation.
+- Root cause: The App-level explanation hook only recognized workspace/package/config overview kinds. Capability overview tasks already collected readonly facts safely, but the final user-facing response bypassed the selected local model.
+- Fix: Extended the explainable readonly result kinds in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx) to include RAG, Skills, NPC, and MCP capability overviews. Each gets a focused Chinese explanation title and prompt while preserving the original readonly result if the local model bridge is unavailable or fails.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx` passed with 84 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/assistant/assistantTaskService.capabilities.test.ts` passed with 166 tests.
+  - `npm run verify:all` passed, including 580 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This keeps RAG retry self-check readonly and recoverable while reducing fixed/template-like capability answers in explicit capability inspection flows.
+- Status: DONE

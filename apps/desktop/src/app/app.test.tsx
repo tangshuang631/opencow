@@ -6,6 +6,7 @@ const {
   cancelOllamaChatMock,
   chatWithOllamaModelMock,
   loadOllamaOverviewMock,
+  loadOpenClawCapabilityOverviewMock,
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
   searchLocalKnowledgeMock,
@@ -22,6 +23,7 @@ const {
   cancelOllamaChatMock: vi.fn(),
   chatWithOllamaModelMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
+  loadOpenClawCapabilityOverviewMock: vi.fn(),
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
   searchLocalKnowledgeMock: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 
   return {
     ...actual,
+    loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
     loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
     searchLocalKnowledge: searchLocalKnowledgeMock,
@@ -85,6 +88,7 @@ describe("App", () => {
     cancelOllamaChatMock.mockReset();
     chatWithOllamaModelMock.mockReset();
     loadOllamaOverviewMock.mockReset();
+    loadOpenClawCapabilityOverviewMock.mockReset();
     loadWorkspacePackagesOverviewMock.mockReset();
     loadWorkspaceConfigOverviewMock.mockReset();
     searchLocalKnowledgeMock.mockReset();
@@ -567,6 +571,52 @@ describe("App", () => {
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen3.6:35b",
       message: expect.stringContaining("重点解释配置文件、根脚本、包管理线索")
+    }));
+  });
+
+  it("explains an explicit RAG capability overview through the local model instead of fixed catalog copy", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
+      capability_id: "rag",
+      title: "OpenClaw RAG capability overview",
+      status: "ready-foundation",
+      required_package_count: 3,
+      available_package_count: 3,
+      available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/model-catalog-core"],
+      missing_packages: [],
+      summary: "OpenClaw RAG foundation check found 3 of 3 required packages."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "RAG 基础包已经齐全，适合先做只读文档检索和索引自检，再逐步接入更深的本地知识库恢复链路。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "inspect the local rag capability wiring" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("inspect the local rag capability wiring").length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("RAG 能力说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/RAG 基础包已经齐全/)).toBeInTheDocument();
+    });
+    expect(within(conversation).queryByText("OpenClaw RAG capability overview")).not.toBeInTheDocument();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("重点解释 RAG 能力当前可用基础")
     }));
   });
 
