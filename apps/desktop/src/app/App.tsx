@@ -70,6 +70,7 @@ const MAX_LOCAL_TASK_ATTEMPTS = 3;
 const LOCAL_TASK_TIMEOUT_MS = 45_000;
 const LOCAL_MODEL_CHAT_TIMEOUT_MS = 480_000;
 const LONG_LOCAL_MODEL_CHAT_TIMEOUT_MS = 480_000;
+const READONLY_EXPLANATION_TIMEOUT_MS = 10_000;
 const LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT = createLocalModelLengthRecoveryHint();
 const LOCAL_MODEL_CONTINUATION_TAIL_LIMIT = 1200;
 const LOCAL_MODEL_PROGRESS_INTERVAL_MS = 15_000;
@@ -911,16 +912,57 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
     };
   }
 
-  const result = await chatWithOllamaModel({
-    model: selectedModel,
-    message: createReadonlyOverviewExplanationPrompt({
-      executionKind: payload.executionKind,
-      userRequest: payload.requestMessage,
-      readonlySummary: payload.readonlySummary
-    }),
-    requestId: payload.requestId,
-    signal: payload.signal
+  if (payload.signal?.aborted) {
+    throw new Error("Readonly overview explanation was aborted before it started.");
+  }
+
+  const explanationAbortController = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const abortExplanation = () => {
+    if (!explanationAbortController.signal.aborted) {
+      explanationAbortController.abort();
+    }
+
+    if (payload.requestId) {
+      void Promise.resolve(cancelOllamaChat(payload.requestId)).catch(() => undefined);
+    }
+  };
+  const handleParentAbort = () => abortExplanation();
+  payload.signal?.addEventListener("abort", handleParentAbort, { once: true });
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      abortExplanation();
+      reject(
+        new Error(
+          `Readonly overview explanation exceeded ${Math.floor(READONLY_EXPLANATION_TIMEOUT_MS / 1000)} seconds.`
+        )
+      );
+    }, READONLY_EXPLANATION_TIMEOUT_MS);
   });
+
+  let result: Awaited<ReturnType<typeof chatWithOllamaModel>>;
+
+  try {
+    result = await Promise.race([
+      chatWithOllamaModel({
+        model: selectedModel,
+        message: createReadonlyOverviewExplanationPrompt({
+          executionKind: payload.executionKind,
+          userRequest: payload.requestMessage,
+          readonlySummary: payload.readonlySummary
+        }),
+        requestId: payload.requestId,
+        signal: explanationAbortController.signal
+      }),
+      timeoutPromise
+    ]);
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    payload.signal?.removeEventListener("abort", handleParentAbort);
+  }
 
   return {
     resultTitle: getReadonlyOverviewExplanationTitle(payload.executionKind),

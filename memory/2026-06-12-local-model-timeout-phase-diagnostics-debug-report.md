@@ -199,3 +199,17 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This removes another ordinary fixed readonly output path while keeping shell execution auditable and permission-bounded.
 - Status: DONE
+
+## Follow-up: readonly local-model explanations cannot stall successful tasks
+
+- Symptom: After a readonly shell task succeeded, the optional local-model explanation could hang indefinitely until the broader local task timeout. In that case the user saw a failed local task even though the underlying readonly diagnostic, such as `git status --short`, had already completed successfully.
+- Root cause: The readonly explanation pass shared the parent local task cancellation path and had no shorter per-explanation time budget. A selected Ollama model that connected but never produced explanation output could therefore block the visible completion of an otherwise successful readonly result.
+- Fix: Added a dedicated 10-second explanation timeout in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The explanation now runs with a child `AbortController`, cancels the specific Ollama explanation request on timeout or parent abort, and lets the existing fallback render the original readonly facts instead of marking the successful task as failed.
+- Safety boundary: This only affects optional presentation for already-completed readonly tasks. Permission requests, shell writes, controlled-full commands, workspace project start/stop, MCP plugin start, and NPC config writes still use their existing guarded execution paths.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "falls back to readonly shell facts" --pool forks --poolOptions.forks.singleFork` passed with 35 tests reported.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 203 tests.
+  - `npm run verify:all` passed, including 591 desktop tests, repository build, encoding check, health check, and 71 desktop Tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This keeps the product model-first for safe readonly explanations without allowing a slow local model to make OpenCow feel frozen.
+- Status: DONE

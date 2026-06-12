@@ -692,6 +692,48 @@ describe("App", () => {
     }));
   });
 
+  it("falls back to readonly shell facts when local-model explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    runReadonlyShellCommandMock.mockResolvedValueOnce({
+      command_id: "git-status",
+      command_label: "git status --short",
+      permission: "readonly",
+      stdout_preview: " M apps/desktop/src/app/App.tsx",
+      stderr_preview: "",
+      status_code: 0,
+      summary: "Readonly shell command completed."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "check git status for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: expect.stringMatching(/^readonly-shell-git-status-explanation-/)
+      }));
+    });
+
+    const conversation = getConversationRegion();
+    expect(await within(conversation).findByText("Workspace git status", {}, { timeout: 12_000 })).toBeInTheDocument();
+    expect(within(conversation).getByText(/Command: git status --short/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/Preview:\s+M apps\/desktop\/src\/app\/App\.tsx/)).toBeInTheDocument();
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^readonly-shell-git-status-explanation-/));
+  }, 15_000);
+
   it("explains an explicit RAG capability overview through the local model instead of fixed catalog copy", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
