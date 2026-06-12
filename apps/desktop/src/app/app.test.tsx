@@ -1209,6 +1209,11 @@ describe("App", () => {
       status: "enabled",
       summary: "Local skill enablement registered coding-agent in the workspace skill registry."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "coding-agent 已在批准工作区读写后写入 enabled skills 注册表。下一步可以让它参与代码任务，但这一步只是启用注册表，没有执行 Skill。"
+    });
 
     render(<App />);
 
@@ -1223,9 +1228,61 @@ describe("App", () => {
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Enable local skill|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+      expect(within(getConversationRegion()).getByText("Skill 启用结果说明")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText(/coding-agent 已在批准工作区读写后写入 enabled skills 注册表/)).toBeInTheDocument();
     });
+    expect(enableLocalSkillMock).toHaveBeenCalledTimes(1);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("用户批准 workspace-write")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Local skill enablement registered coding-agent")
+    }));
   });
+
+  it("falls back to verified skill enable facts when post-approval explanation stalls", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    enableLocalSkillMock.mockResolvedValueOnce({
+      query: "enable the coding-agent skill for this workspace",
+      enabled_skill_name: "coding-agent",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      status: "enabled",
+      summary: "Local skill enablement registered coding-agent in the workspace skill registry."
+    });
+    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "enable the coding-agent skill for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    fireEvent.click(await screen.findByRole("button", { name: /批准提权/i }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        requestId: expect.stringMatching(/^skills-local-enable-explanation-/)
+      }));
+    });
+
+    const conversation = getConversationRegion();
+    expect(await within(conversation).findByText("Enable local skill", {}, { timeout: 12_000 })).toBeInTheDocument();
+    expect(within(conversation).getByText(/Local skill enablement registered coding-agent/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/Registry: \.opencow\/skills\/enabled-skills\.json/)).toBeInTheDocument();
+    expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
+    expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^skills-local-enable-explanation-/));
+    expect(enableLocalSkillMock).toHaveBeenCalledTimes(1);
+  }, 15_000);
 
   it("continues from skill install permission approval into the final installed result", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
@@ -1799,6 +1856,11 @@ describe("App", () => {
       status: "disabled",
       summary: "Local skill disablement removed coding-agent from the workspace skill registry."
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen2.5-coder:7b",
+      message:
+        "coding-agent 已在批准工作区读写后从 enabled skills 注册表停用。Skill 文件没有被删除，之后可以重新启用或选择其他 Skill。"
+    });
 
     render(<App />);
 
@@ -1817,8 +1879,17 @@ describe("App", () => {
     fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Disable local skill|coding-agent|enabled-skills\.json/i).length).toBeGreaterThan(0);
+      expect(within(getConversationRegion()).getByText("Skill 停用结果说明")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText(/coding-agent 已在批准工作区读写后从 enabled skills 注册表停用/)).toBeInTheDocument();
     });
+    expect(disableLocalSkillMock).toHaveBeenCalledTimes(1);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen2.5-coder:7b",
+      message: expect.stringContaining("用户批准 workspace-write")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Local skill disablement removed coding-agent")
+    }));
   });
 
   it("continues from a skill-assisted workspace-write request into the final temp-output creation result", async () => {

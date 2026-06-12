@@ -872,6 +872,8 @@ type ExplainableReadonlyResultKind =
   | "opencow-self-repair-target-guidance"
   | "opencow-self-repair-enabled-skills-registry"
   | "opencow-self-repair-workspace-project-runtime-registry"
+  | "skills-local-enable"
+  | "skills-local-disable"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "capability-npc-overview"
@@ -907,6 +909,8 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "opencow-self-repair-target-guidance"
     || kind === "opencow-self-repair-enabled-skills-registry"
     || kind === "opencow-self-repair-workspace-project-runtime-registry"
+    || kind === "skills-local-enable"
+    || kind === "skills-local-disable"
     || kind === "capability-rag-overview"
     || kind === "capability-skills-overview"
     || kind === "capability-npc-overview"
@@ -938,6 +942,12 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
 function isSelfRepairMutationResultKind(kind: ExplainableReadonlyResultKind): boolean {
   return kind === "opencow-self-repair-enabled-skills-registry"
     || kind === "opencow-self-repair-workspace-project-runtime-registry";
+}
+
+function isPostApprovalMutationResultKind(kind: ExplainableReadonlyResultKind): boolean {
+  return isSelfRepairMutationResultKind(kind)
+    || kind === "skills-local-enable"
+    || kind === "skills-local-disable";
 }
 
 async function explainReadonlyOverviewResultWithLocalModel(payload: {
@@ -1022,13 +1032,13 @@ async function explainReadonlyOverviewResultWithLocalModel(payload: {
     auditDetailLines: [
       `Ollama model: ${result.model || selectedModel}`,
       `Ollama done reason: ${result.doneReason || "complete"}`,
-      isSelfRepairMutationResultKind(payload.executionKind)
-        ? `Assistant task result explanation: local model generated for ${payload.executionKind} after approved self-repair completed.`
+      isPostApprovalMutationResultKind(payload.executionKind)
+        ? `Assistant task result explanation: local model generated for ${payload.executionKind} after approved mutation completed.`
         : `Readonly overview explanation: local model generated for ${payload.executionKind} from readonly facts.`
     ],
     auditOnlyDetailLines: [
-      isSelfRepairMutationResultKind(payload.executionKind)
-        ? `Original approved self-repair result facts: ${payload.readonlySummary}`
+      isPostApprovalMutationResultKind(payload.executionKind)
+        ? `Original approved mutation result facts: ${payload.readonlySummary}`
         : `Readonly workspace facts: ${payload.readonlySummary}`
     ]
   };
@@ -1059,6 +1069,14 @@ function getReadonlyOverviewExplanationTitle(
 
   if (executionKind === "opencow-self-repair-workspace-project-runtime-registry") {
     return "OpenCow 项目运行注册表修复说明";
+  }
+
+  if (executionKind === "skills-local-enable") {
+    return "Skill 启用结果说明";
+  }
+
+  if (executionKind === "skills-local-disable") {
+    return "Skill 停用结果说明";
   }
 
   if (executionKind === "capability-rag-overview") {
@@ -1185,6 +1203,10 @@ function createReadonlyOverviewExplanationPrompt(payload: {
             ? "重点解释 enabled skills registry 已在用户批准 workspace-write 后完成受控修复、修复路径、保留条目、验证结果、审计/回退可见性，以及下一步如何继续安全使用 Skills。不要说这是只读预览。"
             : payload.executionKind === "opencow-self-repair-workspace-project-runtime-registry"
               ? "重点解释 workspace project runtime registry 已在用户批准 workspace-write 后完成受控修复、修复路径、保留运行记录、验证结果、审计/回退可见性，以及下一步如何安全检查或启动项目。不要说这是只读预览。"
+              : payload.executionKind === "skills-local-enable"
+                ? "重点解释这个 Skill 已在用户批准 workspace-write 后写入本地 enabled skills 注册表、注册表路径、启用状态、下一步如何使用；明确这不是只读预览，也不要暗示已经执行了 Skill。"
+                : payload.executionKind === "skills-local-disable"
+                  ? "重点解释这个 Skill 已在用户批准 workspace-write 后从本地 enabled skills 注册表停用、注册表路径、停用状态、下一步如何安全恢复或替代；明确这不是只读预览，也不要暗示删除了 Skill 文件。"
               : payload.executionKind === "capability-rag-overview"
                 ? "重点解释 RAG 能力当前可用基础、缺失项、适合解决什么问题，以及下一步如何安全验证。"
                 : payload.executionKind === "capability-skills-overview"
@@ -1241,13 +1263,13 @@ function createReadonlyOverviewExplanationPrompt(payload: {
 
   return [
     "你是 OpenCow 的本地项目说明助手。",
-    `请根据下面给出的只读工作区事实，用中文直接解释用户关心的问题。${focusLine}`,
+    `请根据下面给出的任务结果事实，用中文直接解释用户关心的问题。${focusLine}`,
     "不要编造不存在的目录、包或功能，不要输出模板化套话，不要说你已经做了联网搜索。",
     "保持回答像真正看过项目后的自然总结，简洁但有判断。",
     "",
     `用户请求：${payload.userRequest.trim()}`,
     "",
-    "只读工作区事实：",
+    isPostApprovalMutationResultKind(payload.executionKind) ? "已批准任务结果事实：" : "只读工作区事实：",
     payload.readonlySummary
   ].join("\n");
 }
