@@ -243,3 +243,18 @@
 - Regression test: `apps/desktop/src/app/app.self-repair.test.tsx`
 - Related: This removes another high-frequency fixed-output preview while keeping self-repair explicitly staged, permission-scoped, audit-visible, and rollback-visible.
 - Status: DONE
+
+## Follow-up: OpenCow self-repair target guidance uses local-model explanation
+
+- Symptom: When the user sent a generic `continue` after a broad self-repair preview, OpenCow correctly stopped the chain instead of looping into hidden repair, but the visible target guidance still surfaced deterministic English text such as `Clarify opencow self-repair target` and fixed next-request examples.
+- Root cause: `opencow-self-repair-target-guidance` is a safe readonly guard result, but it was not included in the App-level explainable readonly result whitelist. That left a common recovery guard outside the model-first presentation path.
+- Fix: Added `opencow-self-repair-target-guidance` to the local-model explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain, in Chinese, why generic self-repair cannot continue, why one of the two concrete targets must be chosen, and that no permission escalation or file write happened in this turn.
+- Safety boundary: This remains a stop/clarification guard only. The App regression proves the model-explained guidance does not show `批准提权` and does not run hidden registry repair; the raw target guidance facts remain audit-visible and fallback-safe if the model explanation fails or stalls.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.self-repair.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 5 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.continuation-message.test.ts src/app/app.task-guard.test.tsx -t "self-repair|continue|failed self-repair" --pool forks --poolOptions.forks.singleFork` passed with 88 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.self-repair.test.tsx src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 209 tests.
+  - `npm run verify:all` passed, including 592 desktop tests, repository build, encoding check, health check, and 71 desktop Tauri tests.
+- Regression test: `apps/desktop/src/app/app.self-repair.test.tsx`
+- Related: This removes another recovery-path fixed output while preserving anti-loop behavior and permission boundaries.
+- Status: DONE

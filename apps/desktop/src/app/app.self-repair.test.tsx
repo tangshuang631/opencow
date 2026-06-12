@@ -250,6 +250,16 @@ describe("App self-repair preview flow", () => {
 
 describe("App self-repair generic target guidance", () => {
   it("stops a generic self-repair continue request with narrow target guidance instead of looping back into preview", async () => {
+    chatWithOllamaModelMock
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message: "这是本地模型解释的 OpenCow 自修复预览：当前只是读取配置和本地文档，没有写文件。"
+      })
+      .mockResolvedValueOnce({
+        model: "qwen2.5-coder:7b",
+        message:
+          "这次不能泛化继续自修复：请先选择 enabled skills registry 或 workspace project runtime registry；本轮没有提权，也没有写入任何文件。"
+      });
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -318,10 +328,21 @@ describe("App self-repair generic target guidance", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Clarify opencow self-repair target/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/OpenCow 自修复目标说明/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/这次不能泛化继续自修复/).length).toBeGreaterThan(0);
     });
-    expect(screen.getAllByText(/enabled skills registry|workspace project runtime registry|avoid retry loops/i).length).toBeGreaterThan(0);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^opencow-self-repair-target-guidance-explanation-/),
+      message: expect.stringContaining("必须先选择 enabled skills registry 或 workspace project runtime registry")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("diagnose opencow and continue repairing its enabled skills registry")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("本轮没有提权、没有写文件")
+    }));
     expect(screen.queryByText(/Workspace write permission is required before opencow can repair/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^批准提权$/i })).not.toBeInTheDocument();
   });
 });
 
