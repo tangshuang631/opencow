@@ -258,6 +258,7 @@ export type WorkspaceProjectRunResult = {
   pid: number;
   stdout_preview: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type WorkspaceProjectStatusResult = {
@@ -270,6 +271,7 @@ export type WorkspaceProjectStatusResult = {
   status: "running" | "stopped";
   stdout_preview: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type WorkspaceProjectStopResult = {
@@ -281,6 +283,7 @@ export type WorkspaceProjectStopResult = {
   status: "stopped";
   stdout_preview: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type WorkspaceProjectNpcScreenshotCaptureResult = {
@@ -291,6 +294,7 @@ export type WorkspaceProjectNpcScreenshotCaptureResult = {
   artifact_directory: string;
   capture_target: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type WorkspaceProjectNpcShowcaseSiteWriteResult = {
@@ -301,6 +305,7 @@ export type WorkspaceProjectNpcShowcaseSiteWriteResult = {
   changed_paths: string[];
   source_screenshot_path: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type WorkspaceProjectNpcShowcasePublishPreviewResult = {
@@ -312,6 +317,7 @@ export type WorkspaceProjectNpcShowcasePublishPreviewResult = {
   source_screenshot_path: string;
   next_git_step: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type WorkspaceProjectNpcShowcaseGitConfirmationPreviewResult = {
@@ -324,6 +330,7 @@ export type WorkspaceProjectNpcShowcaseGitConfirmationPreviewResult = {
   recommended_git_action: "commit" | "push";
   required_confirmation_stage: string;
   summary: string;
+  preview_only?: boolean;
 };
 
 export type ReadonlyShellCommandResult = {
@@ -830,9 +837,12 @@ function createBrowserPreviewWorkspaceProjectRun(query: string): WorkspaceProjec
     command_label: "npm run dev",
     working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
     expected_url: prefersDesktop ? "http://127.0.0.1:1420" : "http://127.0.0.1:3000",
-    pid: 4242,
-    stdout_preview: "browser preview mode returned a static workspace project run preview",
-    summary: "Browser preview mode returned a browser-preview workspace project run result."
+    pid: 0,
+    stdout_preview:
+      "browser preview mode did not launch a real workspace project process and only returned a readonly run preview",
+    summary:
+      "Browser preview mode did not execute a workspace project run and only returned a readonly launch preview.",
+    preview_only: true
   };
 }
 
@@ -845,10 +855,13 @@ function createBrowserPreviewWorkspaceProjectStatus(query: string): WorkspacePro
     command_label: "npm run dev",
     working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
     expected_url: prefersDesktop ? "http://127.0.0.1:1420" : "http://127.0.0.1:3000",
-    pid: 4242,
-    status: "running",
-    stdout_preview: "pid:4242",
-    summary: "Browser preview mode returned a browser-preview workspace project status result."
+    pid: null,
+    status: "stopped",
+    stdout_preview:
+      "browser preview mode cannot inspect a live workspace project process and only returned a readonly status preview",
+    summary:
+      "Browser preview mode did not inspect a real workspace project runtime handle and only returned a readonly status preview.",
+    preview_only: true
   };
 }
 
@@ -860,10 +873,13 @@ function createBrowserPreviewWorkspaceProjectStop(query: string): WorkspaceProje
     project_path: prefersDesktop ? "apps/desktop" : "apps/example",
     command_label: "npm run dev",
     working_directory: prefersDesktop ? "apps/desktop" : "apps/example",
-    pid: 4242,
+    pid: 0,
     status: "stopped",
-    stdout_preview: "browser preview mode returned a static workspace project stop preview",
-    summary: "Browser preview mode returned a browser-preview workspace project stop result."
+    stdout_preview:
+      "browser preview mode did not stop a real workspace project process and only returned a readonly stop preview",
+    summary:
+      "Browser preview mode did not execute a workspace project stop and only returned a readonly stop preview.",
+    preview_only: true
   };
 }
 
@@ -881,7 +897,9 @@ function createBrowserPreviewNpcProjectScreenshotCapture(
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     artifact_directory: ".opencow/artifacts/npc-showcase",
     capture_target: prefersCattle ? "http://127.0.0.1:3000" : "http://127.0.0.1:1420",
-    summary: "Browser preview mode returned a browser-preview NPC local project screenshot capture result."
+    summary:
+      "Browser preview mode did not capture a real NPC local project screenshot and only returned a readonly artifact preview.",
+    preview_only: true
   };
 }
 
@@ -902,7 +920,9 @@ function createBrowserPreviewNpcProjectShowcaseSiteWrite(
     source_screenshot_path: prefersCattle
       ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
-    summary: "Browser preview mode returned a browser-preview NPC local project showcase-site write result."
+    summary:
+      "Browser preview mode did not write a real NPC local project showcase site and only returned a readonly changed-files preview.",
+    preview_only: true
   };
 }
 
@@ -924,7 +944,9 @@ function createBrowserPreviewNpcProjectShowcasePublishPreview(
       ? ".opencow/artifacts/npc-showcase/cattle-screenshot-browser-preview.png"
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     next_git_step: "Git commit or push is still separate and requires its own explicit confirmation stage.",
-    summary: "Browser preview mode returned a browser-preview NPC local project showcase publish preview result."
+    summary:
+      "Browser preview mode did not load real NPC local project showcase publish artifacts and only returned a readonly publish preview.",
+    preview_only: true
   };
 }
 
@@ -948,7 +970,9 @@ function createBrowserPreviewNpcProjectShowcaseGitConfirmationPreview(
       : ".opencow/artifacts/npc-showcase/desktop-screenshot-browser-preview.png",
     recommended_git_action,
     required_confirmation_stage: "Git commit or push still requires its own explicit confirmation and execution stage.",
-    summary: "Browser preview mode returned a browser-preview NPC local project showcase git confirmation preview result."
+    summary:
+      "Browser preview mode did not inspect real NPC local project git-ready changes and only returned a readonly confirmation preview.",
+    preview_only: true
   };
 }
 

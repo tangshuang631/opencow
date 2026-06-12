@@ -1625,14 +1625,18 @@ async function executeNpcLocalProjectRunPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(runWorkspaceProject(query), context);
+  const executionLabel = result.preview_only
+    ? "This browser preview stayed readonly and did not launch a real local process."
+    : "This is the first executed stage inside the NPC showcase chain.";
+  const pidLabel = result.preview_only ? "not executed in browser preview" : String(result.pid);
 
   return {
     resultTitle,
     resultSummary:
       `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
       `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. ` +
-      `Preview: ${result.stdout_preview}. This is the first executed stage inside the NPC showcase chain.`
+      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${pidLabel}. ` +
+      `Preview: ${result.stdout_preview}. ${executionLabel}`
   };
 }
 
@@ -1642,6 +1646,9 @@ async function executeNpcLocalProjectScreenshotCapturePlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(captureNpcLocalProjectScreenshot(query), context);
+  const executionLabel = result.preview_only
+    ? "This browser preview stayed readonly and did not capture a real screenshot artifact."
+    : "This is the screenshot stage inside the NPC showcase chain.";
 
   return {
     resultTitle,
@@ -1649,7 +1656,7 @@ async function executeNpcLocalProjectScreenshotCapturePlan(
       `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
       `Capture target: ${result.capture_target}. Expected URL: ${result.expected_url ?? "not inferred"}. ` +
       `Artifact path: ${result.artifact_path}. Artifact directory: ${result.artifact_directory}. ` +
-      `This is the screenshot stage inside the NPC showcase chain.`
+      `${executionLabel}`
   };
 }
 
@@ -1659,6 +1666,9 @@ async function executeNpcLocalProjectShowcaseSiteWritePlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(writeNpcLocalProjectShowcaseSite(query), context);
+  const executionLabel = result.preview_only
+    ? "This browser preview stayed readonly and did not write real showcase files."
+    : "This is the showcase-site write stage inside the NPC showcase chain.";
 
   return {
     resultTitle,
@@ -1666,7 +1676,7 @@ async function executeNpcLocalProjectShowcaseSiteWritePlan(
       `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
       `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
       `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
-      `This is the showcase-site write stage inside the NPC showcase chain.`
+      `${executionLabel}`
   };
 }
 
@@ -1788,13 +1798,14 @@ async function executeWorkspaceProjectRunPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(runWorkspaceProject(query), context);
+  const pidLabel = result.preview_only ? "not executed in browser preview" : String(result.pid);
 
   return {
     resultTitle,
     resultSummary:
       `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
       `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. Preview: ${result.stdout_preview}`
+      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${pidLabel}. Preview: ${result.stdout_preview}`
   };
 }
 
@@ -1821,13 +1832,14 @@ async function executeWorkspaceProjectStopPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(stopWorkspaceProject(query), context);
+  const pidLabel = result.preview_only ? "not executed in browser preview" : String(result.pid);
 
   return {
     resultTitle,
     resultSummary:
       `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
       `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `PID: ${result.pid}. Status: ${result.status}. Preview: ${result.stdout_preview}`
+      `PID: ${pidLabel}. Status: ${result.status}. Preview: ${result.stdout_preview}`
   };
 }
 
