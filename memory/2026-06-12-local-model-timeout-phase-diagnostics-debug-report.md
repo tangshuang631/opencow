@@ -213,3 +213,18 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This keeps the product model-first for safe readonly explanations without allowing a slow local model to make OpenCow feel frozen.
 - Status: DONE
+
+## Follow-up: RAG shell handoff previews use local-model explanation without bypassing permission
+
+- Symptom: RAG-to-shell handoff previews were correctly treated as readonly continuation previews, but their visible result could still surface deterministic handoff summaries such as command preview, required permission, and safety status directly in the main conversation.
+- Root cause: `rag-local-shell-handoff-preview`, `skills-local-enabled-rag-shell-handoff-preview`, and `npc-local-enabled-rag-shell-handoff-preview` were already supported preview task kinds and continuation kinds, but they were not part of the App-level explainable readonly result whitelist.
+- Fix: Added all three handoff preview kinds to the local-model explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). Their prompts now ask the selected local model to explain the local RAG evidence, shell handoff plan, suggested command, permission level, and explicitly state that no command was executed and continuation still requires permission approval and any high-risk confirmation.
+- Safety boundary: Only the readonly preview presentation changed. The stored preview continuation metadata is unchanged, and the regression test proves that sending `继续` after the model-explained preview still surfaces `批准提权` without calling the workspace-write shell runner.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "local RAG shell handoff" --pool forks --poolOptions.forks.singleFork` passed with 36 tests reported.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.skills-rag-shell-handoff.test.ts src/features/assistant/assistantTaskService.npc-shell-preview.test.ts --pool forks --poolOptions.forks.singleFork` passed with 8 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.task-guard.test.tsx src/app/app.continuation-message.test.ts src/features/workbench/taskQueueMetadata.test.ts src/features/workbench/components/MainConversation.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 146 tests.
+  - `npm run verify:all` passed, including 592 desktop tests, repository build, encoding check, health check, and 71 desktop Tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This removes another ordinary fixed-output preview path while preserving the controlled permission chain around real shell execution.
+- Status: DONE

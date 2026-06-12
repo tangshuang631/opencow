@@ -734,6 +734,75 @@ describe("App", () => {
     expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^readonly-shell-git-status-explanation-/));
   }, 15_000);
 
+  it("explains local RAG shell handoff previews through the model while continue still requests permission", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: "review local shell permission rules and preview the next safe shell step to create a temp-output folder",
+      summary: "Local knowledge search returned 2 matching passages across 7 indexed documents.",
+      match_count: 2,
+      indexed_document_count: 7,
+      items: [
+        {
+          path: "docs/v1.0/04-permission-safety-shell.md",
+          title: "04-permission-safety-shell.md",
+          snippet: "Shell execution must include permission checks and confirmation.",
+          score: 42
+        },
+        {
+          path: "OPENCOW_CORE_RULES.md",
+          title: "OPENCOW_CORE_RULES.md",
+          snippet: "Permissions, shell, safety, logs, and rollback are core safety paths.",
+          score: 27
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message:
+        "本轮只是基于本地 RAG 预览 Shell 交接计划，还没有创建 temp-output；如果继续，会先进入 workspace-write 提权审批，再按受控命令执行。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "review local shell permission rules and preview the next safe shell step to create a temp-output folder" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("RAG Shell 交接预览说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/本轮只是基于本地 RAG 预览 Shell 交接计划/)).toBeInTheDocument();
+    });
+    expect(within(conversation).queryByText("Local RAG shell handoff preview")).not.toBeInTheDocument();
+    expect(runWorkspaceWriteShellCommandMock).not.toHaveBeenCalled();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^rag-local-shell-handoff-preview-explanation-/),
+      message: expect.stringContaining("继续时仍必须经过权限审批")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
+    }));
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "继续" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    expect(await screen.findByRole("button", { name: "批准提权" })).toBeInTheDocument();
+    expect(screen.getByText(/workspace-write/i)).toBeInTheDocument();
+    expect(runWorkspaceWriteShellCommandMock).not.toHaveBeenCalled();
+  });
+
   it("explains an explicit RAG capability overview through the local model instead of fixed catalog copy", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,

@@ -854,6 +854,9 @@ type ExplainableReadonlyResultKind =
   | "skills-local-enabled-match"
   | "rag-local-doc-search"
   | "skills-local-enabled-rag-doc-search"
+  | "rag-local-shell-handoff-preview"
+  | "skills-local-enabled-rag-shell-handoff-preview"
+  | "npc-local-enabled-rag-shell-handoff-preview"
   | "readonly-shell-git-status"
   | "readonly-shell-workspace-root"
   | "readonly-shell-packages-dir"
@@ -882,6 +885,9 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "skills-local-enabled-match"
     || kind === "rag-local-doc-search"
     || kind === "skills-local-enabled-rag-doc-search"
+    || kind === "rag-local-shell-handoff-preview"
+    || kind === "skills-local-enabled-rag-shell-handoff-preview"
+    || kind === "npc-local-enabled-rag-shell-handoff-preview"
     || kind === "readonly-shell-git-status"
     || kind === "readonly-shell-workspace-root"
     || kind === "readonly-shell-packages-dir"
@@ -1049,6 +1055,18 @@ function getReadonlyOverviewExplanationTitle(
     return "Skill 辅助 RAG 说明";
   }
 
+  if (executionKind === "npc-local-enabled-rag-shell-handoff-preview") {
+    return "NPC RAG Shell 交接预览说明";
+  }
+
+  if (executionKind === "skills-local-enabled-rag-shell-handoff-preview") {
+    return "Skill RAG Shell 交接预览说明";
+  }
+
+  if (executionKind === "rag-local-shell-handoff-preview") {
+    return "RAG Shell 交接预览说明";
+  }
+
   if (executionKind === "skills-local-inspect") {
     return "Skill 详情说明";
   }
@@ -1123,23 +1141,29 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                                   ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
                                   : payload.executionKind === "skills-local-enabled-rag-doc-search"
                                     ? "重点根据已匹配 Skill 和本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
-                                    : payload.executionKind === "skills-local-inspect"
-                                      ? "重点解释这个 Skill 的用途、启用状态、适合任务、内容预览和后续使用边界。"
-                                      : payload.executionKind === "skills-local-scan"
-                                        ? "重点解释当前扫描到的本地 Skills 生态、已启用项、可用入口和下一步安全使用建议。"
-                                        : payload.executionKind === "skills-local-enabled-match"
-                                          ? "重点解释推荐哪个已启用 Skill、为什么匹配、可做什么、不能越过哪些权限边界。"
-                                          : payload.executionKind === "skills-local-enabled-list"
-                                            ? "重点解释当前已启用 Skills 的用途、注册表位置、适合的下一步，以及哪些动作仍需要审批。"
-                                            : payload.executionKind === "rag-local-doc-search"
-                                              ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
-                                              : payload.executionKind === "readonly-shell-git-status"
-                                                ? "重点解释 git 状态只读诊断结果、当前变更风险、为什么本轮没有执行写入，以及下一步如何安全处理。"
-                                                : payload.executionKind === "readonly-shell-workspace-root"
-                                                  ? "重点解释工作区根目录只读诊断结果、关键入口是否可见、为什么本轮没有执行写入，以及下一步如何安全排查。"
-                                                  : payload.executionKind === "readonly-shell-packages-dir"
-                                                    ? "重点解释 packages 目录只读诊断结果、包结构线索、为什么本轮没有执行写入，以及下一步如何安全排查。"
-                                              : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
+                                    : payload.executionKind === "npc-local-enabled-rag-shell-handoff-preview"
+                                      ? "重点解释 NPC、已启用 Skill、本地 RAG 依据和 Shell 交接计划；明确这只是只读预览，没有执行命令，继续时仍必须经过权限审批和必要的高风险确认。"
+                                      : payload.executionKind === "skills-local-enabled-rag-shell-handoff-preview"
+                                        ? "重点解释已启用 Skill、本地 RAG 依据和 Shell 交接计划；明确这只是只读预览，没有执行命令，继续时仍必须经过权限审批和必要的高风险确认。"
+                                        : payload.executionKind === "rag-local-shell-handoff-preview"
+                                          ? "重点解释本地 RAG 依据、Shell 交接计划、建议命令和权限等级；明确这只是只读预览，没有执行命令，继续时仍必须经过权限审批和必要的高风险确认。"
+                                          : payload.executionKind === "skills-local-inspect"
+                                            ? "重点解释这个 Skill 的用途、启用状态、适合任务、内容预览和后续使用边界。"
+                                            : payload.executionKind === "skills-local-scan"
+                                              ? "重点解释当前扫描到的本地 Skills 生态、已启用项、可用入口和下一步安全使用建议。"
+                                              : payload.executionKind === "skills-local-enabled-match"
+                                                ? "重点解释推荐哪个已启用 Skill、为什么匹配、可做什么、不能越过哪些权限边界。"
+                                                : payload.executionKind === "skills-local-enabled-list"
+                                                  ? "重点解释当前已启用 Skills 的用途、注册表位置、适合的下一步，以及哪些动作仍需要审批。"
+                                                  : payload.executionKind === "rag-local-doc-search"
+                                                    ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                                                    : payload.executionKind === "readonly-shell-git-status"
+                                                      ? "重点解释 git 状态只读诊断结果、当前变更风险、为什么本轮没有执行写入，以及下一步如何安全处理。"
+                                                      : payload.executionKind === "readonly-shell-workspace-root"
+                                                        ? "重点解释工作区根目录只读诊断结果、关键入口是否可见、为什么本轮没有执行写入，以及下一步如何安全排查。"
+                                                        : payload.executionKind === "readonly-shell-packages-dir"
+                                                          ? "重点解释 packages 目录只读诊断结果、包结构线索、为什么本轮没有执行写入，以及下一步如何安全排查。"
+                                                    : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [
     "你是 OpenCow 的本地项目说明助手。",
