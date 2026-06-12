@@ -414,6 +414,31 @@ function createLocalModelContextOverflowRagRetryState(
   });
 }
 
+function getNpcConfigReadonlyDraftRetryMessage(
+  task: WorkbenchState["tasks"]["items"][number] | undefined
+): string | null {
+  if (task?.executionKind !== "npc-config-write" || !task.lastFailureDetail) {
+    return null;
+  }
+
+  const normalizedDetail = task.lastFailureDetail.toLowerCase();
+  const isTimeoutRecovery =
+    normalizedDetail.includes("streamphase=waiting-first-chunk")
+    || normalizedDetail.includes("streamphase=streaming")
+    || normalizedDetail.includes("maximum execution time")
+    || normalizedDetail.includes("timed out");
+
+  if (!isTimeoutRecovery) {
+    return null;
+  }
+
+  return [
+    "先给我这个 NPC 的只读草案，不要保存配置。",
+    "请基于上一次失败的创建请求，先说明角色定位、能力边界、需要哪些本地资料、以及确认后再保存的下一步。",
+    `原始请求：${task.summary}`
+  ].join(" ");
+}
+
 function isReadonlyShellDiagnosticPlan(plan: AssistantTaskPlanResult): boolean {
   return plan.kind.startsWith("readonly-shell-");
 }
@@ -2389,6 +2414,36 @@ export function App() {
         const selfCheckMessage = ragSelfCheckMessage ?? getShellSelfCheckRetryMessage(failedTask);
 
         if (!selfCheckMessage) {
+          const npcReadonlyDraftRetryMessage = getNpcConfigReadonlyDraftRetryMessage(failedTask);
+
+          if (npcReadonlyDraftRetryMessage) {
+            const assistantPlan = assertValidAssistantTaskPlanResult(
+              planAssistantTask(npcReadonlyDraftRetryMessage, "readonly")
+            );
+
+            if (assistantPlan.kind !== "npc-local-collaboration-preview") {
+              return createAssistantPlanningFailedState(current, {
+                message: npcReadonlyDraftRetryMessage,
+                detail:
+                  `NPC config timeout recovery must return npc-local-collaboration-preview. Planner returned ${assistantPlan.kind}, so the failed config write was not retried.`,
+                actionLabel: "请先修复 NPC 只读草案恢复路由，再重试生成配置。",
+                source: "local_task_retry_npc_config_recovery_planner"
+              });
+            }
+
+            return createUserTaskSubmittedState(current, {
+              message: npcReadonlyDraftRetryMessage,
+              executionKind: assistantPlan.kind,
+              executionTitle: assistantPlan.title,
+              executionAuditSummary: assistantPlan.auditSummary,
+              executionAuditDetail: [
+                assistantPlan.auditDetail,
+                "Recovered from an NPC config timeout by switching to a readonly NPC draft preview before any config write retry.",
+                failedTask?.lastFailureDetail ? `Previous failure: ${failedTask.lastFailureDetail}` : null
+              ].filter((line): line is string => line !== null).join(" ")
+            });
+          }
+
           return createTaskExecutionRetriedState(current, taskId);
         }
 

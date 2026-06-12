@@ -300,3 +300,19 @@
 - Regression test: `apps/desktop/src/app/app.self-repair.test.tsx`
 - Related: This moves another user-visible fixed-output success path through the local model without weakening workspace-write permission, audit, rollback, or anti-stall behavior.
 - Status: DONE
+
+## Follow-up: NPC config timeout retry switches to readonly draft recovery
+
+- Symptom: After `你能帮我创建一个课程助手npc吗` timed out while waiting for the first local-model token, the UI showed useful Chinese diagnostics but the `重试本地任务` action still risked repeating the same permission-backed NPC config write path.
+- Root cause: `handleRetryLocalTask` had special readonly recovery routes for local-model context overflow, RAG failures, and shell self-checks, but `npc-config-write` timeout failures fell through to `createTaskExecutionRetriedState`, which re-queued the same write task.
+- Fix: Added an NPC config timeout recovery branch in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). When an `npc-config-write` failure includes `streamPhase=waiting-first-chunk`, `streamPhase=streaming`, timeout, or maximum-execution diagnostics, retry now submits a readonly NPC draft request (`npc-local-collaboration-preview`) that preserves the original request and explains role, boundaries, local materials, and the next save step before any config write retry.
+- Safety boundary: No NPC config is written during recovery. The branch verifies the planner returns `npc-local-collaboration-preview`; if routing drifts into a permission request or write path, the retry stops with a planning failure instead of executing a hidden mutation.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "recovers NPC config first-token" --pool forks --poolOptions.forks.singleFork --testTimeout 30000` passed with 37 tests reported.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx src/features/assistant/assistantTaskService.npc-preview.test.ts --pool forks --poolOptions.forks.singleFork` passed with 109 tests.
+  - `npm --workspace packages/openclaw-adapter run build` passed.
+  - `npm run predesktop:dev` passed.
+  - `npm run verify:all` passed, including 599 desktop tests, repository build, encoding check, health check, and 71 desktop Tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This directly addresses the screenshot failure path by turning a repeated slow-model write retry into a safe, model-explained draft-recovery step.
+- Status: DONE

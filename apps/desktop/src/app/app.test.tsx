@@ -375,6 +375,116 @@ describe("App", () => {
     }
   });
 
+  it("recovers NPC config first-token timeouts through a readonly NPC draft preview instead of retrying the write", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock
+      .mockReturnValueOnce(new Promise(() => undefined))
+      .mockResolvedValueOnce({
+        model: "qwen3.6:35b",
+        message:
+          "这次不要直接保存配置。先把课程助手 NPC 收敛成只读草案：定位是课程规划与资料整理，下一步确认角色、资料来源和权限边界后再保存。"
+      });
+    loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
+      capability_id: "npc",
+      title: "OpenClaw NPC capability overview",
+      status: "ready-foundation",
+      required_package_count: 3,
+      available_package_count: 3,
+      available_packages: ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/tool-call-repair"],
+      missing_packages: [],
+      summary: "NPC foundation packages are available for local collaboration preview."
+    });
+    listEnabledLocalSkillsMock.mockResolvedValueOnce({
+      summary: "Found 1 enabled local skill entry in the workspace registry.",
+      total_count: 1,
+      registry_path: ".opencow/skills/enabled-skills.json",
+      items: [
+        {
+          name: "course-docs-helper",
+          path: "skills/course-docs-helper/SKILL.md",
+          source: "workspace-skill",
+          description: "Help organize course documents."
+        }
+      ]
+    });
+    searchLocalKnowledgeMock.mockResolvedValueOnce({
+      query: "先给我这个 NPC 的只读草案，不要保存配置。",
+      summary: "Local knowledge search returned 1 matching passage across 7 indexed documents.",
+      match_count: 1,
+      indexed_document_count: 7,
+      items: [
+        {
+          path: "docs/v1.0/06-rag-skills-npc-mcp.md",
+          title: "06-rag-skills-npc-mcp.md",
+          snippet: "NPC 是低代码人设和工作模式配置。",
+          score: 37
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能帮我创建一个课程助手npc吗" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const approveButton = await screen.findByRole("button", { name: "批准提权" });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(approveButton);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(480_500);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(within(getConversationRegion()).getByText("NPC 配置生成失败")).toBeInTheDocument();
+      expect(writeNpcConfigMock).not.toHaveBeenCalled();
+
+      await act(async () => {
+        const retryButtons = screen.getAllByRole("button", { name: "重试本地任务" });
+        fireEvent.click(retryButtons[retryButtons.length - 1]);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(90);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(130);
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(loadOpenClawCapabilityOverviewMock).toHaveBeenCalledWith("npc");
+      expect(
+        within(getConversationRegion()).getByText(/这次不要直接保存配置。先把课程助手 NPC 收敛成只读草案/)
+      ).toBeInTheDocument();
+
+      expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(2);
+      expect(writeNpcConfigMock).not.toHaveBeenCalled();
+      expect(screen.queryByText("NPC 配置已保存")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("aborts an in-flight NPC config generation when the user stops the task", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
