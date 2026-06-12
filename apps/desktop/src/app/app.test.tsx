@@ -20,6 +20,7 @@ const {
   listEnabledLocalSkillsMock,
   disableLocalSkillMock,
   matchEnabledLocalSkillsMock,
+  runReadonlyShellCommandMock,
   runWorkspaceWriteShellCommandMock,
   runControlledFullShellCommandMock,
   writeNpcConfigMock
@@ -41,6 +42,7 @@ const {
   listEnabledLocalSkillsMock: vi.fn(),
   disableLocalSkillMock: vi.fn(),
   matchEnabledLocalSkillsMock: vi.fn(),
+  runReadonlyShellCommandMock: vi.fn(),
   runWorkspaceWriteShellCommandMock: vi.fn(),
   runControlledFullShellCommandMock: vi.fn(),
   writeNpcConfigMock: vi.fn()
@@ -73,6 +75,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
     disableLocalSkill: disableLocalSkillMock,
     matchEnabledLocalSkills: matchEnabledLocalSkillsMock,
+    runReadonlyShellCommand: runReadonlyShellCommandMock,
     runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock,
     runControlledFullShellCommand: runControlledFullShellCommandMock,
     writeNpcConfig: writeNpcConfigMock
@@ -114,6 +117,7 @@ describe("App", () => {
     listEnabledLocalSkillsMock.mockReset();
     disableLocalSkillMock.mockReset();
     matchEnabledLocalSkillsMock.mockReset();
+    runReadonlyShellCommandMock.mockReset();
     runWorkspaceWriteShellCommandMock.mockReset();
     runControlledFullShellCommandMock.mockReset();
     writeNpcConfigMock.mockReset();
@@ -633,6 +637,58 @@ describe("App", () => {
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen3.6:35b",
       message: expect.stringContaining("重点解释配置文件、根脚本、包管理线索")
+    }));
+  });
+
+  it("explains readonly shell git status results through the selected local model instead of fixed command preview", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    runReadonlyShellCommandMock.mockResolvedValueOnce({
+      command_id: "git-status",
+      command_label: "git status --short",
+      permission: "readonly",
+      stdout_preview: " M apps/desktop/src/app/App.tsx\n M apps/desktop/src/app/app.test.tsx",
+      stderr_preview: "",
+      status_code: 0,
+      summary: "Readonly shell command completed."
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "当前只是只读查看 git 状态，工作区有 App 和测试文件变更；下一步应先跑相关测试，再决定是否提交。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "check git status for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = getConversationRegion();
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("check git status for this workspace").length).toBeGreaterThan(0);
+      expect(within(conversation).getByText("Git 状态诊断说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/当前只是只读查看 git 状态/)).toBeInTheDocument();
+    });
+    expect(within(conversation).queryByText(/Command: git status --short/)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(/Preview:  M apps\/desktop\/src\/app\/App\.tsx/)).not.toBeInTheDocument();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.6:35b",
+      message: expect.stringContaining("重点解释 git 状态只读诊断结果")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("Command: git status --short")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("为什么本轮没有执行写入")
     }));
   });
 

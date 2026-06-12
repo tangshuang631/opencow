@@ -853,6 +853,9 @@ type ExplainableReadonlyResultKind =
   | "skills-local-enabled-match"
   | "rag-local-doc-search"
   | "skills-local-enabled-rag-doc-search"
+  | "readonly-shell-git-status"
+  | "readonly-shell-workspace-root"
+  | "readonly-shell-packages-dir"
   | "network-search-guidance";
 
 function isExplainableReadonlyResultKind(kind: string | undefined): kind is ExplainableReadonlyResultKind {
@@ -878,6 +881,9 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "skills-local-enabled-match"
     || kind === "rag-local-doc-search"
     || kind === "skills-local-enabled-rag-doc-search"
+    || kind === "readonly-shell-git-status"
+    || kind === "readonly-shell-workspace-root"
+    || kind === "readonly-shell-packages-dir"
     || kind === "network-search-guidance";
 }
 
@@ -1021,6 +1027,18 @@ function getReadonlyOverviewExplanationTitle(
     return "本地 RAG 说明";
   }
 
+  if (executionKind === "readonly-shell-git-status") {
+    return "Git 状态诊断说明";
+  }
+
+  if (executionKind === "readonly-shell-workspace-root") {
+    return "工作区根目录诊断说明";
+  }
+
+  if (executionKind === "readonly-shell-packages-dir") {
+    return "包目录诊断说明";
+  }
+
   return "工作区说明";
 }
 
@@ -1073,6 +1091,12 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                                             ? "重点解释当前已启用 Skills 的用途、注册表位置、适合的下一步，以及哪些动作仍需要审批。"
                                             : payload.executionKind === "rag-local-doc-search"
                                               ? "重点根据本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
+                                              : payload.executionKind === "readonly-shell-git-status"
+                                                ? "重点解释 git 状态只读诊断结果、当前变更风险、为什么本轮没有执行写入，以及下一步如何安全处理。"
+                                                : payload.executionKind === "readonly-shell-workspace-root"
+                                                  ? "重点解释工作区根目录只读诊断结果、关键入口是否可见、为什么本轮没有执行写入，以及下一步如何安全排查。"
+                                                  : payload.executionKind === "readonly-shell-packages-dir"
+                                                    ? "重点解释 packages 目录只读诊断结果、包结构线索、为什么本轮没有执行写入，以及下一步如何安全排查。"
                                               : "重点解释这个项目是什么、结构重点在哪里、接下来最值得关注什么。";
 
   return [

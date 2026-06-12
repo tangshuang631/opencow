@@ -184,3 +184,18 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This keeps the user-facing path model-first for NPC creation while making the no-first-token failure actionable, auditable, Chinese-first, and explicit that no config was written.
 - Status: DONE
+
+## Follow-up: readonly shell success outputs use local-model explanation
+
+- Symptom: Successful readonly shell diagnostics such as git status could still surface fixed concatenated text like `Command: git status --short` and `Preview: ...` as the main assistant answer.
+- Root cause: `readonly-shell-git-status`, `readonly-shell-workspace-root`, and `readonly-shell-packages-dir` were supported readonly execution kinds, but they were not included in the App-level readonly explanation hook.
+- Fix: Added all three readonly shell success kinds to the local-model explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain the readonly shell diagnostic, why no write was performed, and the safe next step from the raw facts.
+- Safety boundary: This only changes successful readonly presentation. Shell mutations, workspace-write commands, controlled-full commands, permission approval, dangerous confirmation, audit details, and retry self-check behavior remain unchanged.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx -t "readonly shell git status" --pool forks --poolOptions.forks.singleFork` passed with 34 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.shell.test.ts src/app/app.task-guard.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 64 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 202 tests.
+  - `npm run verify:all` passed, including 590 desktop tests, repository build, encoding check, health check, and 71 desktop tauri tests.
+- Regression test: `apps/desktop/src/app/app.test.tsx`
+- Related: This removes another ordinary fixed readonly output path while keeping shell execution auditable and permission-bounded.
+- Status: DONE
