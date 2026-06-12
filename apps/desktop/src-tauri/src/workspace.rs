@@ -742,10 +742,13 @@ pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult,
 
     let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
     let stdout_preview = truncate_preview(stdout.trim(), 20);
-    let pid = stdout_preview
-        .strip_prefix("pid:")
-        .and_then(|value| value.trim().parse::<u32>().ok())
-        .unwrap_or(0);
+    let pid = parse_workspace_project_run_pid(&stdout_preview).ok_or_else(|| {
+        format!(
+            "workspace project run returned an invalid live process handle for {}: {}",
+            matched.relative_path, stdout_preview
+        )
+    })?;
+
     let working_directory_relative = path_relative_to_root(&root, &working_directory);
 
     upsert_workspace_project_runtime_record(
@@ -898,7 +901,25 @@ pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResul
             )
         })?;
     let powershell_command = format!(
-        "if (Get-Process -Id {0} -ErrorAction SilentlyContinue) {{ Stop-Process -Id {0} -Force; \"stopped:{0}\" }} else {{ \"stopped:{0}\" }}",
+        "$targetPid = {0}; \
+if (-not (Get-Process -Id $targetPid -ErrorAction SilentlyContinue)) {{ \"stopped:$targetPid\"; exit 0 }}; \
+$childIds = New-Object System.Collections.Generic.List[int]; \
+function Add-Descendants([int]$ParentPid, $Accumulator) {{ \
+  $children = Get-CimInstance Win32_Process -Filter (\"ParentProcessId = \" + $ParentPid) -ErrorAction SilentlyContinue; \
+  foreach ($child in $children) {{ \
+    $childPid = [int]$child.ProcessId; \
+    if (-not $Accumulator.Contains($childPid)) {{ \
+      $Accumulator.Add($childPid) | Out-Null; \
+      Add-Descendants $childPid $Accumulator; \
+    }} \
+  }} \
+}}; \
+Add-Descendants $targetPid $childIds; \
+foreach ($childPid in ($childIds | Sort-Object -Descending)) {{ \
+  Stop-Process -Id $childPid -Force -ErrorAction SilentlyContinue; \
+}}; \
+Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue; \
+\"stopped:$targetPid descendants:$($childIds.Count)\"",
         record.pid
     );
     let output = Command::new("powershell")
@@ -2879,6 +2900,14 @@ fn current_unix_timestamp_string() -> String {
         .unwrap_or_else(|_| "0".to_string())
 }
 
+fn parse_workspace_project_run_pid(stdout_preview: &str) -> Option<u32> {
+    let pid = stdout_preview
+        .strip_prefix("pid:")
+        .and_then(|value| value.trim().parse::<u32>().ok())?;
+
+    (pid > 0).then_some(pid)
+}
+
 fn collect_existing_paths(root: &Path, candidates: &[&str]) -> Vec<String> {
     candidates
         .iter()
@@ -3623,6 +3652,7 @@ mod tests {
         local_skill_disable, local_skill_install, looks_like_workspace_root,
         opencow_self_repair_enabled_skills_registry,
         opencow_self_repair_workspace_project_runtime_registry, parse_skill_frontmatter_name,
+        parse_workspace_project_run_pid,
         read_enabled_skill_registry, read_workspace_project_runtime_records,
         resolve_workspace_root, score_mcp_plugin_match, score_skill_match, score_snippet,
         split_knowledge_segments, tokenize_query, truncate_preview,
@@ -5003,7 +5033,16 @@ mod tests {
         assert_eq!(stop_result.pid, run_result.pid);
         assert_eq!(stop_result.status, "stopped".to_string());
         assert!(stop_result.stdout_preview.contains("stopped:"));
+        assert!(stop_result.stdout_preview.contains("descendants:"));
         assert!(registry_records.is_empty());
+    }
+
+    #[test]
+    fn parse_workspace_project_run_pid_rejects_zero_and_invalid_values() {
+        assert_eq!(parse_workspace_project_run_pid("pid:1234"), Some(1234));
+        assert_eq!(parse_workspace_project_run_pid("pid:0"), None);
+        assert_eq!(parse_workspace_project_run_pid("pid:not-a-number"), None);
+        assert_eq!(parse_workspace_project_run_pid("started"), None);
     }
 
     #[test]
