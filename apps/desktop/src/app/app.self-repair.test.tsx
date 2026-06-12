@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const {
+  chatWithOllamaModelMock,
+  cancelOllamaChatMock,
   loadOllamaOverviewMock,
   loadWorkspaceOverviewMock,
   loadWorkspaceConfigOverviewMock,
@@ -10,6 +12,8 @@ const {
   repairOpencowEnabledSkillsRegistryMock,
   repairOpencowWorkspaceProjectRuntimeRegistryMock
 } = vi.hoisted(() => ({
+  chatWithOllamaModelMock: vi.fn(),
+  cancelOllamaChatMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
   loadWorkspaceOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
@@ -19,6 +23,8 @@ const {
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
+  chatWithOllamaModel: chatWithOllamaModelMock,
+  cancelOllamaChat: cancelOllamaChatMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
 
@@ -38,12 +44,18 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 });
 
 beforeEach(() => {
+  chatWithOllamaModelMock.mockReset();
+  cancelOllamaChatMock.mockReset();
   loadOllamaOverviewMock.mockReset();
   loadWorkspaceOverviewMock.mockReset();
   loadWorkspaceConfigOverviewMock.mockReset();
   searchLocalKnowledgeMock.mockReset();
   repairOpencowEnabledSkillsRegistryMock.mockReset();
   repairOpencowWorkspaceProjectRuntimeRegistryMock.mockReset();
+  chatWithOllamaModelMock.mockResolvedValue({
+    model: "qwen2.5-coder:7b",
+    message: "这是本地模型解释的 OpenCow 自修复预览：当前只读取配置、脚本和本地文档，没有写文件；如果继续，需要先经过 workspace-write 提权、审计和回退保护。"
+  });
 });
 
 function findModelPicker(modelName = "qwen2.5-coder:7b") {
@@ -121,7 +133,8 @@ describe("App self-repair mutation continuation", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Opencow self-repair preview|Readonly self-repair preview/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/OpenCow 自修复预览说明/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/这是本地模型解释的 OpenCow 自修复预览/).length).toBeGreaterThan(0);
     });
 
     fireEvent.change(composerInput as HTMLTextAreaElement, {
@@ -216,9 +229,21 @@ describe("App self-repair preview flow", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Opencow self-repair preview|Readonly self-repair preview/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/OpenCow 自修复预览说明/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/这是本地模型解释的 OpenCow 自修复预览/).length).toBeGreaterThan(0);
     });
-    expect(screen.getAllByText(/package\.json|desktop:dev|OPENCOW_CORE_RULES\.md/i).length).toBeGreaterThan(0);
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("重点解释当前只是 OpenCow 自修复只读预览")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("package.json")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("desktop:dev")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("OPENCOW_CORE_RULES.md")
+    }));
     expect(screen.queryByText(/鏈湴浠诲姟鎵ц澶辫触/i)).not.toBeInTheDocument();
   });
 });
@@ -284,7 +309,7 @@ describe("App self-repair generic target guidance", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Opencow self-repair preview|Readonly self-repair preview/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/OpenCow 自修复预览说明/).length).toBeGreaterThan(0);
     });
 
     fireEvent.change(composerInput as HTMLTextAreaElement, {
@@ -371,7 +396,7 @@ describe("App self-repair permission cancellation", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Opencow self-repair preview|Readonly self-repair preview/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/OpenCow 自修复预览说明/).length).toBeGreaterThan(0);
     });
 
     fireEvent.change(composerInput as HTMLTextAreaElement, {
@@ -479,7 +504,7 @@ describe("App self-repair runtime registry continuation", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Opencow self-repair preview|Readonly self-repair preview/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/OpenCow 自修复预览说明/).length).toBeGreaterThan(0);
     });
 
     fireEvent.change(composerInput as HTMLTextAreaElement, {

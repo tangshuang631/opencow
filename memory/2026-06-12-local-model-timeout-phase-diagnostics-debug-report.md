@@ -228,3 +228,18 @@
 - Regression test: `apps/desktop/src/app/app.test.tsx`
 - Related: This removes another ordinary fixed-output preview path while preserving the controlled permission chain around real shell execution.
 - Status: DONE
+
+## Follow-up: OpenCow self-repair previews use local-model explanation
+
+- Symptom: Successful `opencow-self-repair-preview` tasks were safe readonly previews, but the main conversation could still show deterministic preview text such as config files, root scripts, RAG matches, and suggested repair flow directly.
+- Root cause: `opencow-self-repair-preview` was in the continuation-preview set, but it was not included in the App-level explainable readonly result whitelist. The service returned useful structured facts, yet the visible response did not pass through the selected local model.
+- Fix: Added `opencow-self-repair-preview` to the local-model explanation hook in [apps/desktop/src/app/App.tsx](E:/2026/opencow/apps/desktop/src/app/App.tsx). The prompt now asks the selected local model to explain the readonly self-repair evidence, likely repair target, why no file was written, and why continuation still requires `workspace-write` permission plus audit/rollback protection.
+- Safety boundary: Failed self-repair previews still use the existing failure-analysis path. Successful previews only change presentation; the stored continuation metadata is unchanged, and App regression coverage confirms `继续` still surfaces permission approval before registry repair. Permission cancellation still prevents hidden mutation.
+- Evidence:
+  - `npm --workspace apps/desktop exec vitest run src/app/app.self-repair.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 5 tests.
+  - `npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.continuation-message.test.ts src/app/app.task-guard.test.tsx -t "self-repair|continue|failed self-repair" --pool forks --poolOptions.forks.singleFork` passed with 88 tests.
+  - `npm --workspace apps/desktop exec vitest run src/app/app.self-repair.test.tsx src/app/app.test.tsx src/app/app.chat.test.tsx src/app/app.task-guard.test.tsx src/features/workbench/components/MainConversation.test.tsx src/features/workbench/components/Inspector.test.tsx --pool forks --poolOptions.forks.singleFork` passed with 209 tests.
+  - `npm run verify:all` passed, including 592 desktop tests, repository build, encoding check, health check, and 71 desktop Tauri tests.
+- Regression test: `apps/desktop/src/app/app.self-repair.test.tsx`
+- Related: This removes another high-frequency fixed-output preview while keeping self-repair explicitly staged, permission-scoped, audit-visible, and rollback-visible.
+- Status: DONE
