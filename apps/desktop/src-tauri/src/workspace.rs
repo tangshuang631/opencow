@@ -112,6 +112,22 @@ pub struct WorkspaceProjectNpcShowcaseSiteWriteResult {
     summary: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NpcConfigWritePayload {
+    query: String,
+    model_output: String,
+    config: Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NpcConfigWriteResult {
+    npc_name: String,
+    config_path: String,
+    status: String,
+    summary: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
     project_name: String,
@@ -122,6 +138,92 @@ pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
     source_screenshot_path: String,
     next_git_step: String,
     summary: String,
+}
+
+#[tauri::command]
+pub fn workspace_npc_config_write(payload: NpcConfigWritePayload) -> Result<NpcConfigWriteResult, String> {
+    let root = resolve_workspace_root()?;
+    let config_object = payload
+        .config
+        .as_object()
+        .ok_or_else(|| "NPC config payload must be a JSON object".to_string())?;
+    let raw_name = config_object
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or("custom-npc");
+    let npc_name = raw_name.to_string();
+    let slug = slugify_npc_config_name(&npc_name);
+    let relative_path = format!(".opencow/npcs/{slug}.json");
+    let config_directory = root.join(".opencow").join("npcs");
+    fs::create_dir_all(&config_directory)
+        .map_err(|error| format!("failed to create {}: {error}", config_directory.display()))?;
+
+    let config_path = config_directory.join(format!("{slug}.json"));
+    ensure_path_stays_in_workspace(&root, &config_path)?;
+
+    let mut saved_config = payload.config;
+    if let Some(object) = saved_config.as_object_mut() {
+        object.insert("source_query".to_string(), Value::String(payload.query));
+        object.insert("model_output".to_string(), Value::String(payload.model_output));
+        object.insert("schema_version".to_string(), Value::from(1));
+    }
+
+    let serialized = serde_json::to_string_pretty(&saved_config)
+        .map_err(|error| format!("failed to serialize NPC config: {error}"))?;
+    fs::write(&config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", config_path.display()))?;
+
+    Ok(NpcConfigWriteResult {
+        npc_name: npc_name.clone(),
+        config_path: relative_path.clone(),
+        status: "saved".to_string(),
+        summary: format!("Saved LLM-generated NPC config for {npc_name} to {relative_path}."),
+    })
+}
+
+fn slugify_npc_config_name(name: &str) -> String {
+    let mut slug = String::new();
+
+    for character in name.chars() {
+        if character.is_ascii_alphanumeric() {
+            slug.push(character.to_ascii_lowercase());
+        } else if character.is_whitespace() || matches!(character, '-' | '_' | '.') {
+            if !slug.ends_with('-') {
+                slug.push('-');
+            }
+        }
+    }
+
+    let trimmed = slug.trim_matches('-').to_string();
+
+    if trimmed.is_empty() {
+        "custom-npc".to_string()
+    } else {
+        trimmed
+    }
+}
+
+fn ensure_path_stays_in_workspace(root: &Path, target: &Path) -> Result<(), String> {
+    let absolute_root = root
+        .canonicalize()
+        .map_err(|error| format!("failed to canonicalize workspace root {}: {error}", root.display()))?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("target path has no parent: {}", target.display()))?;
+    let absolute_parent = parent
+        .canonicalize()
+        .map_err(|error| format!("failed to canonicalize target parent {}: {error}", parent.display()))?;
+
+    if absolute_parent.starts_with(&absolute_root) {
+        Ok(())
+    } else {
+        Err(format!(
+            "target path {} is outside workspace root {}",
+            target.display(),
+            root.display()
+        ))
+    }
 }
 
 #[derive(Serialize)]

@@ -10,6 +10,7 @@ import type { OllamaOverview } from "../features/ollama/ollamaService";
 import { resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { Workbench } from "../features/workbench/Workbench";
 import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapability";
+import { writeNpcConfig } from "../features/assistant/localAssistantService";
 import {
   applyPendingRollbackState,
   approvePendingConfirmationState,
@@ -120,7 +121,7 @@ const SUPPORTED_ASSISTANT_PLAN_KINDS = new Set<string>([
   "npc-local-project-showcase-publish-preview",
   "npc-local-project-showcase-git-confirmation-preview",
   "npc-local-shell-plan-preview",
-  "npc-course-assistant-config",
+  "npc-config-write",
   "capability-npc-overview",
   "capability-mcp-overview",
   "mcp-local-plugin-scan",
@@ -710,6 +711,161 @@ async function executeLocalModelChatTask(payload: {
   };
 }
 
+async function executeNpcConfigWriteTask(payload: {
+  model: string;
+  availableModels: WorkbenchState["model"]["availableModels"];
+  message: string;
+  requestId?: string;
+  signal?: AbortSignal;
+  onChunk?: (chunk: string) => void;
+}): Promise<AssistantTaskExecutionResult> {
+  const selectedModel = resolveUsableOllamaChatModel(payload.model, payload.availableModels);
+
+  if (!selectedModel) {
+    throw new Error(
+      "No usable local Ollama model is selected. Start Ollama, pull a local model, and select it before retrying."
+    );
+  }
+
+  const prompt = createNpcConfigGenerationPrompt(payload.message);
+  const result = await chatWithOllamaModel({
+    model: selectedModel,
+    message: prompt,
+    requestId: payload.requestId,
+    signal: payload.signal,
+    onChunk: payload.onChunk
+  });
+  const config = extractNpcConfigFromModelOutput(result.message);
+  const writeResult = await writeNpcConfig({
+    query: payload.message,
+    modelOutput: result.message,
+    config
+  });
+
+  return {
+    resultTitle: "NPC 配置已保存",
+    resultSummary: [
+      `已由本地模型 ${result.model || selectedModel} 生成 NPC 配置，并保存到 ${writeResult.config_path}。`,
+      `NPC 名称：${writeResult.npc_name}。`,
+      "你可以继续补充资料、约束、工具权限或工作流，我会再次经过大模型更新配置，而不是套固定模板。",
+      "",
+      "模型生成摘要：",
+      result.message
+    ].join("\n"),
+    auditDetailLines: [
+      `Ollama model: ${result.model || selectedModel}`,
+      `Ollama done reason: ${result.doneReason || "complete"}`,
+      `NPC config path: ${writeResult.config_path}`,
+      `NPC config status: ${writeResult.status}`
+    ]
+  };
+}
+
+function createNpcConfigGenerationPrompt(userRequest: string): string {
+  return [
+    "你是 opencow 的本地 NPC 配置生成器。请真正理解用户想创建的 NPC，而不是复述固定模板。",
+    "只输出一个 JSON 对象，不要使用 Markdown 代码块，不要添加 JSON 之外的解释。",
+    "JSON 必须包含这些字段：",
+    "name: 简短中文名称；",
+    "purpose: 这个 NPC 要解决的问题；",
+    "persona: 语气、人设和交互方式；",
+    "capabilities: 字符串数组，说明可做的事；",
+    "workflow: 字符串数组，说明默认工作流；",
+    "required_inputs: 字符串数组，说明还需要用户提供哪些资料；",
+    "permissions: 对象，包含 readonly、workspace_write、network 三个字段，说明权限边界；",
+    "first_message: NPC 配好后第一句应该如何主动追问用户。",
+    "请用中文生成，内容要贴合用户请求。",
+    "",
+    `用户请求：${userRequest.trim()}`
+  ].join("\n");
+}
+
+function extractNpcConfigFromModelOutput(modelOutput: string): Record<string, unknown> {
+  const trimmed = modelOutput.trim();
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fencedMatch?.[1]?.trim() ?? extractFirstJsonObject(trimmed);
+
+  try {
+    const parsed = JSON.parse(candidate);
+
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Fall through to a safe wrapper so model prose is still auditable instead of being lost.
+  }
+
+  return {
+    name: inferNpcNameFromText(modelOutput),
+    purpose: "根据用户请求生成的 NPC 配置需要人工复核。",
+    persona: "中文、谨慎、先询问缺失信息再执行。",
+    capabilities: ["理解用户提供的任务背景", "整理下一步需要的资料", "在获得权限后更新本地配置"],
+    workflow: ["读取用户补充信息", "完善 NPC 配置", "需要写入或联网前先确认"],
+    required_inputs: ["请补充这个 NPC 的具体使用场景、资料来源和权限边界"],
+    permissions: {
+      readonly: "可以规划、追问和总结",
+      workspace_write: "只有用户批准后才写入或更新本地配置",
+      network: "只有用户单独开启联网搜索后才查询外部资料"
+    },
+    first_message: "我已经有一个初始配置，请补充这个 NPC 要处理的资料范围和默认工作流。",
+    unparsed_model_output: modelOutput
+  };
+}
+
+function extractFirstJsonObject(text: string): string {
+  const start = text.indexOf("{");
+
+  if (start < 0) {
+    return text;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "\"") {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (character === "{") {
+      depth += 1;
+    }
+
+    if (character === "}") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return text.slice(start, index + 1);
+      }
+    }
+  }
+
+  return text.slice(start);
+}
+
+function inferNpcNameFromText(text: string): string {
+  const nameMatch = text.match(/["“]?name["”]?\s*[:：]\s*["“]?([^",，\n”}]+)/i);
+  return nameMatch?.[1]?.trim() || "自定义 NPC";
+}
+
 function isCurrentTaskAttempt(state: WorkbenchState, taskId: string, attemptCount: number): boolean {
   if (state.tasks.activeTaskId !== taskId) {
     return false;
@@ -1061,7 +1217,7 @@ export function App() {
         return;
       }
 
-      if (activeTask.executionKind === "local-model-chat") {
+      if (activeTask.executionKind === "local-model-chat" || activeTask.executionKind === "npc-config-write") {
         const localModelMessage = getTaskExecutionMessage(activeTask);
         const localModelChatTimeoutMs = getLocalModelChatTimeoutMs(localModelMessage);
         let localModelDiagnosticModel = state.model.activeModel;
@@ -1128,7 +1284,7 @@ export function App() {
             localModelDiagnosticModel = resolveUsableOllamaChatModel(activeModel, availableModels) || activeModel;
           }
 
-          return executeLocalModelChatTask({
+          const commonPayload = {
               model: activeModel,
               availableModels,
               message: localModelMessage,
@@ -1137,7 +1293,7 @@ export function App() {
               sources: state.sources.items,
               requestId: localModelRequestId,
               signal: localModelAbortController.signal,
-              onChunk: (chunk) => {
+              onChunk: (chunk: string) => {
                 startTransition(() => {
                   setState((current) => {
                     if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
@@ -1151,7 +1307,11 @@ export function App() {
                   });
                 });
               }
-            });
+            };
+
+          return activeTask.executionKind === "npc-config-write"
+            ? executeNpcConfigWriteTask(commonPayload)
+            : executeLocalModelChatTask(commonPayload);
         };
 
         void Promise.race([

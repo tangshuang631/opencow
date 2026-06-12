@@ -266,15 +266,29 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
-  it("plans a Chinese course assistant NPC configuration instead of a generic capability overview", () => {
+  it("requests workspace-write before generating and saving an NPC configuration through the local model", () => {
     const plan = planLocalAssistantTask({
       message: "你能帮我配置一个课程助手npc吗",
       permissionMode: "readonly"
     });
 
     expect(plan).toMatchObject({
-      kind: "npc-course-assistant-config",
-      title: "课程助手 NPC 配置方案"
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-config-write",
+      queuedExecutionTitle: "大模型生成并保存 NPC 配置"
+    });
+  });
+
+  it("plans a generic LLM-generated NPC config write after permission is available", () => {
+    const plan = planLocalAssistantTask({
+      message: "你能帮我配置一个文档处理npc吗",
+      permissionMode: "workspace-write"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-config-write",
+      title: "大模型生成并保存 NPC 配置"
     });
   });
 

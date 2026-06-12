@@ -314,7 +314,7 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
-      readonly kind: "npc-course-assistant-config";
+      readonly kind: "npc-config-write";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -473,7 +473,7 @@ export type LocalAssistantTaskPlan =
         | "npc-local-project-showcase-site-write"
         | "npc-local-project-showcase-publish-preview"
         | "npc-local-project-showcase-git-confirmation-preview"
-        | "npc-course-assistant-config"
+        | "npc-config-write"
         | "rag-local-shell-create-temp-output"
         | "rag-local-shell-remove-temp-output"
         | "skills-local-enabled-rag-shell-create-temp-output"

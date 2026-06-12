@@ -16,7 +16,8 @@ const {
   disableLocalSkillMock,
   matchEnabledLocalSkillsMock,
   runWorkspaceWriteShellCommandMock,
-  runControlledFullShellCommandMock
+  runControlledFullShellCommandMock,
+  writeNpcConfigMock
 } = vi.hoisted(() => ({
   cancelOllamaChatMock: vi.fn(),
   chatWithOllamaModelMock: vi.fn(),
@@ -31,7 +32,8 @@ const {
   disableLocalSkillMock: vi.fn(),
   matchEnabledLocalSkillsMock: vi.fn(),
   runWorkspaceWriteShellCommandMock: vi.fn(),
-  runControlledFullShellCommandMock: vi.fn()
+  runControlledFullShellCommandMock: vi.fn(),
+  writeNpcConfigMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -57,7 +59,8 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     disableLocalSkill: disableLocalSkillMock,
     matchEnabledLocalSkills: matchEnabledLocalSkillsMock,
     runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock,
-    runControlledFullShellCommand: runControlledFullShellCommandMock
+    runControlledFullShellCommand: runControlledFullShellCommandMock,
+    writeNpcConfig: writeNpcConfigMock
   };
 });
 
@@ -177,6 +180,66 @@ describe("App", () => {
     expect(within(conversation).queryByText(/本地助手能力说明|Workspace overview|本地助手答复/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/本地任务开始执行/)).not.toBeInTheDocument();
+  });
+
+  it("uses the local model to generate and save a requested NPC config after permission approval", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: JSON.stringify({
+        name: "文档处理 NPC",
+        purpose: "帮助用户整理、总结和追踪本地文档处理任务",
+        persona: "中文、细致、先确认输入范围",
+        capabilities: ["文档归类", "摘要提取"],
+        workflow: ["询问文档来源", "生成处理计划"],
+        required_inputs: ["文档路径", "输出格式"],
+        permissions: {
+          readonly: "可规划和总结",
+          workspace_write: "批准后保存配置",
+          network: "单独确认"
+        },
+        first_message: "请告诉我要处理的文档路径和输出要求。"
+      })
+    });
+    writeNpcConfigMock.mockResolvedValueOnce({
+      npc_name: "文档处理 NPC",
+      config_path: ".opencow/npcs/document-npc.json",
+      status: "saved",
+      summary: "Saved LLM-generated NPC config."
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "你能帮我配置一个文档处理npc吗" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    fireEvent.click(await screen.findByRole("button", { name: "批准提权" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+      expect(writeNpcConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        query: "你能帮我配置一个文档处理npc吗",
+        config: expect.objectContaining({
+          name: "文档处理 NPC"
+        })
+      }));
+    });
+
+    const conversation = getConversationRegion();
+    expect(await within(conversation).findByText("NPC 配置已保存")).toBeInTheDocument();
+    expect(within(conversation).getAllByText(/\.opencow\/npcs\/document-npc\.json/).length).toBeGreaterThan(0);
+    expect(chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message).toContain("只输出一个 JSON 对象");
+    expect(within(conversation).queryByText("OpenClaw NPC capability overview")).not.toBeInTheDocument();
   });
 
   it("routes an explicit workspace inspection request into the workspace overview result instead of generic help copy", async () => {

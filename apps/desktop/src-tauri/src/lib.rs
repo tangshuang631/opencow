@@ -71,6 +71,7 @@ pub fn run() {
             workspace::workspace_write_command,
             workspace::workspace_packages_overview,
             workspace::workspace_config_overview,
+            workspace::workspace_npc_config_write,
             workspace::workspace_readonly_command
         ])
         .run(tauri::generate_context!())

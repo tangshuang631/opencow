@@ -49,6 +49,13 @@ export type WorkspaceProjectRunPreview = {
   }>;
 };
 
+export type NpcConfigWriteResult = {
+  npc_name: string;
+  config_path: string;
+  status: "saved";
+  summary: string;
+};
+
 export type OpenClawCapabilityId = "rag" | "skills" | "npc" | "mcp";
 
 export type OpenClawCapabilityOverview = {
@@ -530,6 +537,20 @@ export async function loadWorkspaceProjectRunPreview(query: string): Promise<Wor
   });
 }
 
+export async function writeNpcConfig(payload: {
+  query: string;
+  modelOutput: string;
+  config: Record<string, unknown>;
+}): Promise<NpcConfigWriteResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcConfigWrite(payload);
+  }
+
+  return invoke<NpcConfigWriteResult>("workspace_npc_config_write", {
+    payload
+  });
+}
+
 export async function runReadonlyShellCommand(commandId: ReadonlyShellCommandId): Promise<ReadonlyShellCommandResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewReadonlyCommand(commandId);
@@ -725,6 +746,24 @@ function createBrowserPreviewProjectRunPreview(query: string): WorkspaceProjectR
         script_names: ["build", "test"]
       }
     ]
+  };
+}
+
+function createBrowserPreviewNpcConfigWrite(payload: {
+  query: string;
+  modelOutput: string;
+  config: Record<string, unknown>;
+}): NpcConfigWriteResult {
+  const npcName =
+    typeof payload.config.name === "string" && payload.config.name.trim().length > 0
+      ? payload.config.name.trim()
+      : "custom-npc";
+
+  return {
+    npc_name: npcName,
+    config_path: `.opencow/npcs/${npcName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "custom-npc"}.json`,
+    status: "saved",
+    summary: "Browser preview mode returned a mock saved NPC config result."
   };
 }
 
