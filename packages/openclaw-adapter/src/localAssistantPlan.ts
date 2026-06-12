@@ -106,6 +106,7 @@ const localSkillInstallPatterns = [/\binstall\b/i, /\badd\b/i, /安装/];
 const localSkillEnablePatterns = [/\benable\b/i, /\bactivate\b/i, /\bturn on\b/i];
 const localSkillDisablePatterns = [/\bdisable\b/i, /\bdeactivate\b/i, /\bturn off\b/i];
 const npcCapabilityPatterns = [/\bnpc\b/i, /agent team/i, /collaboration/i];
+const npcCollaborationPatterns = [/collaboration/i, /协作/];
 const npcConfigurationIntentPatterns = [
   /配置/,
   /创建/,
@@ -148,6 +149,27 @@ const troubleshootingQuestionPatterns = [
   /错误/,
   /失败/,
   /为什么/
+];
+const localProjectExecutionPatterns = [
+  /\bdesktop\b/i,
+  /\bapp\b/i,
+  /\bproject\b/i,
+  /\brun\b/i,
+  /\bstart\b/i,
+  /\blaunch\b/i,
+  /\bstop\b/i,
+  /\bstatus\b/i,
+  /\bscreenshot\b/i,
+  /\bcapture\b/i,
+  /\bshowcase\b/i,
+  /\bwebsite\b/i,
+  /\bsite\b/i,
+  /运行/,
+  /启动/,
+  /停止/,
+  /截图/,
+  /项目/,
+  /网站/
 ];
 const localRagSearchPatterns = [/\bsearch\b/i, /\bfind\b/i, /\blookup\b/i, /knowledge/i, /docs?/i, /rules?/i];
 const longDocumentFilePatterns = [/\bpptx?\b/i, /\bdocx?\b/i, /\bmd\b/i, /\bmarkdown\b/i];
@@ -279,8 +301,24 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
+    troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
+    && (
+      (/\bnpc\b/i.test(message) && npcCollaborationPatterns.some((pattern) => pattern.test(message)) && localProjectExecutionPatterns.some((pattern) => pattern.test(message)))
+      || (/\blocal(ly)?\b/i.test(message) && localProjectExecutionPatterns.some((pattern) => pattern.test(message)))
+    )
+  ) {
+    return {
+      kind: "local-model-chat",
+      title: "本地模型对话",
+      summary: message,
+      auditSummary: "Local assistant kept a local project execution troubleshooting request on the ordinary local model chat path.",
+      auditDetail: `Local model chat task: ${message}`
+    };
+  }
+
+  if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseActionPatterns.some((pattern) => pattern.test(message))
@@ -298,7 +336,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && (/\brun\b/i.test(message) || /\bstart\b/i.test(message) || /\blaunch\b/i.test(message))
     && !npcShowcaseOutputPatterns.some((pattern) => pattern.test(message))
@@ -333,7 +371,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseScreenshotPatterns.some((pattern) => pattern.test(message))
     && (/\bnow\b/i.test(message) || /\bcapture\b/i.test(message) || /\btake\b/i.test(message))
@@ -369,7 +407,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseSiteWritePatterns.some((pattern) => pattern.test(message))
     && (/\bgenerate\b/i.test(message) || /\bwrite\b/i.test(message) || /\bcreate\b/i.test(message))
@@ -406,7 +444,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseGitConfirmationPreviewPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseGitActionPatterns.some((pattern) => pattern.test(message))
@@ -424,7 +462,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcShowcaseProjectPatterns.some((pattern) => pattern.test(message))
     && npcShowcasePublishPreviewPatterns.some((pattern) => pattern.test(message))
     && npcShowcasePublishArtifactPatterns.some((pattern) => pattern.test(message))
@@ -641,7 +679,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && localRagSearchPatterns.some((pattern) => pattern.test(message))
     && shellAutomationPatterns.some((pattern) => pattern.test(message))
     && continuationPatterns.some((pattern) => pattern.test(message))
@@ -681,7 +719,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && localRagSearchPatterns.some((pattern) => pattern.test(message))
     && shellAutomationPatterns.some((pattern) => pattern.test(message))
     && continuationPatterns.some((pattern) => pattern.test(message))
@@ -717,7 +755,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && localRagSearchPatterns.some((pattern) => pattern.test(message))
     && shellAutomationPatterns.some((pattern) => pattern.test(message))
     && (/knowledge/i.test(message) || /docs?/i.test(message) || /rules?/i.test(message))
@@ -735,7 +773,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && shellAutomationPatterns.some((pattern) => pattern.test(message))
     && !npcPreviewPatterns.some((pattern) => pattern.test(message))
     && destructivePatterns.some((pattern) => pattern.test(message))
@@ -773,7 +811,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && shellAutomationPatterns.some((pattern) => pattern.test(message))
     && !npcPreviewPatterns.some((pattern) => pattern.test(message))
     && createTempOutputVerbPatterns.some((pattern) => pattern.test(message))
@@ -807,7 +845,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && /\bshell\b/i.test(message)
     && npcPreviewPatterns.some((pattern) => pattern.test(message))
     && createTempOutputNamePatterns.every((pattern) => pattern.test(message))
@@ -823,7 +861,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     /\bnpc\b/i.test(message)
-    && /collaboration/i.test(message)
+    && npcCollaborationPatterns.some((pattern) => pattern.test(message))
     && npcPreviewPatterns.some((pattern) => pattern.test(message))
   ) {
     return {

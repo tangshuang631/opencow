@@ -333,6 +333,39 @@ describe("App chat fallback", () => {
     expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
   });
 
+  it("routes local project execution troubleshooting questions through the local model instead of project or NPC task chains", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "这类问题我会先从日志、权限链、运行时句柄和真实执行路径分析，而不是直接重新触发项目运行或截图任务。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "why did the desktop app fail to run locally" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        model: "qwen3.6:35b",
+        message: "why did the desktop app fail to run locally"
+      }));
+    });
+    expect(screen.queryByText(/Run matched local project|Matched local project status|Stop matched local project/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Workspace write permission is required before launching a matched local project/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
+  });
+
   it("shows user-actionable Ollama recovery guidance when ordinary chat fails", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,

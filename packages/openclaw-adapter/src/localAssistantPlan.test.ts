@@ -173,6 +173,23 @@ describe("local assistant task planner", () => {
     });
   });
 
+  it.each([
+    "why did the desktop app fail to run locally",
+    "帮我检查本地项目为什么启动失败",
+    "why is npc collaboration screenshot capture failing for the cattle project",
+    "帮我检查 npc 协作截图为什么失败"
+  ])("keeps local project execution troubleshooting requests on local model chat instead of execution chains: %s", (message) => {
+    const plan = planLocalAssistantTask({
+      message,
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "本地模型对话"
+    });
+  });
+
   it("keeps ordinary package.json concept questions on local model chat instead of workspace config overview", () => {
     const plan = planLocalAssistantTask({
       message: "package.json 是干嘛的，为什么前端项目里经常会有它",
