@@ -57,6 +57,7 @@ import {
 } from "../features/workbench/workbenchState.persistence";
 import type { PermissionMode, WorkbenchState } from "../features/workbench/workbenchState";
 import type { AssistantTaskExecutionResult, AssistantTaskPlanResult } from "../features/assistant/assistantTaskService";
+import { getNpcConfigReadonlyDraftRetryMessage } from "./npcTimeoutRecovery";
 
 const CONTINUATION_PREVIEW_KINDS = new Set([
   "opencow-self-repair-preview",
@@ -403,34 +404,6 @@ function isLocalModelContextOverflowFailure(
     || normalizedDetail.includes("input too long");
 }
 
-function isLocalModelTimeoutFailure(
-  task: WorkbenchState["tasks"]["items"][number] | undefined
-): task is WorkbenchState["tasks"]["items"][number] {
-  if (!task?.lastFailureDetail) {
-    return false;
-  }
-
-  const normalizedDetail = task.lastFailureDetail.toLowerCase();
-
-  return normalizedDetail.includes("streamphase=waiting-first-chunk")
-    || normalizedDetail.includes("streamphase=streaming")
-    || normalizedDetail.includes("maximum execution time")
-    || normalizedDetail.includes("timed out");
-}
-
-function looksLikeNpcConfigRequest(task: WorkbenchState["tasks"]["items"][number]): boolean {
-  const normalizedRequest = `${task.summary}\n${task.executionMessage ?? ""}\n${task.executionAuditDetail ?? ""}`.toLowerCase();
-
-  return /\bnpc\b/i.test(normalizedRequest)
-    && (
-      /配置|创建|设定|设置|帮我/.test(normalizedRequest)
-      || /\bconfig(?:ure)?\b/i.test(normalizedRequest)
-      || /\bcreate\b/i.test(normalizedRequest)
-      || /\bsetup\b/i.test(normalizedRequest)
-      || /\bset up\b/i.test(normalizedRequest)
-    );
-}
-
 function createLocalModelContextOverflowRagRetryState(
   state: WorkbenchState,
   failedTask: WorkbenchState["tasks"]["items"][number]
@@ -486,28 +459,6 @@ function createNpcReadonlyDraftRecoveryState(
       failedTask?.lastFailureDetail ? `Previous failure: ${failedTask.lastFailureDetail}` : null
     ].filter((line): line is string => line !== null).join(" ")
   });
-}
-
-function getNpcConfigReadonlyDraftRetryMessage(
-  task: WorkbenchState["tasks"]["items"][number] | undefined
-): string | null {
-  if (!task?.lastFailureDetail) {
-    return null;
-  }
-
-  const isNpcConfigTimeout =
-    task.executionKind === "npc-config-write"
-    || (task.executionKind === "local-model-chat" && looksLikeNpcConfigRequest(task));
-
-  if (!isNpcConfigTimeout || !isLocalModelTimeoutFailure(task)) {
-    return null;
-  }
-
-  return [
-    "先给我这个 NPC 的只读草案，不要保存配置。",
-    "请基于上一次失败的创建请求，先说明角色定位、能力边界、需要哪些本地资料、以及确认后再保存的下一步。",
-    `原始请求：${task.summary}`
-  ].join(" ");
 }
 
 function isReadonlyShellDiagnosticPlan(plan: AssistantTaskPlanResult): boolean {
