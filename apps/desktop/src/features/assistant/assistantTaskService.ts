@@ -922,10 +922,14 @@ async function executeOpencowEnabledSkillsRegistryRepairPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Repaired path: ${result.repaired_path}. Preserved entries: ${result.preserved_entry_count}. ` +
-      `Verified schema version: ${result.verified_version}. Verified enabled entries: ${result.verified_entry_count}. ` +
-      "Verification completed inside the controlled self-repair chain, and the result remains audit-visible and rollback-visible."
+    resultSummary: [
+      "已将 enabled skills 注册表恢复为已验证的默认 schema。",
+      `修复路径：${result.repaired_path}。`,
+      `保留条目：${result.preserved_entry_count}。`,
+      `已验证 schema 版本：${result.verified_version}。`,
+      `已验证启用条目：${result.verified_entry_count}。`,
+      "验证已在受控自修复链路内完成，结果保持审计可见和回退可见。"
+    ].join(" ")
   };
 }
 
@@ -956,10 +960,14 @@ async function executeOpencowWorkspaceProjectRuntimeRegistryRepairPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Repaired path: ${result.repaired_path}. Preserved runs: ${result.preserved_entry_count}. ` +
-      `Verified schema version: ${result.verified_version}. Verified runtime runs: ${result.verified_run_count}. ` +
-      "Verification completed inside the controlled self-repair chain, and the result remains audit-visible and rollback-visible."
+    resultSummary: [
+      "已将工作区项目运行注册表恢复为已验证的默认 schema。",
+      `修复路径：${result.repaired_path}。`,
+      `保留运行记录：${result.preserved_entry_count}。`,
+      `已验证 schema 版本：${result.verified_version}。`,
+      `已验证运行记录：${result.verified_run_count}。`,
+      "验证已在受控自修复链路内完成，结果保持审计可见和回退可见。"
+    ].join(" ")
   };
 }
 

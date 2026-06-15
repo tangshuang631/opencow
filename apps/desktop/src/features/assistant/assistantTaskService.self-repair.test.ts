@@ -303,11 +303,17 @@ describe("assistantTaskService self-repair preview", () => {
 
     expect(result.resultTitle).toBe("Repair opencow enabled skills registry");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
-    expect(result.resultSummary).toContain("verified default schema");
-    expect(result.resultSummary).toContain("Verified schema version: 1");
-    expect(result.resultSummary).toContain("Verified enabled entries: 0");
-    expect(result.resultSummary).toContain("audit");
-    expect(result.resultSummary).toContain("rollback");
+    expect(result.resultSummary).toContain("已将 enabled skills 注册表恢复为已验证的默认 schema。");
+    expect(result.resultSummary).toContain("修复路径：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("保留条目：0");
+    expect(result.resultSummary).toContain("已验证 schema 版本：1");
+    expect(result.resultSummary).toContain("已验证启用条目：0");
+    expect(result.resultSummary).toContain("审计可见");
+    expect(result.resultSummary).toContain("回退可见");
+    expect(result.resultSummary).not.toContain("Repaired path:");
+    expect(result.resultSummary).not.toContain("Preserved entries:");
+    expect(result.resultSummary).not.toContain("Verified schema version:");
+    expect(result.resultSummary).not.toContain("Verified enabled entries:");
   });
 
   it("adds target, permission, and recovery context when enabled skills registry repair fails", async () => {
@@ -376,11 +382,17 @@ describe("assistantTaskService self-repair preview", () => {
 
     expect(result.resultTitle).toBe("Repair opencow workspace project runtime registry");
     expect(result.resultSummary).toContain(".opencow/runtime/workspace-project-runs.json");
-    expect(result.resultSummary).toContain("verified default schema");
-    expect(result.resultSummary).toContain("Verified schema version: 1");
-    expect(result.resultSummary).toContain("Verified runtime runs: 0");
-    expect(result.resultSummary).toContain("audit");
-    expect(result.resultSummary).toContain("rollback");
+    expect(result.resultSummary).toContain("已将工作区项目运行注册表恢复为已验证的默认 schema。");
+    expect(result.resultSummary).toContain("修复路径：.opencow/runtime/workspace-project-runs.json");
+    expect(result.resultSummary).toContain("保留运行记录：0");
+    expect(result.resultSummary).toContain("已验证 schema 版本：1");
+    expect(result.resultSummary).toContain("已验证运行记录：0");
+    expect(result.resultSummary).toContain("审计可见");
+    expect(result.resultSummary).toContain("回退可见");
+    expect(result.resultSummary).not.toContain("Repaired path:");
+    expect(result.resultSummary).not.toContain("Preserved runs:");
+    expect(result.resultSummary).not.toContain("Verified schema version:");
+    expect(result.resultSummary).not.toContain("Verified runtime runs:");
   });
 
   it("adds target, permission, and recovery context when workspace project runtime registry repair fails", async () => {

@@ -177,7 +177,7 @@ describe("App self-repair mutation continuation", () => {
       message: expect.stringContaining("不要说这是只读预览")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Verified enabled entries: 0")
+      message: expect.stringContaining("已验证启用条目：0")
     }));
 
   });
@@ -235,9 +235,10 @@ describe("App self-repair mutation continuation", () => {
       );
       expect(
         screen.getAllByText(
-          /Repair opencow enabled skills registry|enabled-skills\.json|verified default schema|Verified schema version: 1|Verified enabled entries: 0/i
+          /Repair opencow enabled skills registry|enabled-skills\.json|已将 enabled skills 注册表恢复为已验证的默认 schema|已验证 schema 版本：1|已验证启用条目：0/i
         ).length
       ).toBeGreaterThan(0);
+      expect(screen.queryByText(/Verified enabled entries: 0/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/OpenCow Skills 注册表修复说明/)).not.toBeInTheDocument();
       expect(screen.queryByText(/本地任务执行失败|Local task execution failed/i)).not.toBeInTheDocument();
     } finally {
@@ -655,7 +656,7 @@ describe("App self-repair runtime registry continuation", () => {
       message: expect.stringContaining("不要说这是只读预览")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Verified runtime runs: 0")
+      message: expect.stringContaining("已验证运行记录：0")
     }));
 
   });
