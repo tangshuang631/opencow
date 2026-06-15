@@ -62,10 +62,10 @@ describe("assistantTaskService local skills scan", () => {
       auditDetail: "Readonly local skills scan task."
     } as const);
 
-    expect(result.resultTitle).toBe("Local Skills scan");
-    expect(result.resultSummary).toContain("3 skills across 2 scanned roots");
+    expect(result.resultTitle).toBe("本地 Skills 扫描");
+    expect(result.resultSummary).toContain("扫描到 3 个本地 Skills，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("coding-agent");
     expect(result.resultSummary).toContain("browser-automation");
-    expect(result.resultSummary).toContain("Enabled: coding-agent");
+    expect(result.resultSummary).toContain("已启用项：coding-agent");
   });
 });

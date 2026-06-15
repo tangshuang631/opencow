@@ -993,13 +993,16 @@ async function executeLocalSkillsScanPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(scanLocalSkills(), context);
-  const topSkills = result.items.slice(0, 3).map((item) => item.name).join(", ");
-  const enabledSkills = result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join(", ");
-  const enabledLine = enabledSkills.length > 0 ? ` Enabled: ${enabledSkills}.` : " Enabled: none.";
+  const topSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无可展示样例";
+  const enabledSkills = result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join("、") || "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Sample skills: ${topSkills}. Scanned roots: ${result.scanned_root_count}.${enabledLine}`
+    resultTitle: "本地 Skills 扫描",
+    resultSummary: [
+      `扫描到 ${result.total_count} 个本地 Skills，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `样例 Skills：${topSkills}。`,
+      `已启用项：${enabledSkills}。`
+    ].join(" ")
   };
 }
 
@@ -1008,12 +1011,19 @@ async function executeLocalMcpPluginScanPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(scanLocalMcpPlugins(), context);
-  const topPlugins = result.items.slice(0, 3).map((item) => item.id).join(", ");
-  const pluginLine = topPlugins.length > 0 ? topPlugins : "none";
+  const topPlugins = result.items.slice(0, 3).map((item) => item.id).join("、") || "暂无可展示插件";
+  const activationLine = result.items
+    .slice(0, 3)
+    .map((item) => `${item.id}=${item.activation}`)
+    .join("、") || "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Sample plugins: ${pluginLine}. Scanned roots: ${result.scanned_root_count}.`
+    resultTitle: "本地 MCP 插件扫描",
+    resultSummary: [
+      `扫描到 ${result.total_count} 个本地 MCP 插件入口，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `样例插件：${topPlugins}。`,
+      `激活方式：${activationLine}。`
+    ].join(" ")
   };
 }
 

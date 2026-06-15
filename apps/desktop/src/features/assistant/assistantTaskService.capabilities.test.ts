@@ -104,10 +104,11 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly local MCP plugin scan task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin scan");
-    expect(result.resultSummary).toContain("2 plugin entries");
+    expect(result.resultTitle).toBe("本地 MCP 插件扫描");
+    expect(result.resultSummary).toContain("扫描到 2 个本地 MCP 插件入口，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("browser");
     expect(result.resultSummary).toContain("codex-supervisor");
+    expect(result.resultSummary).toContain("激活方式：browser=startup、codex-supervisor=manual");
   });
 
   it("plans and executes a readonly local MCP plugin detail lookup through the desktop service", async () => {
