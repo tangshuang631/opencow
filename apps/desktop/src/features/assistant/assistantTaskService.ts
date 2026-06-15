@@ -824,12 +824,26 @@ async function executeCapabilityOverviewPlan(
   const overview = await awaitAbortable(loadOpenClawCapabilityOverview(capabilityId), context);
   const availableLine = overview.available_packages.join(", ");
   const missingLine =
-    overview.missing_packages.length > 0 ? ` Missing: ${overview.missing_packages.join(", ")}.` : " Missing: none.";
+    overview.missing_packages.length > 0 ? overview.missing_packages.join(", ") : "无";
 
   return {
-    resultTitle: overview.title,
-    resultSummary: `${overview.summary} Status: ${overview.status}. Available: ${availableLine}.${missingLine}`
+    resultTitle: createCapabilityOverviewTitle(capabilityId, overview.title),
+    resultSummary: `${overview.summary} 状态：${overview.status}。可用包：${availableLine}。缺失包：${missingLine}。`
   };
+}
+
+function createCapabilityOverviewTitle(
+  capabilityId: "rag" | "skills" | "npc" | "mcp",
+  fallbackTitle: string
+): string {
+  const labels: Record<typeof capabilityId, string> = {
+    rag: "RAG",
+    skills: "Skills",
+    npc: "NPC",
+    mcp: "MCP"
+  };
+
+  return labels[capabilityId] ? `OpenClaw ${labels[capabilityId]} 能力概览` : fallbackTitle;
 }
 
 async function executeOpencowSelfRepairPreviewPlan(

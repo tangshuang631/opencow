@@ -58,10 +58,15 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly capability catalog task: rag"
     } as const);
 
-    expect(result.resultTitle).toBe("OpenClaw RAG capability overview");
+    expect(result.resultTitle).toBe("OpenClaw RAG 能力概览");
     expect(result.resultSummary).toContain("3 of 3 required packages");
     expect(result.resultSummary).toContain("@openclaw/llm-runtime");
-    expect(result.resultSummary).toContain("ready-foundation");
+    expect(result.resultSummary).toContain("状态：ready-foundation");
+    expect(result.resultSummary).toContain("可用包：@openclaw/llm-core");
+    expect(result.resultSummary).toContain("缺失包：无");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Available:");
+    expect(result.resultSummary).not.toContain("Missing:");
   });
 
   it("plans and executes a readonly local MCP plugin scan through the desktop service", async () => {
