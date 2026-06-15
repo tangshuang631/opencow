@@ -784,7 +784,7 @@ describe("MainConversation", () => {
 
     render(<MainConversation state={state} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
 
-    expect(screen.getByText("Conversation auto-compressed")).toBeInTheDocument();
+    expect(screen.getByText("已保留较早会话上下文")).toBeInTheDocument();
     expect(screen.getByText(/保留工作区根目录修复上下文/)).toBeInTheDocument();
   });
 

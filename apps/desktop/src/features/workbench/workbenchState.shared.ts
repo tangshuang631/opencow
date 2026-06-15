@@ -2,6 +2,7 @@ import type { ConversationEntry, PermissionMode, WorkbenchState } from "./workbe
 
 const MAX_CONVERSATION_ENTRIES = 12;
 const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
+const COMPRESSED_CONVERSATION_TITLE = "已保留较早会话上下文";
 const MAX_COMPRESSED_SNIPPETS = 5;
 const MAX_COMPRESSED_SNIPPET_LENGTH = 140;
 
@@ -103,15 +104,15 @@ function compactConversationEntries(entries: ConversationEntry[]): ConversationE
     {
       id: COMPRESSED_CONVERSATION_ENTRY_ID,
       kind: "system",
-      title: "Conversation auto-compressed",
-      summary: `Compressed ${compressedEntryCount} older messages to keep the desktop context light.`,
+      title: COMPRESSED_CONVERSATION_TITLE,
+      summary: `已压缩 ${compressedEntryCount} 条较早消息，以保持当前会话轻量且保留上下文。`,
       detailLines: [
-        `Older user messages: ${compressedUserCount}`,
-        `Older assistant or system messages: ${compressedSystemCount}`,
-        sampleTitles.length > 0 ? `Compressed highlights: ${sampleTitles}` : "Compressed highlights: none",
+        `较早用户消息：${compressedUserCount}`,
+        `较早助手或系统消息：${compressedSystemCount}`,
+        sampleTitles.length > 0 ? `保留主题：${sampleTitles}` : "保留主题：无",
         sampleSnippets.length > 0
-          ? `Compressed snippets: ${sampleSnippets.join(" | ")}`
-          : "Compressed snippets: none"
+          ? `保留片段：${sampleSnippets.join(" | ")}`
+          : "保留片段：无"
       ]
     }
   ];
@@ -132,10 +133,22 @@ function parseCompressedConversationEntry(entry: ConversationEntry | undefined):
     };
   }
 
-  const totalCount = Number.parseInt(entry.summary.match(/Compressed (\d+) older messages/i)?.[1] ?? "0", 10);
-  const userCount = Number.parseInt(entry.detailLines?.[0]?.match(/Older user messages: (\d+)/i)?.[1] ?? "0", 10);
+  const totalCount = Number.parseInt(
+    entry.summary.match(/已压缩\s*(\d+)\s*条较早消息/)?.[1]
+      ?? entry.summary.match(/Compressed (\d+) older messages/i)?.[1]
+      ?? "0",
+    10
+  );
+  const userCount = Number.parseInt(
+    entry.detailLines?.[0]?.match(/较早用户消息：(\d+)/)?.[1]
+      ?? entry.detailLines?.[0]?.match(/Older user messages: (\d+)/i)?.[1]
+      ?? "0",
+    10
+  );
   const systemCount = Number.parseInt(
-    entry.detailLines?.[1]?.match(/Older assistant or system messages: (\d+)/i)?.[1] ?? "0",
+    entry.detailLines?.[1]?.match(/较早助手或系统消息：(\d+)/)?.[1]
+      ?? entry.detailLines?.[1]?.match(/Older assistant or system messages: (\d+)/i)?.[1]
+      ?? "0",
     10
   );
   const snippets = parseCompressedConversationSnippets(entry.detailLines);
@@ -165,7 +178,8 @@ function selectCompressedConversationSnippets(
 }
 
 function formatCompressedConversationSnippet(entry: ConversationEntry): string {
-  const rawSnippet = `[${entry.kind}] ${entry.title}: ${entry.summary}`.replace(/\s+/g, " ").trim();
+  const kindLabel = entry.kind === "user" ? "用户" : "助手/系统";
+  const rawSnippet = `[${kindLabel}] ${entry.title}: ${entry.summary}`.replace(/\s+/g, " ").trim();
 
   if (rawSnippet.length <= MAX_COMPRESSED_SNIPPET_LENGTH) {
     return rawSnippet;
@@ -175,15 +189,19 @@ function formatCompressedConversationSnippet(entry: ConversationEntry): string {
 }
 
 function parseCompressedConversationSnippets(detailLines: string[] | undefined): string[] {
-  const snippetsLine = detailLines?.find((line) => line.startsWith("Compressed snippets: "));
+  const snippetsLine = detailLines?.find((line) => line.startsWith("保留片段："))
+    ?? detailLines?.find((line) => line.startsWith("Compressed snippets: "));
 
   if (!snippetsLine) {
     return [];
   }
 
-  const snippets = snippetsLine.replace("Compressed snippets: ", "").trim();
+  const snippets = snippetsLine
+    .replace("保留片段：", "")
+    .replace("Compressed snippets: ", "")
+    .trim();
 
-  if (!snippets || snippets === "none") {
+  if (!snippets || snippets === "无" || snippets === "none") {
     return [];
   }
 
