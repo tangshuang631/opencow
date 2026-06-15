@@ -634,13 +634,14 @@ describe("MainConversation", () => {
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
     expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
-    expect(screen.queryByText("开源协议有哪些")).not.toBeInTheDocument();
+    expect(screen.getAllByText("开源协议有哪些").length).toBeGreaterThan(0);
+    expect(within(pending).queryByText("开源协议有哪些")).not.toBeInTheDocument();
     expect(within(pending).queryByText(/不会重复提交同一请求/)).not.toBeInTheDocument();
     expect(within(pending).queryByText(/请稍候/)).not.toBeInTheDocument();
     expect(within(pending).queryByRole("button", { name: "停止任务" })).not.toBeInTheDocument();
   });
 
-  it("keeps local model generation progress out of the main conversation chrome", () => {
+  it("keeps conversation history visible while local model generation is pending", () => {
     const running = createTaskExecutionStartedState(
       createUserTaskSubmittedState(createInitialWorkbenchState(), {
         message: "开源协议有哪些",
@@ -668,7 +669,7 @@ describe("MainConversation", () => {
     expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
     expect(within(pending).getByText("Ollama 仍在生成，已等待约 15 秒。")).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
-    expect(screen.queryByText("开源协议有哪些")).not.toBeInTheDocument();
+    expect(screen.getAllByText("开源协议有哪些").length).toBeGreaterThan(0);
   });
 
   it("shows NPC config generation as a local-model pending task with heartbeat text", () => {
@@ -698,10 +699,10 @@ describe("MainConversation", () => {
 
     expect(within(pending).getByText("Ollama 正在生成 NPC 配置")).toBeInTheDocument();
     expect(within(pending).getByText("Ollama 已连接，正在等待首轮输出，已等待约 15 秒。")).toBeInTheDocument();
-    expect(screen.queryByText("你能帮我创建一个课程助手npc吗")).not.toBeInTheDocument();
+    expect(screen.getAllByText("你能帮我创建一个课程助手npc吗").length).toBeGreaterThan(0);
   });
 
-  it("shows only the compact Ollama generation title while a local model chat is pending", () => {
+  it("preserves previous and current conversation context while a local model chat is pending", () => {
     const completed = createTaskExecutionSucceededState(
       createTaskExecutionStartedState(
         createUserTaskSubmittedState(createInitialWorkbenchState(), {
@@ -743,11 +744,11 @@ describe("MainConversation", () => {
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
     expect(within(conversation).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
     expect(within(conversation).queryByText("请稍候，界面保持响应中")).not.toBeInTheDocument();
-    expect(within(conversation).queryByText("你能做什么")).not.toBeInTheDocument();
-    expect(within(conversation).queryByText("上一轮问题")).not.toBeInTheDocument();
-    expect(within(conversation).queryByText("上一轮回答")).not.toBeInTheDocument();
-    expect(within(conversation).queryByText("上一轮已经完成。")).not.toBeInTheDocument();
-    expect(within(conversation).queryByRole("heading")).not.toBeInTheDocument();
+    expect(within(conversation).getAllByText("你能做什么").length).toBeGreaterThan(0);
+    expect(within(conversation).getAllByText("上一轮问题").length).toBeGreaterThan(0);
+    expect(within(conversation).getByText("上一轮回答")).toBeInTheDocument();
+    expect(within(conversation).getByText("上一轮已经完成。")).toBeInTheDocument();
+    expect(within(conversation).getByRole("heading", { name: "你能做什么" })).toBeInTheDocument();
     expect(within(conversation).queryByRole("button", { name: "停止任务" })).not.toBeInTheDocument();
   });
 
@@ -768,6 +769,23 @@ describe("MainConversation", () => {
 
     expect(screen.getByText(longInput)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起输入" })).toBeInTheDocument();
+  });
+
+  it("keeps auto-compressed conversation context visible until the user clears history", () => {
+    let state = createInitialWorkbenchState();
+
+    for (let index = 0; index < 16; index += 1) {
+      state = createUserTaskSubmittedState(state, {
+        message: index === 0
+          ? "保留工作区根目录修复上下文"
+          : `持续对话消息 ${index}`
+      });
+    }
+
+    render(<MainConversation state={state} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByText("Conversation auto-compressed")).toBeInTheDocument();
+    expect(screen.getByText(/保留工作区根目录修复上下文/)).toBeInTheDocument();
   });
 
   it("aligns user messages to the right while assistant replies stay on the left", () => {

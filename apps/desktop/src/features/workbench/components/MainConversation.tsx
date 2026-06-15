@@ -33,6 +33,7 @@ const TEXT = {
 
 const LONG_TEXT_LIMIT = 220;
 const LONG_TITLE_LIMIT = 80;
+const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
 const SUCCESS_TRACE_PREFIXES = [
   "Input summary:",
   "Execution kind:",
@@ -89,7 +90,8 @@ function isDuplicateLocalTaskSkippedEntry(entry: WorkbenchState["conversation"][
 }
 
 function isVisibleSystemEntry(entry: WorkbenchState["conversation"]["entries"][number]) {
-  return isDuplicatePendingApprovalSkippedEntry(entry)
+  return entry.id === COMPRESSED_CONVERSATION_ENTRY_ID
+    || isDuplicatePendingApprovalSkippedEntry(entry)
     || isDuplicateLocalTaskSkippedEntry(entry)
     || isDuplicatePlanningFailureSkippedEntry(entry);
 }
@@ -352,16 +354,14 @@ export function MainConversation({
   const isLocalModelPending = isLocalModelPendingTask(pendingTask?.executionKind);
   const isNpcConfigPending = pendingTask?.executionKind === "npc-config-write";
   const entries = state.conversation.entries.slice().reverse();
-  const visibleEntries = isLocalModelPending
-    ? []
-    : entries.filter((entry) => {
-        if (entry.kind === "system") {
-          return isVisibleSystemEntry(entry);
-        }
+  const visibleEntries = entries.filter((entry) => {
+    if (entry.kind === "system") {
+      return isVisibleSystemEntry(entry);
+    }
 
-        return true;
-      });
-  const conversationHeader = isLocalModelPending ? null : createConversationHeader(visibleEntries);
+    return true;
+  });
+  const conversationHeader = createConversationHeader(visibleEntries);
   const showsCancellationRecovery = state.audit.lastEvent.source === "permission_confirmation_cancelled"
     || state.audit.lastEvent.source === "permission_mode_change_cancelled"
     || state.audit.lastEvent.source === "capability_toggle_cancelled";
