@@ -1095,14 +1095,20 @@ async function executeLocalSkillInspectPlan(
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Query: ${result.query}.`
+      resultTitle: "本地 Skill 详情",
+      resultSummary: `未找到匹配 Skill。检索问题：${result.query}。`
     };
   }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Match: ${topMatch.name}. Enabled: ${topMatch.enabled ? "yes" : "no"}. Description: ${topMatch.description}. Preview: ${topMatch.content_preview}`
+    resultTitle: "本地 Skill 详情",
+    resultSummary: [
+      `找到 ${result.match_count} 个匹配 Skill，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `匹配项：${topMatch.name}。`,
+      `启用状态：${topMatch.enabled ? "已启用" : "未启用"}。`,
+      `说明：${topMatch.description}。`,
+      `内容预览：${topMatch.content_preview}`
+    ].join(" ")
   };
 }
 
