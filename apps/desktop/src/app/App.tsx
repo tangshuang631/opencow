@@ -24,7 +24,6 @@ import {
   createDuplicatePlanningFailureSkippedState,
   createDuplicatePendingApprovalSkippedState,
   createHighRiskConfirmationState,
-  createInitialWorkbenchState,
   createNewConversationState,
   createModelSelectedState,
   createOllamaLoadErrorState,
@@ -49,6 +48,11 @@ import {
   requestPermissionModeChangeState,
   requestRollbackPreviewState
 } from "../features/workbench/workbenchState";
+import {
+  clearPersistedWorkbenchState,
+  loadPersistedWorkbenchState,
+  persistWorkbenchState
+} from "../features/workbench/workbenchState.persistence";
 import type { PermissionMode, WorkbenchState } from "../features/workbench/workbenchState";
 import type { AssistantTaskExecutionResult, AssistantTaskPlanResult } from "../features/assistant/assistantTaskService";
 
@@ -1768,7 +1772,7 @@ function isDuplicatePendingConfirmationMessage(message: string, state: Workbench
 }
 
 export function App() {
-  const [state, setState] = useState(createInitialWorkbenchState);
+  const [state, setState] = useState(loadPersistedWorkbenchState);
   const lastExecutedTaskAttemptRef = useRef<string | null>(null);
   const activeLocalModelAbortControllerRef = useRef<AbortController | null>(null);
   const activeLocalModelRequestIdRef = useRef<string | null>(null);
@@ -1820,6 +1824,10 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    persistWorkbenchState(state);
+  }, [state]);
 
   useEffect(() => () => {
     cancelActiveLocalModelRequest();
@@ -2707,7 +2715,15 @@ export function App() {
 
   function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
     startTransition(() => {
-      setState((current) => createStorageCleanupState(current, target));
+      setState((current) => {
+        const nextState = createStorageCleanupState(current, target);
+
+        if (target === "conversation") {
+          clearPersistedWorkbenchState();
+        }
+
+        return nextState;
+      });
     });
   }
 
@@ -2749,7 +2765,13 @@ export function App() {
   function handleNewConversation() {
     cancelActiveLocalModelRequest();
     startTransition(() => {
-      setState((current) => createNewConversationState(createTaskExecutionCancelledState(current)));
+      setState((current) => {
+        const nextState = createNewConversationState(createTaskExecutionCancelledState(current));
+
+        clearPersistedWorkbenchState();
+
+        return nextState;
+      });
     });
   }
 
