@@ -147,11 +147,12 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly local MCP plugin detail task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin detail");
+    expect(result.resultTitle).toBe("本地 MCP 插件详情");
+    expect(result.resultSummary).toContain("找到 1 个匹配 MCP 插件，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("startup");
-    expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("./skills");
+    expect(result.resultSummary).toContain("激活方式：startup");
+    expect(result.resultSummary).toContain("工具：browser");
+    expect(result.resultSummary).toContain("Skills 路径：./skills");
   });
 
   it("plans and executes a readonly local MCP plugin startup preview through the desktop service", async () => {
@@ -192,12 +193,14 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly local MCP plugin start preview task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin start preview");
+    expect(result.resultTitle).toBe("本地 MCP 插件启动预览");
+    expect(result.resultSummary).toContain("找到 1 个可预览 MCP 插件，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("允许启动：否");
     expect(result.resultSummary).toContain("No resolved executable launcher");
-    expect(result.resultSummary).toContain("startup");
+    expect(result.resultSummary).toContain("激活方式：startup");
     expect(result.resultSummary).toContain("Preview only");
-    expect(result.resultSummary).toContain("No required config schema fields were detected");
+    expect(result.resultSummary).toContain("配置提示：No required config schema fields were detected");
   });
 
   it("executes a real local MCP plugin start task through the desktop service", async () => {

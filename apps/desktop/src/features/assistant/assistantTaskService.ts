@@ -1037,17 +1037,24 @@ async function executeLocalMcpPluginInspectPlan(
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Query: ${result.query}.`
+      resultTitle: "本地 MCP 插件详情",
+      resultSummary: `未找到匹配 MCP 插件。检索问题：${result.query}。`
     };
   }
 
-  const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join(", ") : "none";
-  const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join(", ") : "none";
+  const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join("、") : "暂无";
+  const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join("、") : "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Match: ${topMatch.id}. Activation: ${topMatch.activation}. Tools: ${toolsLine}. Skills: ${skillsLine}. Description: ${topMatch.description}`
+    resultTitle: "本地 MCP 插件详情",
+    resultSummary: [
+      `找到 ${result.match_count} 个匹配 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `匹配项：${topMatch.id}。`,
+      `激活方式：${topMatch.activation}。`,
+      `工具：${toolsLine}。`,
+      `Skills 路径：${skillsLine}。`,
+      `说明：${topMatch.description}`
+    ].join(" ")
   };
 }
 
@@ -1061,14 +1068,23 @@ async function executeLocalMcpPluginStartPreviewPlan(
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Query: ${result.query}.`
+      resultTitle: "本地 MCP 插件启动预览",
+      resultSummary: `未找到可预览启动的 MCP 插件。检索问题：${result.query}。`
     };
   }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Match: ${topMatch.id}. Activation: ${topMatch.activation}. Startup allowed: ${topMatch.startup_allowed ? "yes" : "no"}. Working directory: ${topMatch.working_directory}. Command preview: ${topMatch.command_preview}. Config: ${topMatch.config_hint}. ${topMatch.risk_summary}`
+    resultTitle: "本地 MCP 插件启动预览",
+    resultSummary: [
+      `找到 ${result.match_count} 个可预览 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `匹配项：${topMatch.id}。`,
+      `激活方式：${topMatch.activation}。`,
+      `允许启动：${topMatch.startup_allowed ? "是" : "否"}。`,
+      `工作目录：${topMatch.working_directory}。`,
+      `命令预览：${topMatch.command_preview}。`,
+      `配置提示：${topMatch.config_hint}。`,
+      `风险说明：${topMatch.risk_summary}`
+    ].join(" ")
   };
 }
 
