@@ -186,11 +186,11 @@ describe("assistantTaskService local rag search", () => {
     } as const);
 
     expect(searchLocalKnowledgeMock).not.toHaveBeenCalled();
-    expect(result.resultTitle).toBe("Network search guidance");
-    expect(result.resultSummary).toContain("No external network search was run");
-    expect(result.resultSummary).toContain("Provider status: not configured");
-    expect(result.resultSummary).toContain("Network call skipped");
-    expect(result.resultSummary).toContain("Next repair step");
+    expect(result.resultTitle).toBe("联网搜索说明");
+    expect(result.resultSummary).toContain("本轮没有执行外部联网搜索");
+    expect(result.resultSummary).toContain("搜索 Provider 尚未配置或尚未完成能力审批");
+    expect(result.resultSummary).toContain("已跳过网络调用");
+    expect(result.resultSummary).toContain("下一步");
     expect(result.resultSummary).toContain(message);
   });
 });

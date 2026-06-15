@@ -779,12 +779,14 @@ async function executeNetworkSearchGuidancePlan(
 ): Promise<AssistantTaskExecutionResult> {
   throwIfExecutionAborted(context);
   return {
-    resultTitle,
-    resultSummary:
-      `No external network search was run for "${query}". ` +
-      "Provider status: not configured. Network call skipped. " +
-      "Network-assisted retrieval is recognized as a controlled assistant capability, but this readonly slice only records the request and explains the safe next step. " +
-      "Next repair step: configure a search provider in advanced settings, approve network search capability, then retry the request; use local RAG when the answer should come from workspace documents."
+    resultTitle: "联网搜索说明",
+    resultSummary: [
+      `本轮没有执行外部联网搜索。`,
+      `搜索 Provider 尚未配置或尚未完成能力审批，已跳过网络调用。`,
+      `请求：${query}。`,
+      "联网检索已识别为受控助手能力；当前只记录请求并说明安全下一步。",
+      "下一步：在设置中配置 Provider、批准联网搜索能力后重试；如果答案应来自工作区资料，请优先使用本地 RAG。"
+    ].join(" ")
   };
 }
 

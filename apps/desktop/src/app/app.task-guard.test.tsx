@@ -1942,8 +1942,9 @@ describe("App local task guard", () => {
       auditDetail: "Readonly network search guidance task."
     });
     executeAssistantTaskMock.mockResolvedValue({
-      resultTitle: "Network search guidance",
-      resultSummary: "No external network search was run."
+      resultTitle: "联网搜索说明",
+      resultSummary:
+        "本轮没有执行外部联网搜索。搜索 Provider 尚未配置或尚未完成能力审批，已跳过网络调用。下一步：在设置中配置 Provider、批准联网搜索能力后重试；如果答案应来自工作区资料，请优先使用本地 RAG。"
     });
 
     const { container } = render(<App />);
@@ -1990,8 +1991,9 @@ describe("App local task guard", () => {
       auditDetail: "Readonly network search guidance task."
     });
     executeAssistantTaskMock.mockResolvedValue({
-      resultTitle: "Network search guidance",
-      resultSummary: "No external network search was run. Configure and approve a network search provider first."
+      resultTitle: "联网搜索说明",
+      resultSummary:
+        "本轮没有执行外部联网搜索。搜索 Provider 尚未配置或尚未完成能力审批，已跳过网络调用。下一步：在设置中配置 Provider、批准联网搜索能力后重试；如果答案应来自工作区资料，请优先使用本地 RAG。"
     });
 
     const { container } = render(<App />);
@@ -2021,7 +2023,8 @@ describe("App local task guard", () => {
     fireEvent.click(approveCapabilityButton as HTMLButtonElement);
 
     expect(await screen.findByLabelText("assistant-pending")).toBeInTheDocument();
-    expect(await screen.findAllByText(/No external network search was run/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/本轮没有执行外部联网搜索/)).not.toHaveLength(0);
+    expect(screen.queryByText(/No external network search was run/i)).not.toBeInTheDocument();
     expect(planAssistantTaskMock).toHaveBeenCalledWith(message, "readonly");
     expect(executeAssistantTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
