@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { createInitialWorkbenchState } from "../features/workbench/workbenchState.initial";
+import * as workbenchPersistence from "../features/workbench/workbenchState.persistence";
+
+const tauriInternals = "__TAURI_INTERNALS__" as const;
 
 const { cancelOllamaChatMock, chatWithOllamaModelMock, loadOllamaOverviewMock } = vi.hoisted(() => ({
   cancelOllamaChatMock: vi.fn(),
@@ -28,6 +32,7 @@ function getConversationRegion() {
 
 describe("App workbench persistence", () => {
   beforeEach(() => {
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals];
     window.localStorage.clear();
     cancelOllamaChatMock.mockReset();
     chatWithOllamaModelMock.mockReset();
@@ -39,6 +44,10 @@ describe("App workbench persistence", () => {
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
+  });
+
+  afterEach(() => {
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals];
   });
 
   it("restores conversation history after the app remounts", async () => {
@@ -113,5 +122,59 @@ describe("App workbench persistence", () => {
       expect(within(restoredConversation).queryByText("生成一条会被清空的历史")).not.toBeInTheDocument();
       expect(within(restoredConversation).queryByText("这条历史稍后应该被手动清掉。")).not.toBeInTheDocument();
     });
+  });
+
+  it("does not overwrite persisted history with the initial blank state during hydration", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    const readPersistedSpy = vi.spyOn(workbenchPersistence, "readPersistedWorkbenchState");
+    const persistSpy = vi.spyOn(workbenchPersistence, "persistWorkbenchState");
+    const deferred = {} as {
+      resolve: (value: Awaited<ReturnType<typeof workbenchPersistence.readPersistedWorkbenchState>>) => void;
+      promise: Promise<Awaited<ReturnType<typeof workbenchPersistence.readPersistedWorkbenchState>>>;
+    };
+
+    deferred.promise = new Promise((resolve) => {
+      deferred.resolve = resolve;
+    });
+
+    const persistedState = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        entries: [
+          {
+            id: "restored-entry",
+            kind: "user" as const,
+            title: "用户",
+            summary: "保留的历史记录"
+          }
+        ]
+      }
+    };
+
+    readPersistedSpy.mockReturnValueOnce(deferred.promise);
+    persistSpy.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    expect(persistSpy).not.toHaveBeenCalledWith(createInitialWorkbenchState());
+
+    await waitFor(() => {
+      expect(loadOllamaOverviewMock).not.toHaveBeenCalled();
+    });
+
+    deferred.resolve(persistedState);
+
+    const restoredConversation = await screen.findByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(restoredConversation).getAllByText("保留的历史记录").length).toBeGreaterThan(0);
+    });
+    expect(persistSpy).not.toHaveBeenCalledWith(createInitialWorkbenchState());
+
+    await waitFor(() => {
+      expect(loadOllamaOverviewMock).toHaveBeenCalled();
+    });
+
+    readPersistedSpy.mockRestore();
+    persistSpy.mockRestore();
   });
 });

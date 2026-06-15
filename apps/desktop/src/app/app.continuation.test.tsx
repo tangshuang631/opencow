@@ -27,6 +27,7 @@ async function waitForSelectedLocalModel() {
 
 describe("App continuation flow", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     cancelOllamaChatMock.mockReset();
     chatWithOllamaModelMock.mockReset();
     loadOllamaOverviewMock.mockReset();

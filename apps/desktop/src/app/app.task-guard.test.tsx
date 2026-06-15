@@ -938,6 +938,7 @@ describe("App local task guard", () => {
     await act(async () => {
       vi.advanceTimersByTime(45_000);
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(screen.getAllByText(/Local task execution timed out/i)).not.toHaveLength(0);
@@ -981,6 +982,7 @@ describe("App local task guard", () => {
     const { container } = render(<App />);
 
     await act(async () => {
+      await Promise.resolve();
       await Promise.resolve();
     });
 
@@ -2172,7 +2174,14 @@ describe("App local task guard", () => {
     });
 
     expect(screen.getAllByText(/Workspace overview complete/i)).not.toHaveLength(0);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText(/Workspace overview complete/i)).not.toHaveLength(0);
+    expect(screen.queryByText(/Local task execution timed out/i)).not.toBeInTheDocument();
   });
 
   it("clears the local execution timeout guard when the user cancels an active executed task", async () => {
@@ -2228,7 +2237,14 @@ describe("App local task guard", () => {
     });
 
     expect(screen.getAllByText(/本地任务已停止/i)).not.toHaveLength(0);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
+    await act(async () => {
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText(/本地任务已停止/i)).not.toHaveLength(0);
+    expect(screen.queryByText(/Local task execution timed out/i)).not.toBeInTheDocument();
   });
 
   it("passes an abort signal into local assistant execution and aborts it when the user stops the task", async () => {
@@ -2428,6 +2444,7 @@ describe("App local task guard", () => {
     await act(async () => {
       vi.advanceTimersByTime(45_000);
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
@@ -2442,9 +2459,16 @@ describe("App local task guard", () => {
     });
 
     expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
     expect(screen.queryByText(/Late workspace overview success/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/This late success must not overwrite/i)).not.toBeInTheDocument();
-    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Late workspace overview success/i)).not.toBeInTheDocument();
   });
 
   it("keeps a timed-out local task failed when its underlying execution rejects late", async () => {
@@ -2474,6 +2498,7 @@ describe("App local task guard", () => {
 
     await act(async () => {
       await Promise.resolve();
+      await Promise.resolve();
     });
     expectWorkbenchReady();
 
@@ -2495,6 +2520,7 @@ describe("App local task guard", () => {
     await act(async () => {
       vi.advanceTimersByTime(45_000);
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
@@ -2503,12 +2529,20 @@ describe("App local task guard", () => {
     await act(async () => {
       rejectTask(new Error("Late bridge failure after timeout should stay in diagnostics only."));
       await Promise.resolve();
+      await Promise.resolve();
     });
 
     expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
+    expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
     expect(screen.queryByText(/Late bridge failure after timeout/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
-    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.advanceTimersByTime(45_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.queryAllByText(/Local task execution timed out/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Late bridge failure after timeout/i)).not.toBeInTheDocument();
   });
 
   it("surfaces self-repair failure analysis and a concrete user-help next step instead of looping", async () => {

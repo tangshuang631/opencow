@@ -1,4 +1,5 @@
 mod ollama;
+mod workbench_state;
 mod workspace;
 
 use tauri::Manager;
@@ -72,7 +73,10 @@ pub fn run() {
             workspace::workspace_packages_overview,
             workspace::workspace_config_overview,
             workspace::workspace_npc_config_write,
-            workspace::workspace_readonly_command
+            workspace::workspace_readonly_command,
+            workbench_state::workbench_state_load,
+            workbench_state::workbench_state_save,
+            workbench_state::workbench_state_clear
         ])
         .run(tauri::generate_context!())
         .expect("failed to run opencow desktop");

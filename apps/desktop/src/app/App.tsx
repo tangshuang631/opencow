@@ -24,6 +24,7 @@ import {
   createDuplicatePlanningFailureSkippedState,
   createDuplicatePendingApprovalSkippedState,
   createHighRiskConfirmationState,
+  createInitialWorkbenchState,
   createNewConversationState,
   createModelSelectedState,
   createOllamaLoadErrorState,
@@ -50,7 +51,8 @@ import {
 } from "../features/workbench/workbenchState";
 import {
   clearPersistedWorkbenchState,
-  loadPersistedWorkbenchState,
+  loadPersistedWorkbenchStateFromBrowserStorage,
+  readPersistedWorkbenchState,
   persistWorkbenchState
 } from "../features/workbench/workbenchState.persistence";
 import type { PermissionMode, WorkbenchState } from "../features/workbench/workbenchState";
@@ -81,6 +83,7 @@ const LOCAL_MODEL_PROGRESS_INTERVAL_MS = 15_000;
 const MAX_CHAT_SEARCH_CONTEXT_ITEMS = 3;
 const MAX_CHAT_SEARCH_FIELD_LENGTH = 240;
 const PREFERRED_DEFAULT_CHAT_MODELS = ["gemma:26b", "gemma4:26b"];
+const TAURI_INTERNALS_KEY = "__TAURI_INTERNALS__";
 const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
   readonly: 0,
   "workspace-write": 1,
@@ -1771,8 +1774,21 @@ function isDuplicatePendingConfirmationMessage(message: string, state: Workbench
   return Boolean(queuedMessage && queuedMessage.trim().toLowerCase() === message.trim().toLowerCase());
 }
 
+function isTauriDesktopRuntime() {
+  return typeof window !== "undefined" && TAURI_INTERNALS_KEY in window;
+}
+
 export function App() {
-  const [state, setState] = useState(loadPersistedWorkbenchState);
+  const shouldHydrateNativeState = isTauriDesktopRuntime();
+  const [state, setState] = useState(() =>
+    shouldHydrateNativeState
+      ? createInitialWorkbenchState()
+      : loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState)
+  );
+  const [hasHydratedPersistedState, setHasHydratedPersistedState] = useState(!shouldHydrateNativeState);
+  const stateRef = useRef(state);
+  const hasLoadedOllamaOverviewRef = useRef(false);
+  const pendingPersistedStateRef = useRef<WorkbenchState | null>(null);
   const lastExecutedTaskAttemptRef = useRef<string | null>(null);
   const activeLocalModelAbortControllerRef = useRef<AbortController | null>(null);
   const activeLocalModelRequestIdRef = useRef<string | null>(null);
@@ -1782,6 +1798,8 @@ export function App() {
         .map((item) => `${item.id}:${item.status}:${item.attemptCount}:${item.executionKind ?? ""}`)
         .at(0) ?? state.tasks.activeTaskId
     : null;
+
+  stateRef.current = state;
 
   function cancelActiveLocalModelRequest() {
     const requestId = activeLocalModelRequestIdRef.current;
@@ -1796,38 +1814,82 @@ export function App() {
   }
 
   useEffect(() => {
+    if (!shouldHydrateNativeState) {
+      return;
+    }
+
     let cancelled = false;
 
-    void loadOllamaOverview()
-      .then((overview) => {
+    void readPersistedWorkbenchState()
+      .then((persistedState) => {
         if (cancelled) {
           return;
         }
 
+        if (persistedState) {
+          pendingPersistedStateRef.current = persistedState;
+          setState(persistedState);
+          return;
+        }
+
+        setHasHydratedPersistedState(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHasHydratedPersistedState(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldHydrateNativeState]);
+
+  useEffect(() => {
+    const pendingPersistedState = pendingPersistedStateRef.current;
+
+    if (!pendingPersistedState || state !== pendingPersistedState) {
+      return;
+    }
+
+    pendingPersistedStateRef.current = null;
+    setHasHydratedPersistedState(true);
+  }, [state]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistedState) {
+      return;
+    }
+
+    const idle = state.tasks.activeTaskId === null && state.tasks.pendingCount === 0;
+
+    if (!idle || hasLoadedOllamaOverviewRef.current) {
+      return;
+    }
+
+    hasLoadedOllamaOverviewRef.current = true;
+    void loadOllamaOverview()
+      .then((overview) => {
         startTransition(() => {
           setState((current) => mergeOllamaOverview(current, overview));
         });
       })
       .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-
         const detail = error instanceof Error ? error.message : "Unknown ollama load error";
 
         startTransition(() => {
           setState((current) => createOllamaLoadErrorState(current, detail));
         });
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [hasHydratedPersistedState, state.tasks.activeTaskId, state.tasks.pendingCount]);
 
   useEffect(() => {
-    persistWorkbenchState(state);
-  }, [state]);
+    if (!hasHydratedPersistedState) {
+      return;
+    }
+
+    void persistWorkbenchState(state);
+  }, [hasHydratedPersistedState, state]);
 
   useEffect(() => () => {
     cancelActiveLocalModelRequest();
@@ -1924,7 +1986,7 @@ export function App() {
       ) {
         const localModelMessage = getTaskExecutionMessage(activeTask);
         const localModelChatTimeoutMs = getLocalModelChatTimeoutMs(localModelMessage);
-        let localModelDiagnosticModel = state.model.activeModel;
+        let localModelDiagnosticModel = stateRef.current.model.activeModel;
         cancelActiveLocalModelRequest();
         const localModelAbortController = new AbortController();
         const localModelRequestId = `local-model-chat-${activeTask.id}-${activeTask.attemptCount}`;
@@ -1970,8 +2032,8 @@ export function App() {
         });
 
         const executeLocalModelChatWithPreflight = async () => {
-          let activeModel = state.model.activeModel;
-          let availableModels = state.model.availableModels;
+          let activeModel = stateRef.current.model.activeModel;
+          let availableModels = stateRef.current.model.availableModels;
 
           if (!resolveUsableOllamaChatModel(activeModel, availableModels)) {
             const overview = await loadOllamaOverview();
@@ -1994,9 +2056,9 @@ export function App() {
               model: activeModel,
               availableModels,
               message: localModelMessage,
-              searchEnabled: state.search.enabled,
-              searchProviderLabel: state.search.providerLabel,
-              sources: state.sources.items,
+              searchEnabled: stateRef.current.search.enabled,
+              searchProviderLabel: stateRef.current.search.providerLabel,
+              sources: stateRef.current.sources.items,
               requestId: localModelRequestId,
               signal: localModelAbortController.signal,
               onChunk: (chunk: string) => {
@@ -2112,7 +2174,7 @@ export function App() {
 
       const executeAssistantTaskWithOptionalExplanation = async () => {
         const result = await executeAssistantTask(executionPlan, {
-          snapshotAvailable: state.storage.snapshotCount > 0,
+          snapshotAvailable: stateRef.current.storage.snapshotCount > 0,
           signal: currentAssistantTaskAbortController.signal
         });
         const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
@@ -2127,8 +2189,8 @@ export function App() {
         try {
           return await explainReadonlyOverviewResultWithLocalModel({
             executionKind: activeTask.executionKind,
-            model: state.model.activeModel,
-            availableModels: state.model.availableModels,
+            model: stateRef.current.model.activeModel,
+            availableModels: stateRef.current.model.availableModels,
             requestMessage: getTaskExecutionMessage(activeTask),
             readonlyTitle: validResult.resultTitle,
             readonlySummary: validResult.resultSummary,
@@ -2212,7 +2274,7 @@ export function App() {
       clearProgressInterval();
       assistantTaskAbortController?.abort();
     };
-  }, [state.model.activeModel, state.storage.snapshotCount, activeTaskExecutionDependency]);
+  }, [activeTaskExecutionDependency]);
 
   function parseCapabilityToggleIntent(message: string, currentState: WorkbenchState) {
     const normalized = message.trim();
@@ -2719,7 +2781,7 @@ export function App() {
         const nextState = createStorageCleanupState(current, target);
 
         if (target === "conversation") {
-          clearPersistedWorkbenchState();
+          void clearPersistedWorkbenchState();
         }
 
         return nextState;
@@ -2768,7 +2830,7 @@ export function App() {
       setState((current) => {
         const nextState = createNewConversationState(createTaskExecutionCancelledState(current));
 
-        clearPersistedWorkbenchState();
+        void clearPersistedWorkbenchState();
 
         return nextState;
       });

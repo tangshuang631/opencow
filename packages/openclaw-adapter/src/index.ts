@@ -1,4 +1,5 @@
 export { inspectOpenClawCapabilities } from "./capabilities.js";
+export { inspectOpenClawCapabilityFamily, inspectOpenClawCapabilityFamilies } from "./capabilityFamilies.js";
 export { analyzeControlledCommand } from "./commandPolicy.js";
 export { planLocalAssistantTask } from "./localAssistantPlan.js";
 export { resolveOpencowSelfRepairTargetDescriptor } from "./selfRepairTargetDescriptor.js";
@@ -17,6 +18,8 @@ export type {
   OpenclawSelfRepairTargetDescriptor,
   OpenClawCapabilities,
   OpenClawCapability,
+  OpenClawCapabilityFamily,
+  OpenClawCapabilityFamilyReadiness,
   OpenClawMetadata,
   OpenClawWorkspacePackage
 } from "./types.js";

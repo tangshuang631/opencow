@@ -20,6 +20,18 @@ export interface OpenClawCapabilities {
   readonly toolCallRepair: OpenClawCapability;
 }
 
+export type OpenClawCapabilityFamily = "rag" | "skills" | "npc" | "mcp";
+
+export interface OpenClawCapabilityFamilyReadiness {
+  readonly capabilityId: OpenClawCapabilityFamily;
+  readonly title: string;
+  readonly status: "ready-foundation" | "partial-foundation";
+  readonly requiredPackageCount: number;
+  readonly availablePackageCount: number;
+  readonly availablePackages: OpenClawCapability[];
+  readonly missingPackages: OpenClawCapability[];
+}
+
 export interface OpenClawWorkspacePackage {
   readonly directoryName: string;
   readonly packageName: string;

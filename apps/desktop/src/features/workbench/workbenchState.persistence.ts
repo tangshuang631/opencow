@@ -1,15 +1,69 @@
+import { invoke } from "@tauri-apps/api/core";
 import { createInitialWorkbenchState } from "./workbenchState.initial";
 import type { LocalTaskItem, WorkbenchState } from "./workbenchState.types";
 
 const WORKBENCH_STATE_STORAGE_KEY = "opencow.desktop.workbench-state.v1";
+const tauriInternals = "__TAURI_INTERNALS__" as const;
 
 type PersistedWorkbenchStateEnvelope = {
   version: 1;
   state: WorkbenchState;
 };
 
+type NativeWorkbenchStateReadResult = {
+  found: boolean;
+  payload: PersistedWorkbenchStateEnvelope | null;
+};
+
 function isBrowserStorageAvailable() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function isTauriDesktopAvailable() {
+  return typeof window !== "undefined" && tauriInternals in window;
+}
+
+function createPersistedEnvelope(state: WorkbenchState): PersistedWorkbenchStateEnvelope {
+  return {
+    version: 1,
+    state
+  };
+}
+
+function loadLegacyBrowserEnvelope(): PersistedWorkbenchStateEnvelope | null {
+  if (!isBrowserStorageAvailable()) {
+    return null;
+  }
+
+  const candidate = window.localStorage.getItem(WORKBENCH_STATE_STORAGE_KEY);
+
+  if (!candidate) {
+    return null;
+  }
+
+  const parsed = JSON.parse(candidate) as PersistedWorkbenchStateEnvelope;
+
+  if (parsed?.version !== 1 || !parsed.state) {
+    throw new Error("Unsupported persisted workbench state version.");
+  }
+
+  return parsed;
+}
+
+function persistLegacyBrowserEnvelope(payload: PersistedWorkbenchStateEnvelope) {
+  if (!isBrowserStorageAvailable()) {
+    return;
+  }
+
+  window.localStorage.setItem(WORKBENCH_STATE_STORAGE_KEY, JSON.stringify(payload));
+}
+
+function clearLegacyBrowserEnvelope() {
+  if (!isBrowserStorageAvailable()) {
+    return;
+  }
+
+  window.localStorage.removeItem(WORKBENCH_STATE_STORAGE_KEY);
 }
 
 function revivePersistedTasks(tasks: WorkbenchState["tasks"]): WorkbenchState["tasks"] {
@@ -39,8 +93,10 @@ function revivePersistedTask(task: LocalTaskItem): LocalTaskItem {
     continuationMessage: task.continuationMessage,
     lastFailureSource: "restored_interrupted_task",
     lastFailureSummary: "App restarted while this task was still running.",
-    lastFailureDetail: "The previous desktop session ended before the running task completed, so opencow restored the history and marked the task as cancelled.",
-    lastFailureActionLabel: "Review the preserved conversation context and retry manually if you still want this task to run."
+    lastFailureDetail:
+      "The previous desktop session ended before the running task completed, so opencow restored the history and marked the task as cancelled.",
+    lastFailureActionLabel:
+      "Review the preserved conversation context and retry manually if you still want this task to run."
   };
 }
 
@@ -62,49 +118,68 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
   };
 }
 
-export function loadPersistedWorkbenchState(): WorkbenchState {
-  if (!isBrowserStorageAvailable()) {
-    return createInitialWorkbenchState();
-  }
+export async function loadPersistedWorkbenchState(): Promise<WorkbenchState> {
+  const persisted = await readPersistedWorkbenchState();
+  return persisted ?? createInitialWorkbenchState();
+}
 
-  const candidate = window.localStorage.getItem(WORKBENCH_STATE_STORAGE_KEY);
-
-  if (!candidate) {
-    return createInitialWorkbenchState();
-  }
-
+export async function readPersistedWorkbenchState(): Promise<WorkbenchState | null> {
   try {
-    const parsed = JSON.parse(candidate) as PersistedWorkbenchStateEnvelope;
+    if (isTauriDesktopAvailable()) {
+      const nativeResult = await invoke<NativeWorkbenchStateReadResult>("workbench_state_load");
 
-    if (parsed?.version !== 1 || !parsed.state) {
-      throw new Error("Unsupported persisted workbench state version.");
+      if (nativeResult.found && nativeResult.payload) {
+        clearLegacyBrowserEnvelope();
+        return revivePersistedState(nativeResult.payload.state);
+      }
+
+      const legacyPayload = loadLegacyBrowserEnvelope();
+
+      if (legacyPayload) {
+        await invoke("workbench_state_save", { payload: legacyPayload });
+        clearLegacyBrowserEnvelope();
+        return revivePersistedState(legacyPayload.state);
+      }
+
+      return null;
     }
 
-    return revivePersistedState(parsed.state);
+    const legacyPayload = loadLegacyBrowserEnvelope();
+    return legacyPayload ? revivePersistedState(legacyPayload.state) : null;
   } catch {
-    window.localStorage.removeItem(WORKBENCH_STATE_STORAGE_KEY);
-    return createInitialWorkbenchState();
+    clearLegacyBrowserEnvelope();
+    return null;
   }
 }
 
-export function persistWorkbenchState(state: WorkbenchState) {
-  if (!isBrowserStorageAvailable()) {
+export function loadPersistedWorkbenchStateFromBrowserStorage(
+  createInitialState: () => WorkbenchState = createInitialWorkbenchState
+): WorkbenchState {
+  try {
+    const legacyPayload = loadLegacyBrowserEnvelope();
+    return legacyPayload ? revivePersistedState(legacyPayload.state) : createInitialState();
+  } catch {
+    clearLegacyBrowserEnvelope();
+    return createInitialState();
+  }
+}
+
+export async function persistWorkbenchState(state: WorkbenchState) {
+  const payload = createPersistedEnvelope(state);
+
+  if (isTauriDesktopAvailable()) {
+    await invoke("workbench_state_save", { payload });
+    clearLegacyBrowserEnvelope();
     return;
   }
 
-  const payload: PersistedWorkbenchStateEnvelope = {
-    version: 1,
-    state
-  };
-
-  window.localStorage.setItem(WORKBENCH_STATE_STORAGE_KEY, JSON.stringify(payload));
+  persistLegacyBrowserEnvelope(payload);
 }
 
-export function clearPersistedWorkbenchState() {
-  if (!isBrowserStorageAvailable()) {
-    return;
+export async function clearPersistedWorkbenchState() {
+  if (isTauriDesktopAvailable()) {
+    await invoke("workbench_state_clear");
   }
 
-  window.localStorage.removeItem(WORKBENCH_STATE_STORAGE_KEY);
+  clearLegacyBrowserEnvelope();
 }
-
