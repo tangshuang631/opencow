@@ -1264,6 +1264,36 @@ function formatTopLocalRagSources(ragResult: LocalRagSearchDiagnostics): string 
   return ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
 }
 
+function formatVisibleServiceSummary(summary: string): string {
+  const normalized = summary.replace(/[.。]\s*$/, "");
+  const knownSummaries: Record<string, string> = {
+    "Workspace project run started successfully and returned a live local process handle":
+      "本地项目已启动并返回进程句柄。",
+    "Workspace project status found an active local process handle for the matched project":
+      "已找到匹配项目的本地运行进程。",
+    "Workspace project stop completed successfully and released the local process handle":
+      "本地项目已停止并释放进程句柄。",
+    "Workspace write shell command completed successfully":
+      "工作区写入命令已完成。",
+    "Controlled full shell command completed successfully":
+      "受控高风险命令已完成。",
+    "NPC foundation packages are available for local collaboration preview":
+      "NPC 本地协作基础包可用。",
+    "NPC capability foundation is available locally":
+      "NPC 能力基础已在本地可用。",
+    "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact":
+      "NPC 本地项目截图已完成，并写入工作区本地产物。",
+    "NPC local project showcase-site write completed successfully and returned a changed-file summary":
+      "NPC 本地项目展示站点已写入，并返回变更文件摘要。",
+    "NPC local project showcase publish-preview loaded the latest generated showcase outputs without entering git":
+      "NPC 展示发布预览已读取最新生成产物，未进入 Git 操作。",
+    "NPC local project showcase git confirmation preview summarized the current showcase-related changes without executing git":
+      "NPC 展示 Git 确认预览已汇总当前展示相关变更，未执行 Git。"
+  };
+
+  return knownSummaries[normalized] ?? summary;
+}
+
 function createNoEnabledLocalSkillMatchError(
   capability: string,
   skillMatch: EnabledLocalSkillMatchDiagnostics
@@ -1362,7 +1392,7 @@ async function executeSkillAssistedWorkspaceWritePlan(
       `注册表：${skillMatch.registry_path}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1388,7 +1418,7 @@ async function executeSkillAssistedControlledFullPlan(
       `注册表：${skillMatch.registry_path}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1414,7 +1444,7 @@ async function executeNpcAssistedWorkspaceWritePlan(
       `注册表：${skillMatch.registry_path}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1440,7 +1470,7 @@ async function executeNpcAssistedControlledFullPlan(
       `注册表：${skillMatch.registry_path}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1575,7 +1605,7 @@ async function executeNpcAssistedRagShellHandoffPreviewPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${npcOverview.summary}`,
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
       `状态：${npcOverview.status}。`,
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
@@ -1606,7 +1636,7 @@ async function executeLocalRagShellCreatePlan(
       `主要来源：${topPaths}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1627,7 +1657,7 @@ async function executeLocalRagShellRemovePlan(
       `主要来源：${topPaths}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1659,7 +1689,7 @@ async function executeSkillAssistedRagShellCreatePlan(
       `主要来源：${topPaths}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1691,7 +1721,7 @@ async function executeSkillAssistedRagShellRemovePlan(
       `主要来源：${topPaths}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1723,7 +1753,7 @@ async function executeNpcAssistedRagShellCreatePlan(
       `主要来源：${topPaths}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1755,7 +1785,7 @@ async function executeNpcAssistedRagShellRemovePlan(
       `主要来源：${topPaths}。`,
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
-      `执行摘要：${shellResult.summary}`
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
     ].join(" ")
   };
 }
@@ -1777,7 +1807,7 @@ async function executeNpcCollaborationPreviewPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${npcOverview.summary}`,
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
       `状态：${npcOverview.status}。`,
       `已启用 Skills：${skillNames}。`,
       `注册表：${enabledSkills.registry_path}。`,
@@ -1809,7 +1839,7 @@ async function executeNpcProjectShowcasePreviewPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${npcOverview.summary}`,
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
       `状态：${npcOverview.status}。`,
       `已启用 Skills：${skillNames}。`,
       `工作区：${workspaceOverview.root_name}。`,
@@ -1839,7 +1869,7 @@ async function executeNpcLocalProjectRunPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `匹配项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `命令：${result.command_label}。`,
@@ -1865,7 +1895,7 @@ async function executeNpcLocalProjectScreenshotCapturePlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `匹配项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `捕获目标：${result.capture_target}。`,
@@ -1890,7 +1920,7 @@ async function executeNpcLocalProjectShowcaseSiteWritePlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `匹配项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `站点根目录：${result.site_root}。`,
@@ -1912,7 +1942,7 @@ async function executeNpcLocalProjectShowcasePublishPreviewPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `匹配项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `站点根目录：${result.site_root}。`,
@@ -1935,7 +1965,7 @@ async function executeNpcLocalProjectShowcaseGitConfirmationPreviewPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `匹配项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `站点根目录：${result.site_root}。`,
@@ -1971,7 +2001,7 @@ async function executeNpcShellPlanPreview(
   return {
     resultTitle,
     resultSummary: [
-      `${npcOverview.summary}`,
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
       `状态：${npcOverview.status}。`,
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
@@ -2029,7 +2059,7 @@ async function executeWorkspaceWriteShellPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `命令：${result.command_label}。`,
       `输出预览：${result.stdout_preview}`
     ].join(" ")
@@ -2047,7 +2077,7 @@ async function executeWorkspaceProjectRunPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `命令：${result.command_label}。`,
@@ -2069,7 +2099,7 @@ async function executeWorkspaceProjectStatusPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `命令：${result.command_label}。`,
@@ -2093,7 +2123,7 @@ async function executeWorkspaceProjectStopPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `项目：${result.project_name}。`,
       `路径：${result.project_path}。`,
       `命令：${result.command_label}。`,
@@ -2115,7 +2145,7 @@ async function executeControlledFullShellPlan(
   return {
     resultTitle,
     resultSummary: [
-      `${result.summary}`,
+      `${formatVisibleServiceSummary(result.summary)}`,
       `命令：${result.command_label}。`,
       `输出预览：${result.stdout_preview}`
     ].join(" ")

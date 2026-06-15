@@ -52,6 +52,7 @@ describe("assistantTaskService project status", () => {
     expect(result.resultSummary).toContain("http://127.0.0.1:1420");
     expect(result.resultSummary).toContain("4242");
     expect(result.resultSummary).toContain("running");
+    expect(result.resultSummary).toContain("已找到匹配项目的本地运行进程。");
     expect(result.resultSummary).toContain("项目：desktop");
     expect(result.resultSummary).toContain("路径：apps/desktop");
     expect(result.resultSummary).toContain("命令：npm run dev");
@@ -59,6 +60,7 @@ describe("assistantTaskService project status", () => {
     expect(result.resultSummary).toContain("预期 URL：http://127.0.0.1:1420");
     expect(result.resultSummary).toContain("状态：running");
     expect(result.resultSummary).toContain("输出预览：pid:4242");
+    expect(result.resultSummary).not.toContain("Workspace project status found an active local process handle");
     expect(result.resultSummary).not.toContain("Project:");
     expect(result.resultSummary).not.toContain("Path:");
     expect(result.resultSummary).not.toContain("Command:");

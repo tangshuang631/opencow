@@ -293,9 +293,10 @@ describe("App project run flow", () => {
     const conversation = screen.getByRole("region", { name: "会话" });
     await waitFor(() => {
       expect(within(conversation).getByText("Run matched local project")).toBeInTheDocument();
-      expect(within(conversation).getByText(/Workspace project run started successfully/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/本地项目已启动并返回进程句柄/)).toBeInTheDocument();
       expect(within(conversation).getByText(/npm run dev|http:\/\/127\.0\.0\.1:1420|4242/)).toBeInTheDocument();
     }, { timeout: 12_000 });
+    expect(within(conversation).queryByText(/Workspace project run started successfully/)).not.toBeInTheDocument();
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
     expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^workspace-project-run-explanation-/));
     expect(runWorkspaceProjectMock).toHaveBeenCalledTimes(1);

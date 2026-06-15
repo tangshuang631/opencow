@@ -75,7 +75,8 @@ describe("assistantTaskService skill-assisted workspace-write shell execution", 
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("命令：New-Item -ItemType Directory -Force temp-output");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("执行摘要：Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：工作区写入命令已完成。");
+    expect(result.resultSummary).not.toContain("Workspace write shell command completed successfully");
   });
 
   it("adds shell recovery context when a skill-assisted workspace-write command fails", async () => {
@@ -175,7 +176,8 @@ describe("assistantTaskService skill-assisted workspace-write shell execution", 
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("命令：Remove-Item -LiteralPath temp-output -Recurse -Force");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("执行摘要：Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：受控高风险命令已完成。");
+    expect(result.resultSummary).not.toContain("Controlled full shell command completed successfully");
   });
 
   it("executes an npc-assisted temp-output creation task through enabled skill matching and shell execution", async () => {
@@ -215,7 +217,8 @@ describe("assistantTaskService skill-assisted workspace-write shell execution", 
     expect(result.resultSummary).toContain("shell-automation");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：工作区写入命令已完成。");
+    expect(result.resultSummary).not.toContain("Workspace write shell command completed successfully");
   });
 
   it("executes an npc-assisted temp-output removal task through enabled skill matching and confirmed shell execution", async () => {
@@ -255,6 +258,7 @@ describe("assistantTaskService skill-assisted workspace-write shell execution", 
     expect(result.resultSummary).toContain("shell-automation");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：受控高风险命令已完成。");
+    expect(result.resultSummary).not.toContain("Controlled full shell command completed successfully");
   });
 });

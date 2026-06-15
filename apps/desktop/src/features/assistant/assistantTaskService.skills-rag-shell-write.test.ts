@@ -97,7 +97,8 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
     expect(result.resultSummary).toContain("命令：New-Item -ItemType Directory -Force temp-output");
     expect(result.resultSummary).toContain("输出预览：temp-output");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：工作区写入命令已完成。");
+    expect(result.resultSummary).not.toContain("Workspace write shell command completed successfully");
     expect(result.resultSummary).not.toContain("Recommended skill:");
     expect(result.resultSummary).not.toContain("Registry:");
     expect(result.resultSummary).not.toContain("Top matches:");
@@ -168,7 +169,8 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
     expect(result.resultSummary).toContain("命令：Remove-Item -LiteralPath temp-output -Recurse -Force");
     expect(result.resultSummary).toContain("输出预览：temp-output removed");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：受控高风险命令已完成。");
+    expect(result.resultSummary).not.toContain("Controlled full shell command completed successfully");
     expect(result.resultSummary).not.toContain("Recommended skill:");
     expect(result.resultSummary).not.toContain("Registry:");
     expect(result.resultSummary).not.toContain("Top matches:");
@@ -239,7 +241,8 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
     expect(result.resultSummary).toContain("命令：New-Item -ItemType Directory -Force temp-output");
     expect(result.resultSummary).toContain("输出预览：temp-output");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：工作区写入命令已完成。");
+    expect(result.resultSummary).not.toContain("Workspace write shell command completed successfully");
     expect(result.resultSummary).not.toContain("Recommended skill:");
     expect(result.resultSummary).not.toContain("Registry:");
     expect(result.resultSummary).not.toContain("Top matches:");
@@ -310,7 +313,8 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
     expect(result.resultSummary).toContain("命令：Remove-Item -LiteralPath temp-output -Recurse -Force");
     expect(result.resultSummary).toContain("输出预览：temp-output removed");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：受控高风险命令已完成。");
+    expect(result.resultSummary).not.toContain("Controlled full shell command completed successfully");
     expect(result.resultSummary).not.toContain("Recommended skill:");
     expect(result.resultSummary).not.toContain("Registry:");
     expect(result.resultSummary).not.toContain("Top matches:");

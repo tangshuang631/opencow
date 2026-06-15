@@ -1485,7 +1485,8 @@ describe("App", () => {
 
     const conversation = getConversationRegion();
     expect(await within(conversation).findByText("Create temp-output directory", {}, { timeout: 12_000 })).toBeInTheDocument();
-    expect(within(conversation).getByText(/Workspace write shell command completed successfully/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/工作区写入命令已完成/)).toBeInTheDocument();
+    expect(within(conversation).queryByText(/Workspace write shell command completed successfully/)).not.toBeInTheDocument();
     expect(within(conversation).getByText(/New-Item -ItemType Directory -Force temp-output/)).toBeInTheDocument();
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
     expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^workspace-write-create-temp-output-explanation-/));
