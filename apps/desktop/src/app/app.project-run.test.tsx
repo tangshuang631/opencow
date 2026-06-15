@@ -118,7 +118,7 @@ describe("App project run flow", () => {
       message: expect.stringContaining("用户批准 workspace-write")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("PID: 4242")
+      message: expect.stringContaining("PID：4242")
     }));
   });
 
@@ -169,7 +169,7 @@ describe("App project run flow", () => {
     });
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen2.5-coder:7b",
-      message: expect.stringContaining("PID: 4242")
+      message: expect.stringContaining("PID：4242")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining("不要暗示已经启动或停止进程")
@@ -235,7 +235,7 @@ describe("App project run flow", () => {
     expect(stopWorkspaceProjectMock).toHaveBeenCalledTimes(1);
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       requestId: expect.stringMatching(/^workspace-project-stop-explanation-/),
-      message: expect.stringContaining("PID: 4242")
+      message: expect.stringContaining("PID：4242")
     }));
   });
 

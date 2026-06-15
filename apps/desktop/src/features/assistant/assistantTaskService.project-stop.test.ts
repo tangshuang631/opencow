@@ -52,5 +52,17 @@ describe("assistantTaskService project stop", () => {
     expect(result.resultSummary).toContain("4242");
     expect(result.resultSummary).toContain("stopped");
     expect(result.resultSummary).toContain("job:4242 stopped");
+    expect(result.resultSummary).toContain("项目：desktop");
+    expect(result.resultSummary).toContain("路径：apps/desktop");
+    expect(result.resultSummary).toContain("命令：npm run dev");
+    expect(result.resultSummary).toContain("工作目录：apps/desktop");
+    expect(result.resultSummary).toContain("状态：stopped");
+    expect(result.resultSummary).toContain("输出预览：job:4242 stopped");
+    expect(result.resultSummary).not.toContain("Project:");
+    expect(result.resultSummary).not.toContain("Path:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Working directory:");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 });

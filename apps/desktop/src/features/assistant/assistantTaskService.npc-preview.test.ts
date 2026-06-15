@@ -121,6 +121,15 @@ describe("assistantTaskService npc collaboration preview", () => {
     expect(result.resultSummary).toContain("docs-helper");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
-    expect(result.resultSummary).toContain("Indexed documents: 7");
+    expect(result.resultSummary).toContain("状态：ready-foundation");
+    expect(result.resultSummary).toContain("已启用 Skills：coding-agent、docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("本地上下文：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("已索引文档：7");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Enabled skills:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Local context:");
+    expect(result.resultSummary).not.toContain("Indexed documents:");
   });
 });

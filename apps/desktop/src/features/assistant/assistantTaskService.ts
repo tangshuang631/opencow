@@ -1260,6 +1260,10 @@ function deriveTaskQuery(
 type EnabledLocalSkillMatchDiagnostics = Awaited<ReturnType<typeof matchEnabledLocalSkills>>;
 type LocalRagSearchDiagnostics = Awaited<ReturnType<typeof searchLocalKnowledge>>;
 
+function formatTopLocalRagSources(ragResult: LocalRagSearchDiagnostics): string {
+  return ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+}
+
 function createNoEnabledLocalSkillMatchError(
   capability: string,
   skillMatch: EnabledLocalSkillMatchDiagnostics
@@ -1405,9 +1409,13 @@ async function executeNpcAssistedWorkspaceWritePlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1427,9 +1435,13 @@ async function executeNpcAssistedControlledFullPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1489,14 +1501,19 @@ async function executeLocalRagShellHandoffPreviewPlan(
     loadWorkspaceOverview()
   ]), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${ragResult.summary} Top matches: ${topPaths}. Command preview: ${shellPreview.command}. ` +
-      `Workspace root: ${shellPreview.workspaceRoot}. ` +
-      `Next step: ${shellPreview.nextStep}. Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultSummary: [
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令预览：${shellPreview.command}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
@@ -1517,7 +1534,7 @@ async function executeSkillAssistedRagShellHandoffPreviewPlan(
 
   const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle: "Skill 辅助 RAG Shell 交接预览",
@@ -1553,15 +1570,23 @@ async function executeNpcAssistedRagShellHandoffPreviewPlan(
 
   const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Recommended skill: ${topMatch.name}. ` +
-      `Registry: ${skillMatch.registry_path}. ${ragResult.summary} Top matches: ${topPaths}. ` +
-      `Command preview: ${shellPreview.command}. Workspace root: ${shellPreview.workspaceRoot}. Next step: ${shellPreview.nextStep}. ` +
-      `Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultSummary: [
+      `${npcOverview.summary}`,
+      `状态：${npcOverview.status}。`,
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令预览：${shellPreview.command}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
@@ -1572,13 +1597,17 @@ async function executeLocalRagShellCreatePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const ragResult = await searchLocalKnowledgeWithDiagnostics(query, context);
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1589,13 +1618,17 @@ async function executeLocalRagShellRemovePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const ragResult = await searchLocalKnowledgeWithDiagnostics(query, context);
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1615,14 +1648,19 @@ async function executeSkillAssistedRagShellCreatePlan(
   }
 
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1642,14 +1680,19 @@ async function executeSkillAssistedRagShellRemovePlan(
   }
 
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1669,14 +1712,19 @@ async function executeNpcAssistedRagShellCreatePlan(
   }
 
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1696,14 +1744,19 @@ async function executeNpcAssistedRagShellRemovePlan(
   }
 
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1718,14 +1771,19 @@ async function executeNpcCollaborationPreviewPlan(
     searchLocalKnowledgeWithDiagnostics(query, context)
   ]), context);
 
-  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join(", ") || "none";
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Enabled skills: ${skillNames}. ` +
-      `Registry: ${enabledSkills.registry_path}. Local context: ${topPaths}. Indexed documents: ${ragResult.indexed_document_count}.`
+    resultSummary: [
+      `${npcOverview.summary}`,
+      `状态：${npcOverview.status}。`,
+      `已启用 Skills：${skillNames}。`,
+      `注册表：${enabledSkills.registry_path}。`,
+      `本地上下文：${topPaths}。`,
+      `已索引文档：${ragResult.indexed_document_count}。`
+    ].join(" ")
   };
 }
 
@@ -1741,24 +1799,29 @@ async function executeNpcProjectShowcasePreviewPlan(
     loadWorkspaceProjectRunPreview(query)
   ]), context);
 
-  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join(", ") || "none";
-  const likelyProject = /\bcattle\b/i.test(query) ? "cattle" : "target local project";
-  const packageNames = workspaceOverview.package_names.slice(0, 4).join(", ") || "none detected";
+  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+  const likelyProject = /\bcattle\b/i.test(query) ? "cattle" : "目标本地项目";
+  const packageNames = workspaceOverview.package_names.slice(0, 4).join("、") || "未检测到";
   const matchedProject = runPreview.matched_project_name ?? likelyProject;
-  const preferredCommand = runPreview.preferred_command ?? "not detected";
-  const expectedUrl = runPreview.expected_url ?? "not inferred";
+  const preferredCommand = runPreview.preferred_command ?? "未检测到";
+  const expectedUrl = runPreview.expected_url ?? "未推断";
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Enabled skills: ${skillNames}. ` +
-      `Workspace root: ${workspaceOverview.root_name}. Visible packages: ${packageNames}. ` +
-      `Run preview matched ${matchedProject} at ${runPreview.matched_project_path ?? "unknown path"} from ${runPreview.matched_project_source ?? "unknown source"}. ` +
-      `Preferred launch command: ${preferredCommand}. Expected URL: ${expectedUrl}. ` +
-      `Next required permission for actual launch: ${runPreview.next_required_permission}. ${runPreview.risk_summary} ` +
-      `Planned stages for ${likelyProject}: project inspection -> run preview -> permission-backed local launch -> ` +
-      `permission-backed screenshot capture -> permission-backed showcase site generation -> changed-files preview -> separately confirmable git push. ` +
-      `This preview stays readonly and keeps every privileged step explicit before execution.`
+    resultSummary: [
+      `${npcOverview.summary}`,
+      `状态：${npcOverview.status}。`,
+      `已启用 Skills：${skillNames}。`,
+      `工作区：${workspaceOverview.root_name}。`,
+      `可见包：${packageNames}。`,
+      `运行预览匹配：${matchedProject}，路径 ${runPreview.matched_project_path ?? "未知路径"}，来源 ${runPreview.matched_project_source ?? "未知来源"}。`,
+      `推荐启动命令：${preferredCommand}。`,
+      `预期 URL：${expectedUrl}。`,
+      `实际启动下一步所需权限：${runPreview.next_required_permission}。`,
+      `${runPreview.risk_summary}`,
+      `规划阶段（${likelyProject}）：project inspection -> run preview -> permission-backed local launch -> permission-backed screenshot capture -> permission-backed showcase site generation -> changed-files preview -> separately confirmable git push。`,
+      "此预览保持只读，并在执行前明确每个需要权限的步骤。"
+    ].join(" ")
   };
 }
 
@@ -1769,17 +1832,23 @@ async function executeNpcLocalProjectRunPlan(
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(runWorkspaceProject(query), context);
   const executionLabel = result.preview_only
-    ? "This browser preview stayed readonly and did not launch a real local process."
-    : "This is the first executed stage inside the NPC showcase chain.";
-  const pidLabel = result.preview_only ? "not executed in browser preview" : String(result.pid);
+    ? "浏览器预览保持只读，未启动真实本地进程。"
+    : "这是 NPC 展示链路中的首次执行阶段。";
+  const pidLabel = result.preview_only ? "浏览器预览未执行" : String(result.pid);
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${pidLabel}. ` +
-      `Preview: ${result.stdout_preview}. ${executionLabel}`
+    resultSummary: [
+      `${result.summary}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `PID：${pidLabel}。`,
+      `输出预览：${result.stdout_preview}。`,
+      executionLabel
+    ].join(" ")
   };
 }
 
@@ -1790,16 +1859,21 @@ async function executeNpcLocalProjectScreenshotCapturePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(captureNpcLocalProjectScreenshot(query), context);
   const executionLabel = result.preview_only
-    ? "This browser preview stayed readonly and did not capture a real screenshot artifact."
-    : "This is the screenshot stage inside the NPC showcase chain.";
+    ? "浏览器预览保持只读，未捕获真实截图产物。"
+    : "这是 NPC 展示链路中的截图阶段。";
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Capture target: ${result.capture_target}. Expected URL: ${result.expected_url ?? "not inferred"}. ` +
-      `Artifact path: ${result.artifact_path}. Artifact directory: ${result.artifact_directory}. ` +
-      `${executionLabel}`
+    resultSummary: [
+      `${result.summary}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `捕获目标：${result.capture_target}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `产物路径：${result.artifact_path}。`,
+      `产物目录：${result.artifact_directory}。`,
+      executionLabel
+    ].join(" ")
   };
 }
 
@@ -1810,16 +1884,21 @@ async function executeNpcLocalProjectShowcaseSiteWritePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(writeNpcLocalProjectShowcaseSite(query), context);
   const executionLabel = result.preview_only
-    ? "This browser preview stayed readonly and did not write real showcase files."
-    : "This is the showcase-site write stage inside the NPC showcase chain.";
+    ? "浏览器预览保持只读，未写入真实展示站点文件。"
+    : "这是 NPC 展示链路中的展示站点写入阶段。";
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
-      `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
-      `${executionLabel}`
+    resultSummary: [
+      `${result.summary}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `站点根目录：${result.site_root}。`,
+      `入口文件：${result.entry_file}。`,
+      `变更路径：${result.changed_paths.join("、")}。`,
+      `来源截图：${result.source_screenshot_path}。`,
+      executionLabel
+    ].join(" ")
   };
 }
 
@@ -1832,11 +1911,17 @@ async function executeNpcLocalProjectShowcasePublishPreviewPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
-      `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
-      `Next git step: ${result.next_git_step} This is the readonly publish-preview stage inside the NPC showcase chain.`
+    resultSummary: [
+      `${result.summary}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `站点根目录：${result.site_root}。`,
+      `入口文件：${result.entry_file}。`,
+      `变更路径：${result.changed_paths.join("、")}。`,
+      `来源截图：${result.source_screenshot_path}。`,
+      `下一步 Git：${result.next_git_step}`,
+      "这是 NPC 展示链路中的只读发布预览阶段。"
+    ].join(" ")
   };
 }
 
@@ -1849,12 +1934,18 @@ async function executeNpcLocalProjectShowcaseGitConfirmationPreviewPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Matched project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Site root: ${result.site_root}. Entry file: ${result.entry_file}. ` +
-      `Changed paths: ${result.changed_paths.join(", ")}. Source screenshot: ${result.source_screenshot_path}. ` +
-      `Recommended git action: ${result.recommended_git_action}. ` +
-      `${result.required_confirmation_stage} This is the readonly git-confirmation-preview stage inside the NPC showcase chain.`
+    resultSummary: [
+      `${result.summary}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `站点根目录：${result.site_root}。`,
+      `入口文件：${result.entry_file}。`,
+      `变更路径：${result.changed_paths.join("、")}。`,
+      `来源截图：${result.source_screenshot_path}。`,
+      `推荐 Git 操作：${result.recommended_git_action}。`,
+      `${result.required_confirmation_stage}`,
+      "这是 NPC 展示链路中的只读 Git 确认预览阶段。"
+    ].join(" ")
   };
 }
 
@@ -1879,11 +1970,17 @@ async function executeNpcShellPlanPreview(
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Recommended skill: ${topMatch.name}. ` +
-      `Registry: ${skillMatch.registry_path}. Command preview: ${shellPreview.command}. Next step: ${shellPreview.nextStep}. ` +
-      `Workspace root: ${shellPreview.workspaceRoot}. ` +
-      `Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultSummary: [
+      `${npcOverview.summary}`,
+      `状态：${npcOverview.status}。`,
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令预览：${shellPreview.command}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
@@ -1931,7 +2028,11 @@ async function executeWorkspaceWriteShellPlan(
 
   return {
     resultTitle,
-    resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${result.summary}`,
+      `命令：${result.command_label}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 
@@ -1945,10 +2046,16 @@ async function executeWorkspaceProjectRunPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${pidLabel}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${result.summary}`,
+      `项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `PID：${pidLabel}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 
@@ -1961,11 +2068,17 @@ async function executeWorkspaceProjectStatusPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid ?? "none"}. ` +
-      `Status: ${result.status}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${result.summary}`,
+      `项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `PID：${result.pid ?? "无"}。`,
+      `状态：${result.status}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 
@@ -1979,10 +2092,16 @@ async function executeWorkspaceProjectStopPlan(
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `PID: ${pidLabel}. Status: ${result.status}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${result.summary}`,
+      `项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `PID：${pidLabel}。`,
+      `状态：${result.status}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 
@@ -1995,7 +2114,11 @@ async function executeControlledFullShellPlan(
 
   return {
     resultTitle,
-    resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${result.summary}`,
+      `命令：${result.command_label}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 

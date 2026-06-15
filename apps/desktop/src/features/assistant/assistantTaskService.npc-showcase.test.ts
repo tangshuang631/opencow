@@ -130,6 +130,14 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("npm run dev");
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
     expect(result.resultSummary).toContain("workspace-write");
+    expect(result.resultSummary).toContain("状态：ready-foundation");
+    expect(result.resultSummary).toContain("已启用 Skills：coding-agent");
+    expect(result.resultSummary).toContain("工作区：opencow");
+    expect(result.resultSummary).toContain("推荐启动命令：npm run dev");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Enabled skills:");
+    expect(result.resultSummary).not.toContain("Workspace root:");
+    expect(result.resultSummary).not.toContain("Preferred launch command:");
   });
 
   it("requests workspace-write before running the matched npc showcase project", () => {
@@ -168,7 +176,12 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("npm run dev");
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
     expect(result.resultSummary).toContain("5252");
-    expect(result.resultSummary).toContain("first executed stage inside the NPC showcase chain");
+    expect(result.resultSummary).toContain("NPC 展示链路中的首次执行阶段");
+    expect(result.resultSummary).toContain("匹配项目：cattle");
+    expect(result.resultSummary).toContain("命令：npm run dev");
+    expect(result.resultSummary).not.toContain("Matched project:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Working directory:");
   });
 
   it("requests workspace-write before capturing a matched npc showcase screenshot", () => {
@@ -208,7 +221,11 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("apps/cattle");
     expect(result.resultSummary).toContain("http://127.0.0.1:3000");
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase");
-    expect(result.resultSummary).toContain("screenshot stage inside the NPC showcase chain");
+    expect(result.resultSummary).toContain("NPC 展示链路中的截图阶段");
+    expect(result.resultSummary).toContain("匹配项目：cattle");
+    expect(result.resultSummary).not.toContain("Matched project:");
+    expect(result.resultSummary).not.toContain("Capture target:");
+    expect(result.resultSummary).not.toContain("Expected URL:");
   });
 
   it("requests workspace-write before generating a matched npc showcase site", () => {
@@ -249,7 +266,11 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/sites/cattle");
     expect(result.resultSummary).toContain("index.html");
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
-    expect(result.resultSummary).toContain("showcase-site write stage inside the NPC showcase chain");
+    expect(result.resultSummary).toContain("NPC 展示链路中的展示站点写入阶段");
+    expect(result.resultSummary).toContain("匹配项目：cattle");
+    expect(result.resultSummary).not.toContain("Matched project:");
+    expect(result.resultSummary).not.toContain("Site root:");
+    expect(result.resultSummary).not.toContain("Changed paths:");
   });
 
   it("plans a readonly npc showcase publish preview without collapsing into generic git status", () => {
@@ -291,7 +312,9 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain("index.html");
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
     expect(result.resultSummary).toContain("Git commit or push is still separate");
-    expect(result.resultSummary).toContain("readonly publish-preview stage");
+    expect(result.resultSummary).toContain("只读发布预览阶段");
+    expect(result.resultSummary).not.toContain("Matched project:");
+    expect(result.resultSummary).not.toContain("Next git step:");
   });
 
   it("plans a readonly npc showcase git confirmation preview without collapsing into publish preview", () => {
@@ -335,6 +358,8 @@ describe("assistantTaskService npc project showcase preview", () => {
     expect(result.resultSummary).toContain(".opencow/artifacts/npc-showcase/cattle-screenshot-1700000000.png");
     expect(result.resultSummary).toContain("commit");
     expect(result.resultSummary).toContain("explicit confirmation");
-    expect(result.resultSummary).toContain("readonly git-confirmation-preview stage");
+    expect(result.resultSummary).toContain("只读 Git 确认预览阶段");
+    expect(result.resultSummary).not.toContain("Matched project:");
+    expect(result.resultSummary).not.toContain("Recommended git action:");
   });
 });

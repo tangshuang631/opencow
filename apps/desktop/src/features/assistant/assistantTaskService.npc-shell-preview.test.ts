@@ -84,9 +84,17 @@ describe("assistantTaskService npc shell plan preview", () => {
     expect(result.resultSummary).toContain("shell-automation");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("Remove-Item");
-    expect(result.resultSummary).toContain("Workspace root: D:\\other-opencow");
+    expect(result.resultSummary).toContain("工作区根目录：D:\\other-opencow");
     expect(result.resultSummary).toContain("controlled-full");
     expect(result.resultSummary).toContain("requires-snapshot");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Command preview:");
+    expect(result.resultSummary).not.toContain("Next step:");
+    expect(result.resultSummary).not.toContain("Workspace root:");
+    expect(result.resultSummary).not.toContain("Required permission:");
+    expect(result.resultSummary).not.toContain("Safety:");
   });
 
   it("executes an npc-assisted RAG shell handoff preview by combining npc readiness, enabled skill matching, local docs, and shell safety planning", async () => {
@@ -162,5 +170,16 @@ describe("assistantTaskService npc shell plan preview", () => {
     expect(result.resultSummary).toContain("Remove-Item");
     expect(result.resultSummary).toContain("controlled-full");
     expect(result.resultSummary).toContain("requires-snapshot");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("工作区根目录：E:\\2026\\opencow");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command preview:");
+    expect(result.resultSummary).not.toContain("Workspace root:");
+    expect(result.resultSummary).not.toContain("Next step:");
+    expect(result.resultSummary).not.toContain("Required permission:");
+    expect(result.resultSummary).not.toContain("Safety:");
   });
 });

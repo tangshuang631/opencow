@@ -74,10 +74,20 @@ describe("assistantTaskService skill-assisted rag shell handoff preview", () => 
     } as const);
 
     expect(result.resultTitle).toBe("Local RAG shell handoff preview");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("命令预览：Remove-Item -LiteralPath temp-output -Recurse -Force");
+    expect(result.resultSummary).toContain("所需权限：controlled-full");
+    expect(result.resultSummary).toContain("安全状态：requires-snapshot");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
     expect(result.resultSummary).toContain("controlled-full");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command preview:");
+    expect(result.resultSummary).not.toContain("Workspace root:");
+    expect(result.resultSummary).not.toContain("Next step:");
+    expect(result.resultSummary).not.toContain("Required permission:");
+    expect(result.resultSummary).not.toContain("Safety:");
   });
 
   it("plans a readonly skill-assisted rag shell handoff preview without a permission upgrade", () => {
@@ -148,5 +158,13 @@ describe("assistantTaskService skill-assisted rag shell handoff preview", () => 
     expect(result.resultSummary).toContain("命令预览：Remove-Item");
     expect(result.resultSummary).toContain("所需权限：controlled-full");
     expect(result.resultSummary).toContain("安全状态：requires-snapshot");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command preview:");
+    expect(result.resultSummary).not.toContain("Workspace root:");
+    expect(result.resultSummary).not.toContain("Next step:");
+    expect(result.resultSummary).not.toContain("Required permission:");
+    expect(result.resultSummary).not.toContain("Safety:");
   });
 });
