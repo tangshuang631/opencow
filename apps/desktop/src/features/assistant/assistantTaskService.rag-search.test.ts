@@ -80,8 +80,9 @@ describe("assistantTaskService local rag search", () => {
       auditDetail: "Readonly local RAG search task."
     } as const);
 
-    expect(result.resultTitle).toBe("Local RAG document search");
-    expect(result.resultSummary).toContain("2 matching passages across 7 indexed documents");
+    expect(result.resultTitle).toBe("本地 RAG 文档检索");
+    expect(result.resultSummary).toContain("找到 2 条匹配片段");
+    expect(result.resultSummary).toContain("已索引 7 个文档");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
   });
@@ -114,7 +115,9 @@ describe("assistantTaskService local rag search", () => {
     expect(searchLocalKnowledgeMock).toHaveBeenCalledWith(
       "summarize the long pptx docx and md documents in this workspace"
     );
-    expect(result.resultTitle).toBe("Local RAG document search");
+    expect(result.resultTitle).toBe("本地 RAG 文档检索");
+    expect(result.resultSummary).toContain("找到 3 条匹配片段");
+    expect(result.resultSummary).toContain("已索引 9 个文档");
     expect(result.resultSummary).toContain("overview.md");
     expect(result.resultSummary).toContain("product-roadmap.pptx");
   });
@@ -146,7 +149,9 @@ describe("assistantTaskService local rag search", () => {
     const result = await executeAssistantTask(plan);
 
     expect(searchLocalKnowledgeMock).toHaveBeenCalledWith(message);
-    expect(result.resultTitle).toBe("Local RAG document search");
+    expect(result.resultTitle).toBe("本地 RAG 文档检索");
+    expect(result.resultSummary).toContain("找到 2 条匹配片段");
+    expect(result.resultSummary).toContain("已索引 8 个文档");
     expect(result.resultSummary).toContain("report.docx");
     expect(result.resultSummary).toContain("notes.md");
   });

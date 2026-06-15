@@ -971,12 +971,21 @@ async function executeLocalRagSearchPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await searchLocalKnowledgeWithDiagnostics(query, context);
-  const topPaths = result.items.slice(0, 2).map((item) => item.title).join(", ");
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Top matches: ${topPaths}. Query: ${result.query}. Indexed documents: ${result.indexed_document_count}`
+    resultTitle: "本地 RAG 文档检索",
+    resultSummary: createLocalRagSearchResultSummary(result)
   };
+}
+
+function createLocalRagSearchResultSummary(result: Awaited<ReturnType<typeof searchLocalKnowledge>>) {
+  const topPaths = result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+  return [
+    `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `主要来源：${topPaths}。`,
+    `检索问题：${result.query}。`
+  ].join(" ");
 }
 
 async function executeLocalSkillsScanPlan(

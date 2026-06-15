@@ -880,7 +880,7 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
 
     await waitFor(() => {
-      expect(screen.getAllByText(/Local RAG document search|Browser preview mode returned/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/本地 RAG 文档检索|找到 2 条匹配片段/i).length).toBeGreaterThan(0);
     });
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
     expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(1);
