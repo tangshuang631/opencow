@@ -530,11 +530,11 @@ export async function executeAssistantTask(
     const highlightedPackages = overview.package_names.slice(0, 5).join(", ");
     const packageLine =
       overview.package_count > 0
-        ? ` Detected ${overview.package_count} local packages, including ${highlightedPackages}.`
-        : " No local packages were detected.";
+        ? ` 已检测到 ${overview.package_count} 个本地包，包括 ${highlightedPackages}。`
+        : " 未检测到本地包。";
 
     return {
-      resultTitle: "Workspace overview",
+      resultTitle: "工作区概览",
       resultSummary: `${overview.summary}${packageLine}`
     };
   }
@@ -545,12 +545,12 @@ export async function executeAssistantTask(
     const highlightedScriptPackages = overview.packages_with_scripts.slice(0, 5).join(", ");
     const scriptCoverageLine =
       overview.packages_with_scripts.length > 0
-        ? ` Script coverage includes ${highlightedScriptPackages}.`
-        : " No workspace package scripts were detected.";
+        ? ` 脚本覆盖包包括 ${highlightedScriptPackages}。`
+        : " 未检测到工作区包脚本。";
 
     return {
-      resultTitle: "Workspace packages overview",
-      resultSummary: `${overview.summary} Key packages: ${highlightedPackages}.${scriptCoverageLine}`
+      resultTitle: "工作区包概览",
+      resultSummary: `${overview.summary} 重点包：${highlightedPackages}。${scriptCoverageLine}`
     };
   }
 
@@ -560,8 +560,8 @@ export async function executeAssistantTask(
     const highlightedScripts = overview.root_script_names.slice(0, 5).join(", ");
 
     return {
-      resultTitle: "Workspace config overview",
-      resultSummary: `${overview.summary} Key config files: ${highlightedConfigs}. Root scripts: ${highlightedScripts}.`
+      resultTitle: "工作区配置概览",
+      resultSummary: `${overview.summary} 关键配置文件：${highlightedConfigs}。根脚本：${highlightedScripts}。`
     };
   }
 

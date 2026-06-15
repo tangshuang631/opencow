@@ -1,6 +1,6 @@
 import type { ConversationEntry, PermissionMode, WorkbenchState } from "./workbenchState.types";
 
-const MAX_CONVERSATION_ENTRIES = 12;
+const MAX_CONVERSATION_ENTRIES = 60;
 const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
 const COMPRESSED_CONVERSATION_TITLE = "已保留较早会话上下文";
 const MAX_COMPRESSED_SNIPPETS = 5;

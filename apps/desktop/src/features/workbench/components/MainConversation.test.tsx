@@ -776,7 +776,7 @@ describe("MainConversation", () => {
   it("keeps auto-compressed conversation context visible until the user clears history", () => {
     let state = createInitialWorkbenchState();
 
-    for (let index = 0; index < 16; index += 1) {
+    for (let index = 0; index < 64; index += 1) {
       state = createUserTaskSubmittedState(state, {
         message: index === 0
           ? "保留工作区根目录修复上下文"

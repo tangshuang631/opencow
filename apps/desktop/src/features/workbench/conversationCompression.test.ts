@@ -2,16 +2,30 @@ import { describe, expect, it } from "vitest";
 import { createInitialWorkbenchState, createUserTaskSubmittedState } from "./workbenchState";
 
 describe("conversation auto compression", () => {
+  it("keeps at least forty recent user messages visible before compacting older context", () => {
+    let state = createInitialWorkbenchState();
+
+    for (let index = 0; index < 40; index += 1) {
+      state = createUserTaskSubmittedState(state, {
+        message: `visible retained conversation message ${index}`
+      });
+    }
+
+    expect(state.conversation.entries.some((entry) => entry.id === "conversation-auto-summary")).toBe(false);
+    expect(state.conversation.entries).toHaveLength(40);
+    expect(state.conversation.entries.at(-1)?.summary).toBe("visible retained conversation message 0");
+  });
+
   it("compresses older conversation entries into a Chinese readable context summary", () => {
     let state = createInitialWorkbenchState();
 
-    for (let index = 0; index < 16; index += 1) {
+    for (let index = 0; index < 64; index += 1) {
       state = createUserTaskSubmittedState(state, {
         message: `conversation compression message ${index}`
       });
     }
 
-    expect(state.conversation.entries.length).toBeLessThanOrEqual(12);
+    expect(state.conversation.entries.length).toBeLessThanOrEqual(60);
     const compressedEntry = state.conversation.entries.find((entry) => entry.id === "conversation-auto-summary");
 
     expect(compressedEntry).toBeDefined();
@@ -26,21 +40,21 @@ describe("conversation auto compression", () => {
   it("keeps an auto-compressed summary present while the conversation continues to grow", () => {
     let state = createInitialWorkbenchState();
 
-    for (let index = 0; index < 13; index += 1) {
+    for (let index = 0; index < 61; index += 1) {
       state = createUserTaskSubmittedState(state, {
         message: `persistent compression message ${index}`
       });
     }
 
     expect(state.conversation.entries.some((entry) => entry.id === "conversation-auto-summary")).toBe(true);
-    expect(state.conversation.entries).toHaveLength(12);
+    expect(state.conversation.entries).toHaveLength(60);
     expect(state.conversation.entries.filter((entry) => entry.id === "conversation-auto-summary")).toHaveLength(1);
   });
 
   it("accumulates compression counts as older conversation history keeps getting folded", () => {
     let state = createInitialWorkbenchState();
 
-    for (let index = 0; index < 18; index += 1) {
+    for (let index = 0; index < 72; index += 1) {
       state = createUserTaskSubmittedState(state, {
         message: `accumulated compression message ${index}`
       });
@@ -56,7 +70,7 @@ describe("conversation auto compression", () => {
   it("keeps readable Chinese-labeled snippets from compressed older messages", () => {
     let state = createInitialWorkbenchState();
 
-    for (let index = 0; index < 16; index += 1) {
+    for (let index = 0; index < 64; index += 1) {
       state = createUserTaskSubmittedState(state, {
         message: index === 0
           ? "preserve workspace root repair context in the compressed summary"
@@ -106,8 +120,8 @@ describe("conversation auto compression", () => {
     const detail = compressedEntry?.detailLines?.join("\n") ?? "";
 
     expect(compressedEntry?.title).toBe("已保留较早会话上下文");
-    expect(compressedEntry?.summary).toContain("已压缩 6 条较早消息");
-    expect(detail).toContain("较早用户消息：5");
+    expect(compressedEntry?.summary).toContain("已压缩 5 条较早消息");
+    expect(detail).toContain("较早用户消息：4");
     expect(detail).toContain("较早助手或系统消息：1");
     expect(detail).toContain("old persisted workspace context");
   });
