@@ -1873,7 +1873,7 @@ describe("App", () => {
     });
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen2.5-coder:7b",
-      message: expect.stringContaining("No resolved executable launcher")
+      message: expect.stringContaining("当前桌面端尚未实现已验证的 MCP 插件启动器")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining("为什么只是预览")

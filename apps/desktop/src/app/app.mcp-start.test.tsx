@@ -65,8 +65,9 @@ describe("App MCP start flow", () => {
 
     await waitFor(() => {
       expect(
-        screen.getAllByText(/Local MCP plugin start|No resolved executable launcher|not executed/i).length
+        screen.getAllByText(/本地 MCP 插件启动结果|当前桌面端尚未实现已验证的 MCP 插件启动器|未执行，缺少已验证启动器/i).length
       ).toBeGreaterThan(0);
     });
+    expect(screen.queryByText(/Local MCP plugin start|No resolved executable launcher|not executed/i)).not.toBeInTheDocument();
   });
 });

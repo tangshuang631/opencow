@@ -1081,9 +1081,9 @@ async function executeLocalMcpPluginStartPreviewPlan(
       `激活方式：${topMatch.activation}。`,
       `允许启动：${topMatch.startup_allowed ? "是" : "否"}。`,
       `工作目录：${topMatch.working_directory}。`,
-      `命令预览：${topMatch.command_preview}。`,
-      `配置提示：${topMatch.config_hint}。`,
-      `风险说明：${topMatch.risk_summary}`
+      `命令预览：${localizeMcpPluginStartPreviewText(topMatch.command_preview)}。`,
+      `配置提示：${localizeMcpPluginStartPreviewText(topMatch.config_hint)}。`,
+      `风险说明：${localizeMcpPluginStartPreviewText(topMatch.risk_summary)}。`
     ].join(" ")
   };
 }
@@ -1099,12 +1099,49 @@ async function executeLocalMcpPluginStartPlan(
     resultTitle: "本地 MCP 插件启动结果",
     resultSummary: [
       `插件：${result.plugin_id}。`,
-      `命令：${result.command_label}。`,
+      `命令：${localizeMcpPluginStartPreviewText(result.command_label)}。`,
       `工作目录：${result.working_directory}。`,
+      `状态：${createLocalMcpPluginStartStatus(result)}。`,
       `输出行数：${result.line_count}。`,
-      `执行预览：${result.stdout_preview}`
+      `执行预览：${localizeMcpPluginStartOutputPreview(result.stdout_preview)}。`
     ].join(" ")
   };
+}
+
+function localizeMcpPluginStartPreviewText(text: string): string {
+  if (/no resolved executable launcher/i.test(text)) {
+    return "当前桌面端尚未实现已验证的 MCP 插件启动器";
+  }
+
+  if (/no required config schema fields were detected/i.test(text)) {
+    return "未检测到必填配置项";
+  }
+
+  if (/preview only/i.test(text) && /does not yet resolve or launch a real local mcp plugin process/i.test(text)) {
+    return "仅预览插件 manifest，不会启动真实 MCP 进程";
+  }
+
+  return text;
+}
+
+function localizeMcpPluginStartOutputPreview(text: string): string {
+  if (/execution blocked/i.test(text) && /does not yet know how to launch a real plugin host/i.test(text)) {
+    return "已拦截启动请求：插件 manifest 存在，但当前桌面端还没有已验证的本地 MCP 插件宿主启动器";
+  }
+
+  return text;
+}
+
+function createLocalMcpPluginStartStatus(result: Awaited<ReturnType<typeof startLocalMcpPlugin>>): string {
+  if (
+    /no resolved executable launcher/i.test(result.command_label)
+    || /not executed/i.test(result.summary)
+    || /execution blocked/i.test(result.stdout_preview)
+  ) {
+    return "未执行，缺少已验证启动器";
+  }
+
+  return "已交给受控启动链处理";
 }
 
 async function executeLocalSkillInspectPlan(
