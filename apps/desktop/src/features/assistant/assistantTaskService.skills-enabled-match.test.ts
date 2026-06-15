@@ -50,9 +50,11 @@ describe("assistantTaskService enabled local skills match", () => {
       auditDetail: "Readonly enabled local skills match task."
     } as const);
 
-    expect(result.resultTitle).toBe("Match enabled local skills");
-    expect(result.resultSummary).toContain("1 recommended skill");
+    expect(result.resultTitle).toBe("已启用 Skill 推荐");
+    expect(result.resultSummary).toContain("从 2 个已启用 Skills 中找到 1 个推荐项");
     expect(result.resultSummary).toContain("shell-automation");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("内容预览：Use this skill when the task needs shell automation");
   });
 });

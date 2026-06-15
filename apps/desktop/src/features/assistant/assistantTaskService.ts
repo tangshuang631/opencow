@@ -1241,12 +1241,15 @@ async function executeEnabledLocalSkillsListPlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const result = await awaitAbortable(listEnabledLocalSkills(), context);
-  const topSkills = result.items.slice(0, 3).map((item) => item.name).join(", ");
-  const listedSkills = topSkills.length > 0 ? topSkills : "none";
+  const listedSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Registry: ${result.registry_path}. Enabled skills: ${listedSkills}.`
+    resultTitle: "已启用本地 Skills",
+    resultSummary: [
+      `当前启用 ${result.total_count} 个本地 Skill。`,
+      `注册表：${result.registry_path}。`,
+      `已启用项：${listedSkills}。`
+    ].join(" ")
   };
 }
 
@@ -1260,14 +1263,24 @@ async function executeEnabledLocalSkillsMatchPlan(
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Registry: ${result.registry_path}. Query: ${result.query}.`
+      resultTitle: "已启用 Skill 推荐",
+      resultSummary: [
+        `从 ${result.enabled_skill_count} 个已启用 Skills 中没有找到推荐项。`,
+        `注册表：${result.registry_path}。`,
+        `检索问题：${result.query}。`
+      ].join(" ")
     };
   }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Recommended: ${topMatch.name}. Registry: ${result.registry_path}. Description: ${topMatch.description}. Preview: ${topMatch.content_preview}`
+    resultTitle: "已启用 Skill 推荐",
+    resultSummary: [
+      `从 ${result.enabled_skill_count} 个已启用 Skills 中找到 ${result.match_count} 个推荐项。`,
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${result.registry_path}。`,
+      `说明：${topMatch.description}。`,
+      `内容预览：${topMatch.content_preview}`
+    ].join(" ")
   };
 }
 

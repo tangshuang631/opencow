@@ -47,9 +47,10 @@ describe("assistantTaskService enabled local skills list", () => {
       auditDetail: "Readonly enabled local skills list task."
     } as const);
 
-    expect(result.resultTitle).toBe("Enabled local skills");
-    expect(result.resultSummary).toContain("1 enabled skill entry");
+    expect(result.resultTitle).toBe("已启用本地 Skills");
+    expect(result.resultSummary).toContain("当前启用 1 个本地 Skill");
     expect(result.resultSummary).toContain("coding-agent");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
   });
 });
