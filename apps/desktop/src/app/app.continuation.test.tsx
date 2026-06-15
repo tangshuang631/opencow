@@ -316,7 +316,7 @@ describe("App continuation flow", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    expect((await screen.findAllByText(/Skill-assisted RAG shell handoff preview/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Skill 辅助 RAG Shell 交接预览/)).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(
         screen.getAllByText(/docs-helper|04-permission-safety-shell\.md|OPENCOW_CORE_RULES\.md|New-Item|workspace-write/i).length
@@ -512,7 +512,7 @@ describe("App continuation flow", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    expect((await screen.findAllByText(/Skill-assisted RAG shell handoff preview/)).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/Skill 辅助 RAG Shell 交接预览/)).length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(
         screen.getAllByText(/docs-helper|04-permission-safety-shell\.md|OPENCOW_CORE_RULES\.md|Remove-Item|controlled-full/i).length

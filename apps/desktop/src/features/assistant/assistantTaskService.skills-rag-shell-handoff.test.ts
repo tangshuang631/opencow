@@ -138,13 +138,15 @@ describe("assistantTaskService skill-assisted rag shell handoff preview", () => 
       auditDetail: "Skill-assisted readonly RAG shell handoff preview task"
     } as const);
 
-    expect(result.resultTitle).toBe("Skill-assisted RAG shell handoff preview");
+    expect(result.resultTitle).toBe("Skill 辅助 RAG Shell 交接预览");
     expect(result.resultSummary).toContain("docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
-    expect(result.resultSummary).toContain("Remove-Item");
-    expect(result.resultSummary).toContain("controlled-full");
-    expect(result.resultSummary).toContain("requires-snapshot");
+    expect(result.resultSummary).toContain("命令预览：Remove-Item");
+    expect(result.resultSummary).toContain("所需权限：controlled-full");
+    expect(result.resultSummary).toContain("安全状态：requires-snapshot");
   });
 });

@@ -1464,15 +1464,21 @@ async function executeSkillAssistedRagShellHandoffPreviewPlan(
 
   const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command preview: ${shellPreview.command}. ` +
-      `Workspace root: ${shellPreview.workspaceRoot}. ` +
-      `Next step: ${shellPreview.nextStep}. Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultTitle: "Skill 辅助 RAG Shell 交接预览",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `命令预览：${shellPreview.command}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
