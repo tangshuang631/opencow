@@ -1393,13 +1393,17 @@ async function executeSkillAssistedLocalRagSearchPlan(
   }
 
   const ragResult = await searchSkillAssistedLocalKnowledgeWithDiagnostics(query, skillMatch, topMatch.name, context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ");
+  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Query: ${ragResult.query}. Indexed documents: ${ragResult.indexed_document_count}`
+    resultTitle: "Skill 辅助本地 RAG 检索",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+      `主要来源：${topPaths}。`,
+      `检索问题：${ragResult.query}。`
+    ].join(" ")
   };
 }
 

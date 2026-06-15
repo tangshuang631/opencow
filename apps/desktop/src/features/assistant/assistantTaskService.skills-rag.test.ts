@@ -75,12 +75,15 @@ describe("assistantTaskService skill-assisted readonly RAG execution", () => {
       auditDetail: "Skill-assisted readonly local RAG search task"
     } as const);
 
-    expect(result.resultTitle).toBe("Skill-assisted local RAG document search");
+    expect(result.resultTitle).toBe("Skill 辅助本地 RAG 检索");
     expect(result.resultSummary).toContain("docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("找到 2 条匹配片段，已索引 7 个文档");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
-    expect(result.resultSummary).toContain("Indexed documents: 7");
+    expect(result.resultSummary).toContain("检索问题：use the enabled docs skill to search local rules");
   });
 
   it("keeps matched skill diagnostics when the skill-assisted local RAG search fails", async () => {
