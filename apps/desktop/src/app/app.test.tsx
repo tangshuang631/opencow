@@ -1237,7 +1237,10 @@ describe("App", () => {
       message: expect.stringContaining("用户批准 workspace-write")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Local skill enablement registered coding-agent")
+      message: expect.stringContaining("目标 Skill：coding-agent")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("状态：enabled")
     }));
   });
 
@@ -1276,9 +1279,9 @@ describe("App", () => {
     });
 
     const conversation = getConversationRegion();
-    expect(await within(conversation).findByText("Enable local skill", {}, { timeout: 12_000 })).toBeInTheDocument();
-    expect(within(conversation).getByText(/Local skill enablement registered coding-agent/)).toBeInTheDocument();
-    expect(within(conversation).getByText(/Registry: \.opencow\/skills\/enabled-skills\.json/)).toBeInTheDocument();
+    expect(await within(conversation).findByText("本地 Skill 启用结果", {}, { timeout: 12_000 })).toBeInTheDocument();
+    expect(within(conversation).getByText(/目标 Skill：coding-agent/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json/)).toBeInTheDocument();
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
     expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^skills-local-enable-explanation-/));
     expect(enableLocalSkillMock).toHaveBeenCalledTimes(1);
@@ -1332,7 +1335,7 @@ describe("App", () => {
       message: expect.stringContaining("用户批准 workspace-write")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Local skill installation copied gpt-taste")
+      message: expect.stringContaining("目标 Skill：gpt-taste")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining("vendor/openclaw/skills/gpt-taste/SKILL.md")
@@ -1380,9 +1383,9 @@ describe("App", () => {
     });
 
     const conversation = getConversationRegion();
-    expect(await within(conversation).findByText("Install local skill", {}, { timeout: 12_000 })).toBeInTheDocument();
-    expect(within(conversation).getByText(/Local skill installation copied gpt-taste/)).toBeInTheDocument();
-    expect(within(conversation).getByText(/Installed path: skills\/gpt-taste\/SKILL\.md/)).toBeInTheDocument();
+    expect(await within(conversation).findByText("本地 Skill 安装结果", {}, { timeout: 12_000 })).toBeInTheDocument();
+    expect(within(conversation).getByText(/目标 Skill：gpt-taste/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/安装路径：skills\/gpt-taste\/SKILL\.md/)).toBeInTheDocument();
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
     expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^skills-local-install-explanation-/));
     expect(installLocalSkillMock).toHaveBeenCalledTimes(1);
@@ -2055,7 +2058,10 @@ describe("App", () => {
       message: expect.stringContaining("用户批准 workspace-write")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Local skill disablement removed coding-agent")
+      message: expect.stringContaining("目标 Skill：coding-agent")
+    }));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("状态：disabled")
     }));
   });
 

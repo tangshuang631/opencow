@@ -43,9 +43,10 @@ describe("assistantTaskService local skill disable", () => {
       auditDetail: "Workspace write local skill disable task."
     } as const);
 
-    expect(result.resultTitle).toBe("Disable local skill");
+    expect(result.resultTitle).toBe("本地 Skill 禁用结果");
     expect(result.resultSummary).toContain("coding-agent");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
-    expect(result.resultSummary).toContain("disabled");
+    expect(result.resultSummary).toContain("状态：disabled");
   });
 });

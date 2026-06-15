@@ -1142,8 +1142,12 @@ async function executeLocalSkillEnablePlan(
   const result = await awaitAbortable(enableLocalSkill(query), context);
 
   return {
-    resultTitle,
-      resultSummary: `${result.summary} Skill: ${result.enabled_skill_name}. Registry: ${result.registry_path}. Status: ${result.status}.`
+    resultTitle: "本地 Skill 启用结果",
+    resultSummary: [
+      `目标 Skill：${result.enabled_skill_name}。`,
+      `注册表：${result.registry_path}。`,
+      `状态：${result.status}。`
+    ].join(" ")
   };
 }
 
@@ -1155,10 +1159,13 @@ async function executeLocalSkillInstallPlan(
   const result = await awaitAbortable(installLocalSkill(query), context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${result.summary} Skill: ${result.installed_skill_name}. Installed path: ${result.installed_skill_path}. ` +
-      `Source: ${result.source_skill_path}. Status: ${result.status}.`
+    resultTitle: "本地 Skill 安装结果",
+    resultSummary: [
+      `目标 Skill：${result.installed_skill_name}。`,
+      `安装路径：${result.installed_skill_path}。`,
+      `来源：${result.source_skill_path}。`,
+      `状态：${result.status}。`
+    ].join(" ")
   };
 }
 
@@ -1170,8 +1177,12 @@ async function executeLocalSkillDisablePlan(
   const result = await awaitAbortable(disableLocalSkill(query), context);
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Skill: ${result.disabled_skill_name}. Registry: ${result.registry_path}. Status: ${result.status}.`
+    resultTitle: "本地 Skill 禁用结果",
+    resultSummary: [
+      `目标 Skill：${result.disabled_skill_name}。`,
+      `注册表：${result.registry_path}。`,
+      `状态：${result.status}。`
+    ].join(" ")
   };
 }
 

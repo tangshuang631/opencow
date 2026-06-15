@@ -44,9 +44,11 @@ describe("assistantTaskService local skill install", () => {
       auditDetail: "Workspace write local skill installation task."
     } as const);
 
-    expect(result.resultTitle).toBe("Install local skill");
+    expect(result.resultTitle).toBe("本地 Skill 安装结果");
     expect(result.resultSummary).toContain("gpt-taste");
+    expect(result.resultSummary).toContain("安装路径：skills/gpt-taste/SKILL.md");
     expect(result.resultSummary).toContain("skills/gpt-taste/SKILL.md");
-    expect(result.resultSummary).toContain("installed");
+    expect(result.resultSummary).toContain("来源：vendor/openclaw/skills/gpt-taste/SKILL.md");
+    expect(result.resultSummary).toContain("状态：installed");
   });
 });
