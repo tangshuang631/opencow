@@ -1096,8 +1096,14 @@ async function executeLocalMcpPluginStartPlan(
   const result = await awaitAbortable(startLocalMcpPlugin(query), context);
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Plugin: ${result.plugin_id}. Command: ${result.command_label}. Working directory: ${result.working_directory}. Preview: ${result.stdout_preview}`
+    resultTitle: "本地 MCP 插件启动结果",
+    resultSummary: [
+      `插件：${result.plugin_id}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `输出行数：${result.line_count}。`,
+      `执行预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 

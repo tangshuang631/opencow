@@ -223,9 +223,11 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Controlled local MCP plugin start task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin start");
+    expect(result.resultTitle).toBe("本地 MCP 插件启动结果");
     expect(result.resultSummary).toContain("browser");
+    expect(result.resultSummary).toContain("命令：No resolved executable launcher");
+    expect(result.resultSummary).toContain("工作目录：vendor/openclaw/extensions/browser");
     expect(result.resultSummary).toContain("No resolved executable launcher");
-    expect(result.resultSummary).toContain("was not executed");
+    expect(result.resultSummary).toContain("执行预览：Execution blocked");
   });
 });
