@@ -620,7 +620,7 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.lastEvent.source).toBe("search_provider_config_missing");
     expect(updated.error).toMatchObject({
       module: "search",
-      summary: "Search provider is not configured",
+      summary: "联网搜索 Provider 未配置",
       source: "search_provider_config_missing"
     });
   });
@@ -1655,7 +1655,7 @@ describe("createInitialWorkbenchState", () => {
     expect(enabled.audit.lastEvent.source).toBe("search_provider_config_missing");
     expect(enabled.error).toMatchObject({
       module: "search",
-      summary: "Search provider is not configured",
+      summary: "联网搜索 Provider 未配置",
       source: "search_provider_config_missing"
     });
   });
@@ -1720,11 +1720,13 @@ describe("createInitialWorkbenchState", () => {
     expect(updated.audit.lastEvent.source).toBe("search_provider_config_missing");
     expect(updated.error).toMatchObject({
       module: "search",
-      summary: "Search provider is not configured",
+      summary: "联网搜索 Provider 未配置",
       source: "search_provider_config_missing"
     });
-    expect(updated.error?.detail).toContain("Provider status: not configured");
-    expect(updated.error?.actionLabel).toContain("Configure a search provider");
+    expect(updated.error?.detail).toContain("联网搜索 Provider 未配置");
+    expect(updated.error?.actionLabel).toContain("前往设置配置联网搜索 Provider");
+    expect(updated.conversation.entries[0]?.title).toBe("联网搜索 Provider 未配置");
+    expect(updated.conversation.entries[0]?.summary).toContain("已跳过实时联网检索");
   });
 
   it("keeps empty search provider config rollback-visible through its own trace id", () => {

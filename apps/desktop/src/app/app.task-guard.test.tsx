@@ -1967,8 +1967,10 @@ describe("App local task guard", () => {
     const approveCapabilityButton = await screen.findByRole("button", { name: APPROVE_CAPABILITY_NAME });
     fireEvent.click(approveCapabilityButton as HTMLButtonElement);
 
-    expect(await screen.findAllByText("Search provider is not configured")).not.toHaveLength(0);
-    expect(await screen.findAllByText(/Configure a search provider/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText("联网搜索 Provider 未配置")).not.toHaveLength(0);
+    expect(await screen.findAllByText(/前往设置配置联网搜索 Provider/)).not.toHaveLength(0);
+    expect(screen.queryByText("Search provider is not configured")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Configure a search provider/i)).not.toBeInTheDocument();
     expect(planAssistantTaskMock).not.toHaveBeenCalled();
     expect(executeAssistantTaskMock).not.toHaveBeenCalled();
   });

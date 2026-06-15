@@ -6,6 +6,35 @@ const COMPRESSED_CONVERSATION_TITLE = "已保留较早会话上下文";
 const MAX_COMPRESSED_SNIPPETS = 5;
 const MAX_COMPRESSED_SNIPPET_LENGTH = 140;
 
+export const SEARCH_PROVIDER_MISSING_COPY = {
+  title: "联网搜索 Provider 未配置",
+  summary: "联网搜索已开启，但 Provider 为空；已跳过实时联网检索，请先完成配置后再重试。",
+  detail: "联网搜索 Provider 未配置。联网搜索保持开启，但在配置 Provider 前不会执行实时联网检索。",
+  actionLabel: "前往设置配置联网搜索 Provider 后重试",
+  auditDetail: "联网搜索 Provider 未配置，已跳过实时联网检索，等待用户在设置中补全 Provider。",
+  rollbackLabel: "联网搜索 Provider 缺失",
+  rollbackSummary: "联网搜索 Provider 为空，实时联网检索已被阻止，直到用户完成配置。"
+} as const;
+
+export function createSearchProviderMissingConversationEntry(
+  id: string,
+  rollbackTargetId: string = id
+): ConversationEntry {
+  return {
+    id,
+    kind: "system",
+    title: SEARCH_PROVIDER_MISSING_COPY.title,
+    summary: SEARCH_PROVIDER_MISSING_COPY.summary,
+    detailLines: [
+      "模块：联网搜索",
+      "来源：search_provider_config_missing",
+      `建议：${SEARCH_PROVIDER_MISSING_COPY.actionLabel}。`
+    ],
+    actionLabel: SEARCH_PROVIDER_MISSING_COPY.actionLabel,
+    rollbackTargetId
+  };
+}
+
 export function getPermissionPresentation(mode: PermissionMode) {
   if (mode === "workspace-write") {
     return {

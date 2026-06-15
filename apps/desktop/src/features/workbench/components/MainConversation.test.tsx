@@ -277,9 +277,11 @@ describe("MainConversation", () => {
 
     render(<MainConversation state={missingProvider} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
 
-    expect(screen.getByText(/Search provider is not configured/i)).toBeInTheDocument();
-    expect(screen.getByText(/Configure a search provider/i)).toBeInTheDocument();
-    expect(screen.getByText(/Provider status: not configured/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/联网搜索 Provider 未配置/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/前往设置配置联网搜索 Provider/)).toBeInTheDocument();
+    expect(screen.getByText(/不会执行实时联网检索/)).toBeInTheDocument();
+    expect(screen.queryByText(/Search provider is not configured/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Configure a search provider/i)).not.toBeInTheDocument();
   });
 
   it("offers rollback from the user message instead of assistant recovery chrome", () => {
