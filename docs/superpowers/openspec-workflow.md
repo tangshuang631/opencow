@@ -6,11 +6,11 @@ This repository-local workflow fills the current `openspec-workflow` gap for ope
 
 1. Follow the user's latest instruction.
 2. Follow `OPENCOW_CORE_RULES.md`.
-3. Follow the current P0 list in `2026.6.8开发清单.md`.
+3. Follow the current P0 list in `2026.6.12开发交接清单.md` and `2026.6.12交接清单.md`.
 4. Follow existing OpenSpec-style artifacts under `docs/superpowers/specs/` and `docs/superpowers/plans/`.
 5. Follow module docs under `docs/v1.0/`.
 
-When an older plan conflicts with the current P0 list, P0 wins.
+When an older plan conflicts with the current P0 handoff list, P0 wins.
 
 ## Current P0 Scope
 
@@ -98,4 +98,3 @@ After each coherent verified batch, report:
 - Verification commands and outcomes.
 - Any deviations from this workflow.
 - The next recommended P0 slice.
-
