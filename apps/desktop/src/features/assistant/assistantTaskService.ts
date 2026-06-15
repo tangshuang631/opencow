@@ -798,7 +798,7 @@ async function executeReadonlyShellPlan(
   const result = await runReadonlyShellCommandWithDiagnostics(commandId, context);
   const resultSummary = resultTitle.toLowerCase().includes("diagnostics")
     ? createReadonlyShellSelfCheckReport(result)
-    : `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`;
+    : `${result.summary} 命令：${result.command_label}。输出预览：${result.stdout_preview}`;
 
   return {
     resultTitle,
@@ -808,12 +808,12 @@ async function executeReadonlyShellPlan(
 
 function createReadonlyShellSelfCheckReport(result: Awaited<ReturnType<typeof runReadonlyShellCommand>>): string {
   return [
-    "Self-check report:",
-    "shell bridge reachable",
-    "workspace root accessible",
-    `command whitelist accepted ${result.command_id}`,
-    "audit trail retained readonly shell diagnostics",
-    `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    "只读 Shell 自检报告：",
+    "Shell 桥接可用",
+    "工作区根目录可访问",
+    `命令白名单已接受 ${result.command_id}`,
+    "审计链路已保留只读 Shell 诊断",
+    `${result.summary} 命令：${result.command_label}。输出预览：${result.stdout_preview}`
   ].join(" ");
 }
 

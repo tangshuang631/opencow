@@ -39,6 +39,10 @@ describe("assistantTaskService readonly shell execution", () => {
     expect(result.resultTitle).toBe("Workspace git status");
     expect(result.resultSummary).toContain("git status --short");
     expect(result.resultSummary).toContain("App.tsx");
+    expect(result.resultSummary).toContain("命令：git status --short");
+    expect(result.resultSummary).toContain("输出预览：");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 
   it("summarizes readonly shell diagnostics as a self-check report", async () => {
@@ -60,12 +64,15 @@ describe("assistantTaskService readonly shell execution", () => {
     });
 
     expect(result.resultTitle).toBe("Readonly shell diagnostics");
-    expect(result.resultSummary).toContain("Self-check report:");
-    expect(result.resultSummary).toContain("shell bridge reachable");
-    expect(result.resultSummary).toContain("workspace root accessible");
-    expect(result.resultSummary).toContain("command whitelist accepted workspace-root-list");
-    expect(result.resultSummary).toContain("audit trail retained readonly shell diagnostics");
-    expect(result.resultSummary).toContain("Preview: apps");
+    expect(result.resultSummary).toContain("只读 Shell 自检报告：");
+    expect(result.resultSummary).toContain("Shell 桥接可用");
+    expect(result.resultSummary).toContain("工作区根目录可访问");
+    expect(result.resultSummary).toContain("命令白名单已接受 workspace-root-list");
+    expect(result.resultSummary).toContain("审计链路已保留只读 Shell 诊断");
+    expect(result.resultSummary).toContain("输出预览：apps");
+    expect(result.resultSummary).not.toContain("Self-check report:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 
   it("adds command, permission, and recovery context when readonly shell execution fails", async () => {

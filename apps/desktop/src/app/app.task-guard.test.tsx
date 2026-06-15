@@ -1491,7 +1491,7 @@ describe("App local task guard", () => {
       .mockResolvedValueOnce({
         resultTitle: "Readonly shell diagnostics",
         resultSummary:
-          "Self-check report: shell bridge reachable; workspace root accessible; command whitelist accepted workspace-root-list; audit trail retained readonly shell diagnostics."
+          "只读 Shell 自检报告：Shell 桥接可用；工作区根目录可访问；命令白名单已接受 workspace-root-list；审计链路已保留只读 Shell 诊断。"
       });
 
     const { container } = render(<App />);
@@ -1517,7 +1517,7 @@ describe("App local task guard", () => {
     expect(screen.queryByText(/Local task execution failed/i)).not.toBeInTheDocument();
     fireEvent.click((await screen.findAllByRole("button", { name: /重试本地任务/i }))[0] as HTMLButtonElement);
 
-    expect(await screen.findAllByText(/Self-check report: shell bridge reachable/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/只读 Shell 自检报告：Shell 桥接可用/i)).not.toHaveLength(0);
     expect(planAssistantTaskMock).toHaveBeenNthCalledWith(
       2,
       "verify the dangerous confirmation, rollback snapshot availability, workspace root, command whitelist, and audit trail before retrying.",
@@ -3159,7 +3159,7 @@ describe("App local task guard", () => {
       .mockResolvedValueOnce({
         resultTitle: "Readonly shell diagnostics",
         resultSummary:
-          "Self-check report: shell bridge reachable; workspace root accessible; command whitelist accepted workspace-root-list; audit trail retained readonly shell diagnostics."
+          "只读 Shell 自检报告：Shell 桥接可用；工作区根目录可访问；命令白名单已接受 workspace-root-list；审计链路已保留只读 Shell 诊断。"
       });
 
     const { container } = render(<App />);
@@ -3185,7 +3185,7 @@ describe("App local task guard", () => {
     expect(screen.queryByText(/Local task execution failed/i)).not.toBeInTheDocument();
     fireEvent.click((await screen.findAllByRole("button", { name: /重试本地任务/i }))[0] as HTMLButtonElement);
 
-    expect(await screen.findAllByText(/Self-check report: shell bridge reachable/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/只读 Shell 自检报告：Shell 桥接可用/i)).not.toHaveLength(0);
     expect(planAssistantTaskMock).toHaveBeenNthCalledWith(
       2,
       "verify the permission approval, workspace root, command whitelist, and audit trail before retrying.",
@@ -3448,7 +3448,7 @@ describe("App local task guard", () => {
       .mockResolvedValueOnce({
         resultTitle: "Readonly shell diagnostics",
         resultSummary:
-          "Self-check report: shell bridge reachable; workspace root accessible; command whitelist accepted workspace-root-list; audit trail retained readonly shell diagnostics."
+          "只读 Shell 自检报告：Shell 桥接可用；工作区根目录可访问；命令白名单已接受 workspace-root-list；审计链路已保留只读 Shell 诊断。"
       });
 
     const { container } = render(<App />);
@@ -3475,7 +3475,7 @@ describe("App local task guard", () => {
     expect(screen.queryByText(/Local task execution failed/i)).not.toBeInTheDocument();
     fireEvent.click((await screen.findAllByRole("button", { name: /重试本地任务/i }))[0] as HTMLButtonElement);
 
-    expect(await screen.findAllByText(/Self-check report: shell bridge reachable/i)).not.toHaveLength(0);
+    expect(await screen.findAllByText(/只读 Shell 自检报告：Shell 桥接可用/i)).not.toHaveLength(0);
     expect(planAssistantTaskMock).toHaveBeenNthCalledWith(
       2,
       "restore snapshot capability or run a readonly preview before retrying destructive execution.",

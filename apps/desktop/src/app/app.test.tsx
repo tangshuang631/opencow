@@ -788,14 +788,14 @@ describe("App", () => {
       expect(within(conversation).getByText("Git 状态诊断说明")).toBeInTheDocument();
       expect(within(conversation).getByText(/当前只是只读查看 git 状态/)).toBeInTheDocument();
     });
-    expect(within(conversation).queryByText(/Command: git status --short/)).not.toBeInTheDocument();
-    expect(within(conversation).queryByText(/Preview:  M apps\/desktop\/src\/app\/App\.tsx/)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(/命令：git status --short/)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(/输出预览：\s+M apps\/desktop\/src\/app\/App\.tsx/)).not.toBeInTheDocument();
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen3.6:35b",
       message: expect.stringContaining("重点解释 git 状态只读诊断结果")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Command: git status --short")
+      message: expect.stringContaining("命令：git status --short")
     }));
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       message: expect.stringContaining("为什么本轮没有执行写入")
@@ -838,8 +838,8 @@ describe("App", () => {
 
     const conversation = getConversationRegion();
     expect(await within(conversation).findByText("Workspace git status", {}, { timeout: 12_000 })).toBeInTheDocument();
-    expect(within(conversation).getByText(/Command: git status --short/)).toBeInTheDocument();
-    expect(within(conversation).getByText(/Preview:\s+M apps\/desktop\/src\/app\/App\.tsx/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/命令：git status --short/)).toBeInTheDocument();
+    expect(within(conversation).getByText(/输出预览：\s+M apps\/desktop\/src\/app\/App\.tsx/)).toBeInTheDocument();
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
     expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^readonly-shell-git-status-explanation-/));
   }, 15_000);
