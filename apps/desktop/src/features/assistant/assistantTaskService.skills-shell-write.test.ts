@@ -69,11 +69,13 @@ describe("assistantTaskService skill-assisted workspace-write shell execution", 
       auditDetail: "Skill-assisted workspace-write shell command task: create temp-output directory"
     } as const);
 
-    expect(result.resultTitle).toBe("Skill-assisted temp-output creation");
+    expect(result.resultTitle).toBe("Skill 辅助创建结果");
     expect(result.resultSummary).toContain("shell-automation");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("命令：New-Item -ItemType Directory -Force temp-output");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：Workspace write shell command completed successfully.");
   });
 
   it("adds shell recovery context when a skill-assisted workspace-write command fails", async () => {
@@ -167,11 +169,13 @@ describe("assistantTaskService skill-assisted workspace-write shell execution", 
       auditDetail: "Skill-assisted controlled-full shell command task: remove temp-output directory"
     } as const);
 
-    expect(result.resultTitle).toBe("Skill-assisted temp-output removal");
+    expect(result.resultTitle).toBe("Skill 辅助清理结果");
     expect(result.resultSummary).toContain("shell-automation");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("命令：Remove-Item -LiteralPath temp-output -Recurse -Force");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：Controlled full shell command completed successfully.");
   });
 
   it("executes an npc-assisted temp-output creation task through enabled skill matching and shell execution", async () => {

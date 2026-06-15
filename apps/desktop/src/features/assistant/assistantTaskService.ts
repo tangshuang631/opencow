@@ -1299,10 +1299,14 @@ async function executeSkillAssistedWorkspaceWritePlan(
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultTitle: "Skill 辅助创建结果",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
@@ -1321,10 +1325,14 @@ async function executeSkillAssistedControlledFullPlan(
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultTitle: "Skill 辅助清理结果",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${shellResult.summary}`
+    ].join(" ")
   };
 }
 
