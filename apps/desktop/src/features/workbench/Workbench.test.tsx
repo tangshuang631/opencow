@@ -56,7 +56,29 @@ describe("Workbench", () => {
   });
 
   it("switches the main workspace content when a sidebar item is selected", () => {
-    render(<Workbench {...createWorkbenchProps()} />);
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-conversation-entry",
+            title: "网页端历史修复上下文",
+            summary: "这里应该显示最近会话摘要。",
+            entries: [
+              {
+                id: "recent-conversation-message",
+                kind: "user" as const,
+                title: "用户",
+                summary: "网页端历史修复上下文"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
@@ -67,6 +89,12 @@ describe("Workbench", () => {
     expect(screen.getByText("导入、索引和检索本地长文档，后续会接入 doc、md、pptx 等工作区内容。")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "最近会话" }));
+
+    expect(screen.getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
+    expect(screen.getByText("网页端历史修复上下文")).toBeInTheDocument();
+    expect(screen.getByText("这里应该显示最近会话摘要。")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
@@ -76,6 +104,7 @@ describe("Workbench", () => {
   it("switches every left sidebar destination into the main workspace", () => {
     const destinations = [
       "搜索",
+      "最近会话",
       "知识库",
       "Skills",
       "NPC",

@@ -3,6 +3,7 @@ import {
   Database,
   FileClock,
   Folder,
+  History,
   MessageSquare,
   MessageSquarePlus,
   Search,
@@ -13,6 +14,7 @@ import {
 
 const navItems = [
   { id: "search", label: "搜索", icon: Search },
+  { id: "history", label: "最近会话", icon: History },
   { id: "knowledge", label: "知识库", icon: Database },
   { id: "skills", label: "Skills", icon: Wrench },
   { id: "npc", label: "NPC", icon: Bot },
@@ -23,6 +25,7 @@ const navItems = [
 
 export type WorkbenchViewId =
   | "chat"
+  | "history"
   | "search"
   | "knowledge"
   | "skills"

@@ -470,6 +470,26 @@ input {
   line-height: 1.7;
 }
 
+.workspace-history-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--opencow-line-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.workspace-history-card p {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.workspace-history-card .muted {
+  color: #6a7680;
+}
+
 .composer-shell {
   position: relative;
   display: grid;

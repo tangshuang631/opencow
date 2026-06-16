@@ -41,7 +41,7 @@ type WorkbenchProps = {
   onSubmitTask: (message: string) => void;
 };
 
-const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "audit" | "safety">, { title: string; summary: string; details: string[] }> = {
+const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety">, { title: string; summary: string; details: string[] }> = {
   search: {
     title: "搜索",
     summary: "联网搜索能力会通过显式开关启用，默认保持本地优先。",
@@ -76,7 +76,7 @@ const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "audit" | "safety">,
 
 type ModelSettingsTarget = "ollama" | "remote-api";
 
-function WorkbenchContentPanel({ viewId }: { viewId: Exclude<WorkbenchViewId, "chat" | "audit" | "safety"> }) {
+function WorkbenchContentPanel({ viewId }: { viewId: Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety"> }) {
   const content = viewContent[viewId];
 
   return (
@@ -88,6 +88,43 @@ function WorkbenchContentPanel({ viewId }: { viewId: Exclude<WorkbenchViewId, "c
       <div className="workspace-panel-list">
         {content.details.map((detail) => (
           <p key={detail}>{detail}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RecentConversationsPanel({
+  state,
+  onRestoreRecentConversation,
+  onDeleteRecentConversation
+}: {
+  state: WorkbenchState;
+  onRestoreRecentConversation: (conversationId: string) => void;
+  onDeleteRecentConversation: (conversationId: string) => void;
+}) {
+  return (
+    <section className="workspace-panel" aria-label="最近会话">
+      <header className="workspace-panel-header">
+        <h1>最近会话</h1>
+        <p>在这里恢复、查看和删除本地保留的最近对话，不需要先切回空白会话页。</p>
+      </header>
+      <div className="workspace-panel-list">
+        {state.history.recentConversations.length === 0 ? (
+          <p>还没有可恢复的最近会话。继续使用 opencow 后，新的非空会话会自动出现在这里。</p>
+        ) : state.history.recentConversations.map((record) => (
+          <div className="workspace-history-card" key={record.id}>
+            <p>{record.title}</p>
+            <p className="muted">{record.summary}</p>
+            <div className="action-row">
+              <button className="action-button" type="button" onClick={() => onRestoreRecentConversation(record.id)}>
+                恢复这段会话
+              </button>
+              <button className="action-button" type="button" onClick={() => onDeleteRecentConversation(record.id)}>
+                删除这段会话
+              </button>
+            </div>
+          </div>
         ))}
       </div>
     </section>
@@ -486,6 +523,12 @@ export function Workbench({
             state={state}
             onPreviewRollback={onPreviewRollback}
             onCancelActiveTask={onCancelActiveTask}
+            onRestoreRecentConversation={onRestoreRecentConversation}
+            onDeleteRecentConversation={onDeleteRecentConversation}
+          />
+        ) : activeView === "history" ? (
+          <RecentConversationsPanel
+            state={state}
             onRestoreRecentConversation={onRestoreRecentConversation}
             onDeleteRecentConversation={onDeleteRecentConversation}
           />
