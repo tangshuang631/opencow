@@ -106,6 +106,21 @@ export type KnowledgeInventoryResult = {
   summary: string;
 };
 
+type DesktopKnowledgeInventoryResult = {
+  imported_files: Array<{
+    path: string;
+    title: string;
+    status: "ready" | "missing";
+  }>;
+  available_files: Array<{
+    path: string;
+    title: string;
+  }>;
+  indexed_document_count: number;
+  registry_path: string;
+  summary: string;
+};
+
 export type LocalSkillScanResult = {
   summary: string;
   total_count: number;
@@ -387,7 +402,7 @@ export async function loadKnowledgeInventory(): Promise<KnowledgeInventoryResult
     return createBrowserPreviewKnowledgeInventory();
   }
 
-  return invoke<KnowledgeInventoryResult>("knowledge_inventory");
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_inventory"));
 }
 
 export async function importKnowledgeFile(path: string): Promise<KnowledgeInventoryResult> {
@@ -395,9 +410,9 @@ export async function importKnowledgeFile(path: string): Promise<KnowledgeInvent
     return createBrowserPreviewKnowledgeInventory();
   }
 
-  return invoke<KnowledgeInventoryResult>("knowledge_file_import", {
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_file_import", {
     path
-  });
+  }));
 }
 
 export async function removeKnowledgeFile(path: string): Promise<KnowledgeInventoryResult> {
@@ -405,9 +420,9 @@ export async function removeKnowledgeFile(path: string): Promise<KnowledgeInvent
     return createBrowserPreviewKnowledgeInventory();
   }
 
-  return invoke<KnowledgeInventoryResult>("knowledge_file_remove", {
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_file_remove", {
     path
-  });
+  }));
 }
 
 export async function clearKnowledgeImports(): Promise<KnowledgeInventoryResult> {
@@ -415,7 +430,7 @@ export async function clearKnowledgeImports(): Promise<KnowledgeInventoryResult>
     return createBrowserPreviewKnowledgeInventory();
   }
 
-  return invoke<KnowledgeInventoryResult>("knowledge_imports_clear");
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_imports_clear"));
 }
 
 export async function scanLocalSkills(): Promise<LocalSkillScanResult> {
@@ -814,6 +829,22 @@ function createBrowserPreviewKnowledgeInventory(): KnowledgeInventoryResult {
     indexedDocumentCount: 0,
     registryPath: ".opencow/knowledge/imported-files.json",
     summary: "Browser preview mode cannot inspect the real knowledge inventory and returns an empty preview."
+  };
+}
+
+function normalizeDesktopKnowledgeInventory(
+  result: DesktopKnowledgeInventoryResult | KnowledgeInventoryResult
+): KnowledgeInventoryResult {
+  if ("importedFiles" in result) {
+    return result;
+  }
+
+  return {
+    importedFiles: result.imported_files,
+    availableFiles: result.available_files,
+    indexedDocumentCount: result.indexed_document_count,
+    registryPath: result.registry_path,
+    summary: result.summary
   };
 }
 
