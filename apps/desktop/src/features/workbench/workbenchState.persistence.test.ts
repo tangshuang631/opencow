@@ -84,6 +84,33 @@ describe("workbenchState.persistence", () => {
     expect(window.localStorage.getItem("opencow.desktop.workbench-state.v1")).toBeNull();
   });
 
+  it("falls back to legacy browser persistence when desktop state load fails transiently", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+
+    const persistedState = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "recover from desktop persistence failure"
+    });
+    window.localStorage.setItem("opencow.desktop.workbench-state.v1", JSON.stringify({
+      version: 1,
+      state: persistedState
+    }));
+
+    mockIPC((cmd) => {
+      if (cmd === "workbench_state_load") {
+        throw new Error("desktop state load failed");
+      }
+
+      return null;
+    });
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.conversation.entries.some(
+      (entry) => entry.summary === "recover from desktop persistence failure"
+    )).toBe(true);
+    expect(window.localStorage.getItem("opencow.desktop.workbench-state.v1")).not.toBeNull();
+  });
+
   it("falls back to browser storage persistence when Tauri desktop IPC is unavailable", async () => {
     const persistedState = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "browser persisted history"

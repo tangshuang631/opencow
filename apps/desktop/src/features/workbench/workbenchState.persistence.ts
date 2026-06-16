@@ -168,8 +168,13 @@ export async function readPersistedWorkbenchState(): Promise<WorkbenchState | nu
     const legacyPayload = loadLegacyBrowserEnvelope();
     return legacyPayload ? revivePersistedState(legacyPayload.state) : null;
   } catch {
-    clearLegacyBrowserEnvelope();
-    return null;
+    try {
+      const legacyPayload = loadLegacyBrowserEnvelope();
+      return legacyPayload ? revivePersistedState(legacyPayload.state) : null;
+    } catch {
+      clearLegacyBrowserEnvelope();
+      return null;
+    }
   }
 }
 
