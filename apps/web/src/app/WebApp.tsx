@@ -6,6 +6,9 @@ import {
   loadWorkspaceOverview,
   listEnabledLocalSkills,
   matchEnabledLocalSkills,
+  inspectLocalMcpPlugin,
+  previewLocalMcpPluginStart,
+  scanLocalMcpPlugins,
   searchLocalKnowledge,
   scanLocalSkills
 } from "../../../desktop/src/features/assistant/localAssistantService";
@@ -354,6 +357,135 @@ export function WebApp() {
           auditDetailLines: result.items
             .slice(0, 3)
             .map((item) => `${item.name} | ${item.enabled ? "enabled" : "disabled"} | ${item.path}`)
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("scan local mcp plugins")) {
+      void scanLocalMcpPlugins().then((result) => {
+        const topPlugins = result.items.slice(0, 3).map((item) => item.id).join("、") || "暂无可展示插件";
+        const activationLine =
+          result.items.slice(0, 3).map((item) => `${item.id}=${item.activation}`).join("、") || "暂无";
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "mcp-local-plugin-scan",
+          executionTitle: "本地 MCP 插件扫描",
+          executionAuditSummary: "网页端触发了一次本地 MCP 插件扫描",
+          executionAuditDetail: `web local mcp plugin scan: ${trimmed}`,
+          resultTitle: "本地 MCP 插件扫描",
+          resultSummary: [
+            `扫描到 ${result.total_count} 个本地 MCP 插件入口，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+            `样例插件：${topPlugins}。`,
+            `激活方式：${activationLine}。`
+          ].join(" "),
+          auditDetailLines: result.items
+            .slice(0, 3)
+            .map((item) => `${item.id} | ${item.activation} | ${item.path}`)
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("details") && normalized.includes("mcp plugin")) {
+      void inspectLocalMcpPlugin(trimmed).then((result) => {
+        const topMatch = result.items[0];
+
+        if (!topMatch) {
+          applyReadonlyTaskResult(setState, {
+            message: trimmed,
+            executionKind: "mcp-local-plugin-inspect",
+            executionTitle: "本地 MCP 插件详情",
+            executionAuditSummary: "网页端查看本地 MCP 插件详情",
+            executionAuditDetail: `web local mcp plugin inspect: ${trimmed}`,
+            resultTitle: "本地 MCP 插件详情",
+            resultSummary: `未找到匹配 MCP 插件。检索问题：${result.query}。`,
+            auditDetailLines: ["No matching local MCP plugin found in browser preview."]
+          });
+          return;
+        }
+
+        const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join("、") : "暂无";
+        const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join("、") : "暂无";
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "mcp-local-plugin-inspect",
+          executionTitle: "本地 MCP 插件详情",
+          executionAuditSummary: "网页端查看本地 MCP 插件详情",
+          executionAuditDetail: `web local mcp plugin inspect: ${trimmed}`,
+          resultTitle: "本地 MCP 插件详情",
+          resultSummary: [
+            `找到 ${result.match_count} 个匹配 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+            `匹配项：${topMatch.id}。`,
+            `激活方式：${topMatch.activation}。`,
+            `工具：${toolsLine}。`,
+            `Skills 路径：${skillsLine}。`,
+            `说明：${topMatch.description}`
+          ].join(" "),
+          auditDetailLines: [
+            `Plugin path: ${topMatch.path}`,
+            `Plugin source: ${topMatch.source}`,
+            `Activation: ${topMatch.activation}`
+          ]
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("preview starting") && normalized.includes("mcp plugin")) {
+      void previewLocalMcpPluginStart(trimmed).then((result) => {
+        const topMatch = result.items[0];
+
+        if (!topMatch) {
+          applyReadonlyTaskResult(setState, {
+            message: trimmed,
+            executionKind: "mcp-local-plugin-start-preview",
+            executionTitle: "本地 MCP 插件启动预览",
+            executionAuditSummary: "网页端查看本地 MCP 插件启动预览",
+            executionAuditDetail: `web local mcp plugin start preview: ${trimmed}`,
+            resultTitle: "本地 MCP 插件启动预览",
+            resultSummary: `未找到可预览启动的 MCP 插件。检索问题：${result.query}。`,
+            auditDetailLines: ["No launch-previewable local MCP plugin found in browser preview."]
+          });
+          return;
+        }
+
+        const localizedCommandPreview = /no resolved executable launcher/i.test(topMatch.command_preview)
+          ? "当前桌面端尚未实现已验证的 MCP 插件启动器"
+          : topMatch.command_preview;
+        const localizedConfigHint = /no required config schema fields were detected/i.test(topMatch.config_hint)
+          ? "未检测到必填配置项"
+          : topMatch.config_hint;
+        const localizedRiskSummary =
+          /preview only/i.test(topMatch.risk_summary)
+          && /does not yet resolve or launch a real local mcp plugin process/i.test(topMatch.risk_summary)
+            ? "仅预览插件 manifest，不会启动真实 MCP 进程"
+            : topMatch.risk_summary;
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "mcp-local-plugin-start-preview",
+          executionTitle: "本地 MCP 插件启动预览",
+          executionAuditSummary: "网页端查看本地 MCP 插件启动预览",
+          executionAuditDetail: `web local mcp plugin start preview: ${trimmed}`,
+          resultTitle: "本地 MCP 插件启动预览",
+          resultSummary: [
+            `找到 ${result.match_count} 个可预览 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+            `匹配项：${topMatch.id}。`,
+            `激活方式：${topMatch.activation}。`,
+            `允许启动：${topMatch.startup_allowed ? "是" : "否"}。`,
+            `工作目录：${topMatch.working_directory}。`,
+            `命令预览：${localizedCommandPreview}。`,
+            `配置提示：${localizedConfigHint}。`,
+            `风险说明：${localizedRiskSummary}。`
+          ].join(" "),
+          auditDetailLines: [
+            `Plugin path: ${topMatch.path}`,
+            `Working directory: ${topMatch.working_directory}`,
+            `Startup allowed: ${topMatch.startup_allowed ? "yes" : "no"}`
+          ]
         });
       });
       return;

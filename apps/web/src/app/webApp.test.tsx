@@ -269,4 +269,57 @@ describe("WebApp", () => {
       expect(within(conversation).getByText(/安全状态：requires-snapshot。/)).toBeInTheDocument();
     });
   });
+
+  it("shows readonly local mcp plugin scan on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "scan local mcp plugins and list available model context protocol entries" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/扫描到 2 个本地 MCP 插件入口，覆盖 2 个扫描根目录。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/样例插件：browser、codex-supervisor。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/激活方式：browser=startup、codex-supervisor=manual。/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows readonly local mcp plugin detail on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show details for the browser mcp plugin" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/找到 1 个匹配 MCP 插件，覆盖 2 个扫描根目录。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/匹配项：browser。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/激活方式：startup。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/工具：browser。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/Skills 路径：\.\/skills。/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows readonly local mcp plugin start preview on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "preview starting the browser mcp plugin locally" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/找到 1 个可预览 MCP 插件，覆盖 2 个扫描根目录。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/匹配项：browser。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/允许启动：否。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/命令预览：当前桌面端尚未实现已验证的 MCP 插件启动器。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/配置提示：未检测到必填配置项。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/风险说明：仅预览插件 manifest，不会启动真实 MCP 进程。/)).toBeInTheDocument();
+    });
+  });
 });
