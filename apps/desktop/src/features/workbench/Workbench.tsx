@@ -43,7 +43,9 @@ type WorkbenchProps = {
   onSubmitTask: (message: string) => void;
 };
 
-const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety" | "knowledge">, { title: string; summary: string; details: string[] }> = {
+type StaticWorkbenchViewId = Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety" | "knowledge">;
+
+const viewContent: Record<StaticWorkbenchViewId, { title: string; summary: string; details: string[] }> = {
   search: {
     title: "搜索",
     summary: "联网搜索能力会通过显式开关启用，默认保持本地优先。",
@@ -73,7 +75,7 @@ const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "history" | "audit" 
 
 type ModelSettingsTarget = "ollama" | "remote-api";
 
-function WorkbenchContentPanel({ viewId }: { viewId: Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety"> }) {
+function WorkbenchContentPanel({ viewId }: { viewId: StaticWorkbenchViewId }) {
   const content = viewContent[viewId];
 
   return (
