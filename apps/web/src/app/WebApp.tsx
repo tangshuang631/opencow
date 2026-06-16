@@ -21,6 +21,7 @@ import {
   createModelSelectedState,
   createNewConversationState,
   createStorageCleanupState,
+  createTaskExecutionFailedState,
   createTaskExecutionStartedState,
   createTaskExecutionSucceededState,
   createUserTaskSubmittedState,
@@ -325,6 +326,105 @@ function applyReadonlyTaskResult(
   });
 }
 
+function getReadableErrorDetail(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  return "Unknown browser-preview failure.";
+}
+
+function applyReadonlyTaskFailure(
+  setState: Dispatch<SetStateAction<WorkbenchState>>,
+  payload: {
+    message: string;
+    executionKind: string;
+    executionTitle: string;
+    executionAuditSummary: string;
+    executionAuditDetail: string;
+    failureSummary: string;
+    failureDetail: string;
+    failureActionLabel: string;
+    failureSource: string;
+  }
+) {
+  startTransition(() => {
+    setState((current) => {
+      const queued = createUserTaskSubmittedState(current, {
+        message: payload.message,
+        executionKind: payload.executionKind as never,
+        executionTitle: payload.executionTitle,
+        executionAuditSummary: payload.executionAuditSummary,
+        executionAuditDetail: payload.executionAuditDetail
+      });
+      const started = createTaskExecutionStartedState(queued);
+
+      return preserveWebKnowledgeState(current, createTaskExecutionFailedState(started, {
+        summary: payload.failureSummary,
+        detail: payload.failureDetail,
+        actionLabel: payload.failureActionLabel,
+        source: payload.failureSource
+      }));
+    });
+  });
+}
+
+function executeReadonlyAsyncTask<T>(
+  setState: Dispatch<SetStateAction<WorkbenchState>>,
+  payload: {
+    message: string;
+    executionKind: string;
+    executionTitle: string;
+    executionAuditSummary: string;
+    executionAuditDetail: string;
+    failureSummary: string;
+    failureActionLabel: string;
+    failureSource: string;
+    run: () => Promise<T>;
+    onSuccess: (result: T) => {
+      resultTitle: string;
+      resultSummary: string;
+      auditDetailLines: string[];
+    };
+  }
+) {
+  void payload.run().then((result) => {
+    const success = payload.onSuccess(result);
+
+    applyReadonlyTaskResult(setState, {
+      message: payload.message,
+      executionKind: payload.executionKind,
+      executionTitle: payload.executionTitle,
+      executionAuditSummary: payload.executionAuditSummary,
+      executionAuditDetail: payload.executionAuditDetail,
+      resultTitle: success.resultTitle,
+      resultSummary: success.resultSummary,
+      auditDetailLines: success.auditDetailLines
+    });
+  }).catch((error: unknown) => {
+    const failureDetail = [
+      payload.executionAuditDetail,
+      `Underlying browser-preview error: ${getReadableErrorDetail(error)}`
+    ].join(". ");
+
+    applyReadonlyTaskFailure(setState, {
+      message: payload.message,
+      executionKind: payload.executionKind,
+      executionTitle: payload.executionTitle,
+      executionAuditSummary: payload.executionAuditSummary,
+      executionAuditDetail: payload.executionAuditDetail,
+      failureSummary: payload.failureSummary,
+      failureDetail,
+      failureActionLabel: payload.failureActionLabel,
+      failureSource: payload.failureSource
+    });
+  });
+}
+
 function tokenizeIntent(input: string) {
   return input.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
 }
@@ -384,152 +484,192 @@ export function WebApp() {
     const normalized = trimmed.toLowerCase();
 
     if (normalized.includes("npc collaboration") && normalized.includes("preview the next safe shell step")) {
-      void Promise.all([
-        loadOpenClawCapabilityOverview("npc"),
-        matchEnabledLocalSkills(trimmed),
-        loadWorkspaceOverview()
-      ]).then(async ([npcOverview, skillMatch, workspaceOverview]) => {
-        const topMatch = skillMatch.items[0];
-        const ragResult = await searchLocalKnowledge(trimmed);
-        const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "npc-local-enabled-rag-shell-handoff-preview",
+        executionTitle: "NPC-assisted RAG shell handoff preview",
+        executionAuditSummary: "网页端查看 NPC 协作 RAG shell handoff 预览",
+        executionAuditDetail: `web npc rag shell handoff preview: ${trimmed}`,
+        failureSummary: "NPC 协作 RAG shell handoff 预览失败",
+        failureActionLabel: "请先检查 NPC 状态、Skill 注册表、本地 RAG 数据源和工作区概览，再重试这条网页端预览请求。",
+        failureSource: "web_npc_rag_shell_handoff_preview",
+        run: async () => {
+          const [npcOverview, skillMatch, workspaceOverview, ragResult] = await Promise.all([
+            loadOpenClawCapabilityOverview("npc"),
+            matchEnabledLocalSkills(trimmed),
+            loadWorkspaceOverview(),
+            searchLocalKnowledge(trimmed)
+          ]);
 
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "npc-local-enabled-rag-shell-handoff-preview",
-          executionTitle: "NPC-assisted RAG shell handoff preview",
-          executionAuditSummary: "网页端查看 NPC 协作 RAG shell handoff 预览",
-          executionAuditDetail: `web npc rag shell handoff preview: ${trimmed}`,
-          resultTitle: "NPC-assisted RAG shell handoff preview",
-          resultSummary: [
-            `${npcOverview.summary}`,
-            `状态：${npcOverview.status}。`,
-            `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
-            `注册表：${skillMatch.registry_path}。`,
-            `主要来源：${topPaths}。`,
-            "命令预览：Remove-Item -Recurse -Force temp-output。",
-            `工作区根目录：${workspaceOverview.root_path}。`,
-            "所需权限：controlled-full。",
-            "安全状态：requires-snapshot。"
-          ].join(" "),
-          auditDetailLines: [
-            `NPC status: ${npcOverview.status}`,
-            `Recommended skill: ${topMatch?.name ?? "(none)"}`,
-            `Registry: ${skillMatch.registry_path}`,
-            `Top matches: ${topPaths}`,
-            `Workspace root: ${workspaceOverview.root_path}`
-          ]
-        });
+          return { npcOverview, skillMatch, workspaceOverview, ragResult };
+        },
+        onSuccess: ({ npcOverview, skillMatch, workspaceOverview, ragResult }) => {
+          const topMatch = skillMatch.items[0];
+          const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+          return {
+            resultTitle: "NPC-assisted RAG shell handoff preview",
+            resultSummary: [
+              `${npcOverview.summary}`,
+              `状态：${npcOverview.status}。`,
+              `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
+              `注册表：${skillMatch.registry_path}。`,
+              `主要来源：${topPaths}。`,
+              "命令预览：Remove-Item -Recurse -Force temp-output。",
+              `工作区根目录：${workspaceOverview.root_path}。`,
+              "所需权限：controlled-full。",
+              "安全状态：requires-snapshot。"
+            ].join(" "),
+            auditDetailLines: [
+              `NPC status: ${npcOverview.status}`,
+              `Recommended skill: ${topMatch?.name ?? "(none)"}`,
+              `Registry: ${skillMatch.registry_path}`,
+              `Top matches: ${topPaths}`,
+              `Workspace root: ${workspaceOverview.root_path}`
+            ]
+          };
+        }
       });
       return;
     }
 
     if (normalized.includes("npc collaboration shell plan")) {
-      void Promise.all([
-        loadOpenClawCapabilityOverview("npc"),
-        matchEnabledLocalSkills(trimmed),
-        loadWorkspaceOverview()
-      ]).then(([npcOverview, skillMatch, workspaceOverview]) => {
-        const topMatch = skillMatch.items[0];
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "npc-local-shell-plan-preview",
+        executionTitle: "NPC shell plan preview",
+        executionAuditSummary: "网页端查看 NPC shell 计划预览",
+        executionAuditDetail: `web npc shell plan preview: ${trimmed}`,
+        failureSummary: "NPC shell 计划预览失败",
+        failureActionLabel: "请先检查 NPC 状态、Skill 匹配结果和工作区概览，再重试这条网页端 shell 计划预览。",
+        failureSource: "web_npc_shell_plan_preview",
+        run: async () => {
+          const [npcOverview, skillMatch, workspaceOverview] = await Promise.all([
+            loadOpenClawCapabilityOverview("npc"),
+            matchEnabledLocalSkills(trimmed),
+            loadWorkspaceOverview()
+          ]);
 
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "npc-local-shell-plan-preview",
-          executionTitle: "NPC shell plan preview",
-          executionAuditSummary: "网页端查看 NPC shell 计划预览",
-          executionAuditDetail: `web npc shell plan preview: ${trimmed}`,
-          resultTitle: "NPC shell plan preview",
-          resultSummary: [
-            `${npcOverview.summary}`,
-            `状态：${npcOverview.status}。`,
-            `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
-            `注册表：${skillMatch.registry_path}。`,
-            "命令预览：Remove-Item -Recurse -Force temp-output。",
-            `工作区根目录：${workspaceOverview.root_path}。`,
-            "所需权限：controlled-full。",
-            "安全状态：requires-snapshot。"
-          ].join(" "),
-          auditDetailLines: [
-            `NPC status: ${npcOverview.status}`,
-            `Recommended skill: ${topMatch?.name ?? "(none)"}`,
-            `Registry: ${skillMatch.registry_path}`,
-            `Workspace root: ${workspaceOverview.root_path}`,
-            "Command preview: Remove-Item -Recurse -Force temp-output"
-          ]
-        });
+          return { npcOverview, skillMatch, workspaceOverview };
+        },
+        onSuccess: ({ npcOverview, skillMatch, workspaceOverview }) => {
+          const topMatch = skillMatch.items[0];
+
+          return {
+            resultTitle: "NPC shell plan preview",
+            resultSummary: [
+              `${npcOverview.summary}`,
+              `状态：${npcOverview.status}。`,
+              `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
+              `注册表：${skillMatch.registry_path}。`,
+              "命令预览：Remove-Item -Recurse -Force temp-output。",
+              `工作区根目录：${workspaceOverview.root_path}。`,
+              "所需权限：controlled-full。",
+              "安全状态：requires-snapshot。"
+            ].join(" "),
+            auditDetailLines: [
+              `NPC status: ${npcOverview.status}`,
+              `Recommended skill: ${topMatch?.name ?? "(none)"}`,
+              `Registry: ${skillMatch.registry_path}`,
+              `Workspace root: ${workspaceOverview.root_path}`,
+              "Command preview: Remove-Item -Recurse -Force temp-output"
+            ]
+          };
+        }
       });
       return;
     }
 
     if (normalized.includes("npc collaboration plan")) {
-      void Promise.all([
-        loadOpenClawCapabilityOverview("npc"),
-        listEnabledLocalSkills()
-      ]).then(async ([npcOverview, enabledSkills]) => {
-        const ragResult = await searchLocalKnowledge(trimmed);
-        const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
-        const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "npc-local-collaboration-preview",
+        executionTitle: "NPC collaboration preview",
+        executionAuditSummary: "网页端查看 NPC 协作预览",
+        executionAuditDetail: `web npc collaboration preview: ${trimmed}`,
+        failureSummary: "NPC 协作预览失败",
+        failureActionLabel: "请先检查 NPC 状态、已启用 Skills 列表和本地 RAG 上下文，再重试这条网页端协作预览。",
+        failureSource: "web_npc_collaboration_preview",
+        run: async () => {
+          const [npcOverview, enabledSkills, ragResult] = await Promise.all([
+            loadOpenClawCapabilityOverview("npc"),
+            listEnabledLocalSkills(),
+            searchLocalKnowledge(trimmed)
+          ]);
 
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "npc-local-collaboration-preview",
-          executionTitle: "NPC collaboration preview",
-          executionAuditSummary: "网页端查看 NPC 协作预览",
-          executionAuditDetail: `web npc collaboration preview: ${trimmed}`,
-          resultTitle: "NPC collaboration preview",
-          resultSummary: [
-            `${npcOverview.summary}`,
-            `状态：${npcOverview.status}。`,
-            `已启用 Skills：${skillNames}。`,
-            `注册表：${enabledSkills.registry_path}。`,
-            `本地上下文：${topPaths}。`,
-            `已索引文档：${ragResult.indexed_document_count}。`
-          ].join(" "),
-          auditDetailLines: [
-            `NPC status: ${npcOverview.status}`,
-            `Enabled skills: ${skillNames}`,
-            `Registry: ${enabledSkills.registry_path}`,
-            `Local context: ${topPaths}`,
-            `Indexed documents: ${ragResult.indexed_document_count}`
-          ]
-        });
+          return { npcOverview, enabledSkills, ragResult };
+        },
+        onSuccess: ({ npcOverview, enabledSkills, ragResult }) => {
+          const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+          const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+
+          return {
+            resultTitle: "NPC collaboration preview",
+            resultSummary: [
+              `${npcOverview.summary}`,
+              `状态：${npcOverview.status}。`,
+              `已启用 Skills：${skillNames}。`,
+              `注册表：${enabledSkills.registry_path}。`,
+              `本地上下文：${topPaths}。`,
+              `已索引文档：${ragResult.indexed_document_count}。`
+            ].join(" "),
+            auditDetailLines: [
+              `NPC status: ${npcOverview.status}`,
+              `Enabled skills: ${skillNames}`,
+              `Registry: ${enabledSkills.registry_path}`,
+              `Local context: ${topPaths}`,
+              `Indexed documents: ${ragResult.indexed_document_count}`
+            ]
+          };
+        }
       });
       return;
     }
 
     if (normalized.includes("scan local skills")) {
-      void scanLocalSkills().then((result) => {
-        const topSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无可展示样例";
-        const enabledSkills =
-          result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join("、") || "暂无";
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-scan",
+        executionTitle: "本地 Skills 扫描",
+        executionAuditSummary: "网页端触发了一次本地 Skills 扫描",
+        executionAuditDetail: `web local skills scan: ${trimmed}`,
+        failureSummary: "本地 Skills 扫描失败",
+        failureActionLabel: "请先检查本地 Skills 扫描桥接、扫描根目录和 vendor/openclaw 适配，再重试。",
+        failureSource: "web_local_skills_scan",
+        run: () => scanLocalSkills(),
+        onSuccess: (result) => {
+          const topSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无可展示样例";
+          const enabledSkills =
+            result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join("、") || "暂无";
 
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-scan",
-          executionTitle: "本地 Skills 扫描",
-          executionAuditSummary: "网页端触发了一次本地 Skills 扫描",
-          executionAuditDetail: `web local skills scan: ${trimmed}`,
-          resultTitle: "本地 Skills 扫描",
-          resultSummary: [
-            `扫描到 ${result.total_count} 个本地 Skills，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
-            `样例 Skills：${topSkills}。`,
-            `已启用项：${enabledSkills}。`
-          ].join(" "),
-          auditDetailLines: result.items
-            .slice(0, 3)
-            .map((item) => `${item.name} | ${item.enabled ? "enabled" : "disabled"} | ${item.path}`)
-        });
+          return {
+            resultTitle: "本地 Skills 扫描",
+            resultSummary: [
+              `扫描到 ${result.total_count} 个本地 Skills，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+              `样例 Skills：${topSkills}。`,
+              `已启用项：${enabledSkills}。`
+            ].join(" "),
+            auditDetailLines: result.items
+              .slice(0, 3)
+              .map((item) => `${item.name} | ${item.enabled ? "enabled" : "disabled"} | ${item.path}`)
+          };
+        }
       });
       return;
     }
 
     if (intentTokens.includes("install") && intentTokens.includes("skill")) {
-      void installLocalSkill(trimmed).then((result) => {
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-install",
-          executionTitle: "本地 Skill 安装结果",
-          executionAuditSummary: "网页端触发了一次本地 Skill 安装预览",
-          executionAuditDetail: `web local skill install: ${trimmed}`,
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-install",
+        executionTitle: "本地 Skill 安装结果",
+        executionAuditSummary: "网页端触发了一次本地 Skill 安装预览",
+        executionAuditDetail: `web local skill install: ${trimmed}`,
+        failureSummary: "本地 Skill 安装失败",
+        failureActionLabel: "请先检查 workspace skills 目录、vendor/openclaw 来源路径和安装桥接，再重试。",
+        failureSource: "web_local_skill_install",
+        run: () => installLocalSkill(trimmed),
+        onSuccess: (result) => ({
           resultTitle: "本地 Skill 安装结果",
           resultSummary: [
             `已安装 Skill：${result.installed_skill_name}。`,
@@ -542,19 +682,23 @@ export function WebApp() {
             `Installed path: ${result.installed_skill_path}`,
             `Source path: ${result.source_skill_path}`
           ]
-        });
+        })
       });
       return;
     }
 
     if ((intentTokens.includes("enable") || intentTokens.includes("activate")) && intentTokens.includes("skill")) {
-      void enableLocalSkill(trimmed).then((result) => {
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-enable",
-          executionTitle: "本地 Skill 启用结果",
-          executionAuditSummary: "网页端触发了一次本地 Skill 启用预览",
-          executionAuditDetail: `web local skill enable: ${trimmed}`,
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-enable",
+        executionTitle: "本地 Skill 启用结果",
+        executionAuditSummary: "网页端触发了一次本地 Skill 启用预览",
+        executionAuditDetail: `web local skill enable: ${trimmed}`,
+        failureSummary: "本地 Skill 启用失败",
+        failureActionLabel: "请先检查启用注册表、目标 Skill 名称和本地桥接状态，再重试。",
+        failureSource: "web_local_skill_enable",
+        run: () => enableLocalSkill(trimmed),
+        onSuccess: (result) => ({
           resultTitle: "本地 Skill 启用结果",
           resultSummary: [
             `已启用 Skill：${result.enabled_skill_name}。`,
@@ -566,19 +710,23 @@ export function WebApp() {
             `Registry path: ${result.registry_path}`,
             `Enable status: ${result.status}`
           ]
-        });
+        })
       });
       return;
     }
 
     if ((intentTokens.includes("disable") || intentTokens.includes("deactivate")) && intentTokens.includes("skill")) {
-      void disableLocalSkill(trimmed).then((result) => {
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-disable",
-          executionTitle: "本地 Skill 禁用结果",
-          executionAuditSummary: "网页端触发了一次本地 Skill 禁用预览",
-          executionAuditDetail: `web local skill disable: ${trimmed}`,
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-disable",
+        executionTitle: "本地 Skill 禁用结果",
+        executionAuditSummary: "网页端触发了一次本地 Skill 禁用预览",
+        executionAuditDetail: `web local skill disable: ${trimmed}`,
+        failureSummary: "本地 Skill 禁用失败",
+        failureActionLabel: "请先检查启用注册表、目标 Skill 名称和本地桥接状态，再重试。",
+        failureSource: "web_local_skill_disable",
+        run: () => disableLocalSkill(trimmed),
+        onSuccess: (result) => ({
           resultTitle: "本地 Skill 禁用结果",
           resultSummary: [
             `已禁用 Skill：${result.disabled_skill_name}。`,
@@ -590,7 +738,7 @@ export function WebApp() {
             `Registry path: ${result.registry_path}`,
             `Disable status: ${result.status}`
           ]
-        });
+        })
       });
       return;
     }
@@ -600,237 +748,249 @@ export function WebApp() {
       || normalized.includes("recommend an enabled skill")
       || normalized.includes("match this task against enabled skills")
     ) {
-      void matchEnabledLocalSkills(trimmed).then((result) => {
-        const topMatch = result.items[0];
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-enabled-match",
+        executionTitle: "已启用 Skill 推荐",
+        executionAuditSummary: "网页端查看已启用 Skill 推荐",
+        executionAuditDetail: `web enabled local skill match: ${trimmed}`,
+        failureSummary: "已启用 Skill 推荐失败",
+        failureActionLabel: "请先检查 enabled skills 注册表、匹配桥接和任务描述，再重试。",
+        failureSource: "web_enabled_local_skill_match",
+        run: () => matchEnabledLocalSkills(trimmed),
+        onSuccess: (result) => {
+          const topMatch = result.items[0];
 
-        if (!topMatch) {
-          applyReadonlyTaskResult(setState, {
-            message: trimmed,
-            executionKind: "skills-local-enabled-match",
-            executionTitle: "已启用 Skill 推荐",
-            executionAuditSummary: "网页端查看已启用 Skill 推荐",
-            executionAuditDetail: `web enabled local skill match: ${trimmed}`,
+          if (!topMatch) {
+            return {
+              resultTitle: "已启用 Skill 推荐",
+              resultSummary: `未找到匹配的已启用 Skill。注册表：${result.registry_path}。`,
+              auditDetailLines: ["No matching enabled local skill found in browser preview."]
+            };
+          }
+
+          return {
             resultTitle: "已启用 Skill 推荐",
-            resultSummary: `未找到匹配的已启用 Skill。注册表：${result.registry_path}。`,
-            auditDetailLines: ["No matching enabled local skill found in browser preview."]
-          });
-          return;
+            resultSummary: [
+              `从 ${result.enabled_skill_count} 个已启用 Skill 中找到 ${result.match_count} 个推荐项。`,
+              `推荐 Skill：${topMatch.name}。`,
+              `注册表：${result.registry_path}。`,
+              `内容预览：${topMatch.content_preview}`
+            ].join(" "),
+            auditDetailLines: [
+              `Recommended skill: ${topMatch.name}`,
+              `Registry path: ${result.registry_path}`,
+              `Enabled skill count: ${result.enabled_skill_count}`
+            ]
+          };
         }
-
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-enabled-match",
-          executionTitle: "已启用 Skill 推荐",
-          executionAuditSummary: "网页端查看已启用 Skill 推荐",
-          executionAuditDetail: `web enabled local skill match: ${trimmed}`,
-          resultTitle: "已启用 Skill 推荐",
-          resultSummary: [
-            `从 ${result.enabled_skill_count} 个已启用 Skill 中找到 ${result.match_count} 个推荐项。`,
-            `推荐 Skill：${topMatch.name}。`,
-            `注册表：${result.registry_path}。`,
-            `内容预览：${topMatch.content_preview}`
-          ].join(" "),
-          auditDetailLines: [
-            `Recommended skill: ${topMatch.name}`,
-            `Registry path: ${result.registry_path}`,
-            `Enabled skill count: ${result.enabled_skill_count}`
-          ]
-        });
       });
       return;
     }
 
     if (normalized.includes("scan local mcp plugins")) {
-      void scanLocalMcpPlugins().then((result) => {
-        const topPlugins = result.items.slice(0, 3).map((item) => item.id).join("、") || "暂无可展示插件";
-        const activationLine =
-          result.items.slice(0, 3).map((item) => `${item.id}=${item.activation}`).join("、") || "暂无";
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "mcp-local-plugin-scan",
+        executionTitle: "本地 MCP 插件扫描",
+        executionAuditSummary: "网页端触发了一次本地 MCP 插件扫描",
+        executionAuditDetail: `web local mcp plugin scan: ${trimmed}`,
+        failureSummary: "本地 MCP 插件扫描失败",
+        failureActionLabel: "请先检查 MCP 扫描桥接、插件根目录和 openclaw 插件适配，再重试。",
+        failureSource: "web_local_mcp_plugin_scan",
+        run: () => scanLocalMcpPlugins(),
+        onSuccess: (result) => {
+          const topPlugins = result.items.slice(0, 3).map((item) => item.id).join("、") || "暂无可展示插件";
+          const activationLine =
+            result.items.slice(0, 3).map((item) => `${item.id}=${item.activation}`).join("、") || "暂无";
 
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "mcp-local-plugin-scan",
-          executionTitle: "本地 MCP 插件扫描",
-          executionAuditSummary: "网页端触发了一次本地 MCP 插件扫描",
-          executionAuditDetail: `web local mcp plugin scan: ${trimmed}`,
-          resultTitle: "本地 MCP 插件扫描",
-          resultSummary: [
-            `扫描到 ${result.total_count} 个本地 MCP 插件入口，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
-            `样例插件：${topPlugins}。`,
-            `激活方式：${activationLine}。`
-          ].join(" "),
-          auditDetailLines: result.items
-            .slice(0, 3)
-            .map((item) => `${item.id} | ${item.activation} | ${item.path}`)
-        });
+          return {
+            resultTitle: "本地 MCP 插件扫描",
+            resultSummary: [
+              `扫描到 ${result.total_count} 个本地 MCP 插件入口，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+              `样例插件：${topPlugins}。`,
+              `激活方式：${activationLine}。`
+            ].join(" "),
+            auditDetailLines: result.items
+              .slice(0, 3)
+              .map((item) => `${item.id} | ${item.activation} | ${item.path}`)
+          };
+        }
       });
       return;
     }
 
     if (normalized.includes("details") && normalized.includes("mcp plugin")) {
-      void inspectLocalMcpPlugin(trimmed).then((result) => {
-        const topMatch = result.items[0];
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "mcp-local-plugin-inspect",
+        executionTitle: "本地 MCP 插件详情",
+        executionAuditSummary: "网页端查看本地 MCP 插件详情",
+        executionAuditDetail: `web local mcp plugin inspect: ${trimmed}`,
+        failureSummary: "本地 MCP 插件详情读取失败",
+        failureActionLabel: "请先检查 MCP 检查桥接、插件索引和查询关键词，再重试。",
+        failureSource: "web_local_mcp_plugin_inspect",
+        run: () => inspectLocalMcpPlugin(trimmed),
+        onSuccess: (result) => {
+          const topMatch = result.items[0];
 
-        if (!topMatch) {
-          applyReadonlyTaskResult(setState, {
-            message: trimmed,
-            executionKind: "mcp-local-plugin-inspect",
-            executionTitle: "本地 MCP 插件详情",
-            executionAuditSummary: "网页端查看本地 MCP 插件详情",
-            executionAuditDetail: `web local mcp plugin inspect: ${trimmed}`,
+          if (!topMatch) {
+            return {
+              resultTitle: "本地 MCP 插件详情",
+              resultSummary: `未找到匹配 MCP 插件。检索问题：${result.query}。`,
+              auditDetailLines: ["No matching local MCP plugin found in browser preview."]
+            };
+          }
+
+          const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join("、") : "暂无";
+          const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join("、") : "暂无";
+
+          return {
             resultTitle: "本地 MCP 插件详情",
-            resultSummary: `未找到匹配 MCP 插件。检索问题：${result.query}。`,
-            auditDetailLines: ["No matching local MCP plugin found in browser preview."]
-          });
-          return;
+            resultSummary: [
+              `找到 ${result.match_count} 个匹配 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+              `匹配项：${topMatch.id}。`,
+              `激活方式：${topMatch.activation}。`,
+              `工具：${toolsLine}。`,
+              `Skills 路径：${skillsLine}。`,
+              `说明：${topMatch.description}`
+            ].join(" "),
+            auditDetailLines: [
+              `Plugin path: ${topMatch.path}`,
+              `Plugin source: ${topMatch.source}`,
+              `Activation: ${topMatch.activation}`
+            ]
+          };
         }
-
-        const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join("、") : "暂无";
-        const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join("、") : "暂无";
-
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "mcp-local-plugin-inspect",
-          executionTitle: "本地 MCP 插件详情",
-          executionAuditSummary: "网页端查看本地 MCP 插件详情",
-          executionAuditDetail: `web local mcp plugin inspect: ${trimmed}`,
-          resultTitle: "本地 MCP 插件详情",
-          resultSummary: [
-            `找到 ${result.match_count} 个匹配 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
-            `匹配项：${topMatch.id}。`,
-            `激活方式：${topMatch.activation}。`,
-            `工具：${toolsLine}。`,
-            `Skills 路径：${skillsLine}。`,
-            `说明：${topMatch.description}`
-          ].join(" "),
-          auditDetailLines: [
-            `Plugin path: ${topMatch.path}`,
-            `Plugin source: ${topMatch.source}`,
-            `Activation: ${topMatch.activation}`
-          ]
-        });
       });
       return;
     }
 
     if (normalized.includes("preview starting") && normalized.includes("mcp plugin")) {
-      void previewLocalMcpPluginStart(trimmed).then((result) => {
-        const topMatch = result.items[0];
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "mcp-local-plugin-start-preview",
+        executionTitle: "本地 MCP 插件启动预览",
+        executionAuditSummary: "网页端查看本地 MCP 插件启动预览",
+        executionAuditDetail: `web local mcp plugin start preview: ${trimmed}`,
+        failureSummary: "本地 MCP 插件启动预览失败",
+        failureActionLabel: "请先检查 MCP 启动预览桥接、插件索引和启动边界说明，再重试。",
+        failureSource: "web_local_mcp_plugin_start_preview",
+        run: () => previewLocalMcpPluginStart(trimmed),
+        onSuccess: (result) => {
+          const topMatch = result.items[0];
 
-        if (!topMatch) {
-          applyReadonlyTaskResult(setState, {
-            message: trimmed,
-            executionKind: "mcp-local-plugin-start-preview",
-            executionTitle: "本地 MCP 插件启动预览",
-            executionAuditSummary: "网页端查看本地 MCP 插件启动预览",
-            executionAuditDetail: `web local mcp plugin start preview: ${trimmed}`,
+          if (!topMatch) {
+            return {
+              resultTitle: "本地 MCP 插件启动预览",
+              resultSummary: `未找到可预览启动的 MCP 插件。检索问题：${result.query}。`,
+              auditDetailLines: ["No launch-previewable local MCP plugin found in browser preview."]
+            };
+          }
+
+          const localizedCommandPreview = /no resolved executable launcher/i.test(topMatch.command_preview)
+            ? "当前桌面端尚未实现已验证的 MCP 插件启动器"
+            : topMatch.command_preview;
+          const localizedConfigHint = /no required config schema fields were detected/i.test(topMatch.config_hint)
+            ? "未检测到必填配置项"
+            : topMatch.config_hint;
+          const localizedRiskSummary =
+            /preview only/i.test(topMatch.risk_summary)
+            && /does not yet resolve or launch a real local mcp plugin process/i.test(topMatch.risk_summary)
+              ? "仅预览插件 manifest，不会启动真实 MCP 进程"
+              : topMatch.risk_summary;
+
+          return {
             resultTitle: "本地 MCP 插件启动预览",
-            resultSummary: `未找到可预览启动的 MCP 插件。检索问题：${result.query}。`,
-            auditDetailLines: ["No launch-previewable local MCP plugin found in browser preview."]
-          });
-          return;
+            resultSummary: [
+              `找到 ${result.match_count} 个可预览 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+              `匹配项：${topMatch.id}。`,
+              `激活方式：${topMatch.activation}。`,
+              `允许启动：${topMatch.startup_allowed ? "是" : "否"}。`,
+              `工作目录：${topMatch.working_directory}。`,
+              `命令预览：${localizedCommandPreview}。`,
+              `配置提示：${localizedConfigHint}。`,
+              `风险说明：${localizedRiskSummary}。`
+            ].join(" "),
+            auditDetailLines: [
+              `Plugin path: ${topMatch.path}`,
+              `Working directory: ${topMatch.working_directory}`,
+              `Startup allowed: ${topMatch.startup_allowed ? "yes" : "no"}`
+            ]
+          };
         }
-
-        const localizedCommandPreview = /no resolved executable launcher/i.test(topMatch.command_preview)
-          ? "当前桌面端尚未实现已验证的 MCP 插件启动器"
-          : topMatch.command_preview;
-        const localizedConfigHint = /no required config schema fields were detected/i.test(topMatch.config_hint)
-          ? "未检测到必填配置项"
-          : topMatch.config_hint;
-        const localizedRiskSummary =
-          /preview only/i.test(topMatch.risk_summary)
-          && /does not yet resolve or launch a real local mcp plugin process/i.test(topMatch.risk_summary)
-            ? "仅预览插件 manifest，不会启动真实 MCP 进程"
-            : topMatch.risk_summary;
-
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "mcp-local-plugin-start-preview",
-          executionTitle: "本地 MCP 插件启动预览",
-          executionAuditSummary: "网页端查看本地 MCP 插件启动预览",
-          executionAuditDetail: `web local mcp plugin start preview: ${trimmed}`,
-          resultTitle: "本地 MCP 插件启动预览",
-          resultSummary: [
-            `找到 ${result.match_count} 个可预览 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
-            `匹配项：${topMatch.id}。`,
-            `激活方式：${topMatch.activation}。`,
-            `允许启动：${topMatch.startup_allowed ? "是" : "否"}。`,
-            `工作目录：${topMatch.working_directory}。`,
-            `命令预览：${localizedCommandPreview}。`,
-            `配置提示：${localizedConfigHint}。`,
-            `风险说明：${localizedRiskSummary}。`
-          ].join(" "),
-          auditDetailLines: [
-            `Plugin path: ${topMatch.path}`,
-            `Working directory: ${topMatch.working_directory}`,
-            `Startup allowed: ${topMatch.startup_allowed ? "yes" : "no"}`
-          ]
-        });
       });
       return;
     }
 
     if (normalized.includes("enabled skills")) {
-      void listEnabledLocalSkills().then((result) => {
-        const listedSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-enabled-list",
+        executionTitle: "已启用本地 Skills",
+        executionAuditSummary: "网页端查看已启用本地 Skills",
+        executionAuditDetail: `web enabled local skills list: ${trimmed}`,
+        failureSummary: "已启用本地 Skills 读取失败",
+        failureActionLabel: "请先检查 enabled skills 注册表和读取桥接，再重试。",
+        failureSource: "web_enabled_local_skills_list",
+        run: () => listEnabledLocalSkills(),
+        onSuccess: (result) => {
+          const listedSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
 
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-enabled-list",
-          executionTitle: "已启用本地 Skills",
-          executionAuditSummary: "网页端查看已启用本地 Skills",
-          executionAuditDetail: `web enabled local skills list: ${trimmed}`,
-          resultTitle: "已启用本地 Skills",
-          resultSummary: [
-            `当前启用 ${result.total_count} 个本地 Skill。`,
-            `注册表：${result.registry_path}。`,
-            `已启用项：${listedSkills}。`
-          ].join(" "),
-          auditDetailLines: result.items
-            .slice(0, 3)
-            .map((item) => `${item.name} | ${item.source} | ${item.path}`)
-        });
+          return {
+            resultTitle: "已启用本地 Skills",
+            resultSummary: [
+              `当前启用 ${result.total_count} 个本地 Skill。`,
+              `注册表：${result.registry_path}。`,
+              `已启用项：${listedSkills}。`
+            ].join(" "),
+            auditDetailLines: result.items
+              .slice(0, 3)
+              .map((item) => `${item.name} | ${item.source} | ${item.path}`)
+          };
+        }
       });
       return;
     }
 
     if (normalized.includes("details") && normalized.includes("skill")) {
-      void inspectLocalSkill(trimmed).then((result) => {
-        const topMatch = result.items[0];
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-inspect",
+        executionTitle: "本地 Skill 详情",
+        executionAuditSummary: "网页端查看本地 Skill 详情",
+        executionAuditDetail: `web local skill inspect: ${trimmed}`,
+        failureSummary: "本地 Skill 详情读取失败",
+        failureActionLabel: "请先检查 Skill 检查桥接、扫描根目录和查询关键词，再重试。",
+        failureSource: "web_local_skill_inspect",
+        run: () => inspectLocalSkill(trimmed),
+        onSuccess: (result) => {
+          const topMatch = result.items[0];
 
-        if (!topMatch) {
-          applyReadonlyTaskResult(setState, {
-            message: trimmed,
-            executionKind: "skills-local-inspect",
-            executionTitle: "本地 Skill 详情",
-            executionAuditSummary: "网页端查看本地 Skill 详情",
-            executionAuditDetail: `web local skill inspect: ${trimmed}`,
+          if (!topMatch) {
+            return {
+              resultTitle: "本地 Skill 详情",
+              resultSummary: `未找到匹配 Skill。检索问题：${result.query}。`,
+              auditDetailLines: ["No matching local skill found in browser preview."]
+            };
+          }
+
+          return {
             resultTitle: "本地 Skill 详情",
-            resultSummary: `未找到匹配 Skill。检索问题：${result.query}。`,
-            auditDetailLines: ["No matching local skill found in browser preview."]
-          });
-          return;
+            resultSummary: [
+              `找到 ${result.match_count} 个匹配 Skill，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+              `匹配项：${topMatch.name}。`,
+              `启用状态：${topMatch.enabled ? "已启用" : "未启用"}。`,
+              `说明：${topMatch.description}。`,
+              `内容预览：${topMatch.content_preview}`
+            ].join(" "),
+            auditDetailLines: [
+              `Skill path: ${topMatch.path}`,
+              `Skill source: ${topMatch.source}`,
+              `Skill enabled: ${topMatch.enabled ? "yes" : "no"}`
+            ]
+          };
         }
-
-        applyReadonlyTaskResult(setState, {
-          message: trimmed,
-          executionKind: "skills-local-inspect",
-          executionTitle: "本地 Skill 详情",
-          executionAuditSummary: "网页端查看本地 Skill 详情",
-          executionAuditDetail: `web local skill inspect: ${trimmed}`,
-          resultTitle: "本地 Skill 详情",
-          resultSummary: [
-            `找到 ${result.match_count} 个匹配 Skill，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
-            `匹配项：${topMatch.name}。`,
-            `启用状态：${topMatch.enabled ? "已启用" : "未启用"}。`,
-            `说明：${topMatch.description}。`,
-            `内容预览：${topMatch.content_preview}`
-          ].join(" "),
-          auditDetailLines: [
-            `Skill path: ${topMatch.path}`,
-            `Skill source: ${topMatch.source}`,
-            `Skill enabled: ${topMatch.enabled ? "yes" : "no"}`
-          ]
-        });
       });
       return;
     }
