@@ -444,10 +444,12 @@ export function Workbench({
   function handleSelectView(viewId: WorkbenchViewId) {
     setActiveView(viewId);
     setSettingsFocus(null);
+  }
 
-    if (viewId === "chat") {
-      onNewConversation();
-    }
+  function handleNewConversationClick() {
+    setActiveView("chat");
+    setSettingsFocus(null);
+    onNewConversation();
   }
 
   function handleOpenModelSettings(target: ModelSettingsTarget) {
@@ -469,7 +471,11 @@ export function Workbench({
 
   return (
     <main className="workbench" aria-label="opencow 工作台">
-      <Sidebar activeView={activeView} onSelectView={handleSelectView} />
+      <Sidebar
+        activeView={activeView}
+        onSelectView={handleSelectView}
+        onNewConversation={handleNewConversationClick}
+      />
       <section className="workbench-main">
         {isChatView ? (
           <MainConversation

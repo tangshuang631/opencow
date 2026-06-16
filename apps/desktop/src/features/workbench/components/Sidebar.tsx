@@ -3,6 +3,7 @@ import {
   Database,
   FileClock,
   Folder,
+  MessageSquare,
   MessageSquarePlus,
   Search,
   Settings,
@@ -34,9 +35,10 @@ export type WorkbenchViewId =
 type SidebarProps = {
   activeView: WorkbenchViewId;
   onSelectView: (viewId: WorkbenchViewId) => void;
+  onNewConversation: () => void;
 };
 
-export function Sidebar({ activeView, onSelectView }: SidebarProps) {
+export function Sidebar({ activeView, onSelectView, onNewConversation }: SidebarProps) {
   return (
     <aside className="sidebar glass-gradient-sidebar-left" aria-label="主导航">
       <button
@@ -44,6 +46,15 @@ export function Sidebar({ activeView, onSelectView }: SidebarProps) {
         className={`sidebar-primary ${activeView === "chat" ? "sidebar-item-active" : ""}`}
         type="button"
         onClick={() => onSelectView("chat")}
+      >
+        <MessageSquare aria-hidden="true" size={18} />
+        会话
+      </button>
+      <button
+        aria-pressed="false"
+        className="sidebar-primary"
+        type="button"
+        onClick={onNewConversation}
       >
         <MessageSquarePlus aria-hidden="true" size={18} />
         新对话

@@ -65,7 +65,7 @@ describe("Workbench", () => {
     expect(screen.getByText("导入、索引和检索本地长文档，后续会接入 doc、md、pptx 等工作区内容。")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
@@ -93,10 +93,10 @@ describe("Workbench", () => {
       expect(screen.queryByLabelText("会话")).not.toBeInTheDocument();
     }
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新对话" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("routes missing model setup actions into the matching settings section", () => {
@@ -114,7 +114,7 @@ describe("Workbench", () => {
     expect(within(settingsPanel).getByRole("heading", { name: "Ollama 设置" })).toBeInTheDocument();
     expect(within(settingsPanel).getByText(/connection refused on 127\.0\.0\.1:11434/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
     fireEvent.click(screen.getByRole("button", { name: "配置大模型 API" }));
 
     expect(screen.getByRole("heading", { name: "大模型 API 设置" })).toBeInTheDocument();
@@ -257,6 +257,45 @@ describe("Workbench", () => {
 
     expect(onSubmitTask).toHaveBeenCalledWith("联网搜索一下最新资料");
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新对话" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("does not trigger a new conversation when switching back to chat from another workspace view", () => {
+    const onNewConversation = vi.fn();
+
+    render(<Workbench {...createWorkbenchProps(createInitialWorkbenchState(), { onNewConversation })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    expect(screen.getByLabelText("会话")).toBeInTheDocument();
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers a new conversation only from the explicit new-conversation action", () => {
+    const onNewConversation = vi.fn();
+
+    render(<Workbench {...createWorkbenchProps(createInitialWorkbenchState(), { onNewConversation })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    expect(screen.getByLabelText("会话")).toBeInTheDocument();
+    expect(onNewConversation).toHaveBeenCalledTimes(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("会话")).toBeInTheDocument();
   });
 });
