@@ -4,7 +4,13 @@ import {
   clearKnowledgeImports,
   importKnowledgeFile,
   loadKnowledgeInventory,
+  loadOpenClawCapabilityOverview,
   removeKnowledgeFile
+} from "./localAssistantService";
+import {
+  runControlledFullShellCommand,
+  runReadonlyShellCommand,
+  runWorkspaceWriteShellCommand
 } from "./localAssistantService";
 
 const tauriInternals = "__TAURI_INTERNALS__" as const;
@@ -184,6 +190,91 @@ describe("localAssistantService desktop knowledge inventory", () => {
       indexedDocumentCount: 0,
       registryPath: ".opencow/knowledge/imported-files.json",
       summary: "Knowledge imports cleared."
+    });
+  });
+
+  it("sends snake_case payload keys for desktop capability overview requests", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "openclaw_capability_overview") {
+        capturedPayload = payload;
+        return {
+          capability_id: "rag",
+          title: "OpenClaw RAG capability overview",
+          status: "ready-foundation",
+          required_package_count: 3,
+          available_package_count: 3,
+          available_packages: ["@openclaw/llm-core"],
+          missing_packages: [],
+          summary: "ok"
+        };
+      }
+
+      return null;
+    });
+
+    await loadOpenClawCapabilityOverview("rag");
+
+    expect(capturedPayload).toEqual({
+      capability_id: "rag"
+    });
+  });
+
+  it("sends snake_case payload keys for desktop shell commands", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    const capturedPayloads: Record<string, unknown> = {};
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "workspace_readonly_command") {
+        capturedPayloads.readonly = payload;
+        return {
+          command_id: "git-status",
+          command_label: "git status --short",
+          stdout_preview: " M apps/desktop/src/app/App.tsx",
+          line_count: 1,
+          summary: "ok"
+        };
+      }
+
+      if (cmd === "workspace_write_command") {
+        capturedPayloads.write = payload;
+        return {
+          command_id: "create-temp-output-dir",
+          command_label: "mkdir temp-output",
+          stdout_preview: "temp-output",
+          line_count: 1,
+          summary: "ok"
+        };
+      }
+
+      if (cmd === "controlled_full_command") {
+        capturedPayloads.full = payload;
+        return {
+          command_id: "remove-temp-output-dir",
+          command_label: "Remove-Item temp-output -Recurse -Force",
+          stdout_preview: "temp-output removed",
+          line_count: 1,
+          summary: "ok"
+        };
+      }
+
+      return null;
+    });
+
+    await runReadonlyShellCommand("git-status");
+    await runWorkspaceWriteShellCommand("create-temp-output-dir");
+    await runControlledFullShellCommand("remove-temp-output-dir");
+
+    expect(capturedPayloads.readonly).toEqual({
+      command_id: "git-status"
+    });
+    expect(capturedPayloads.write).toEqual({
+      command_id: "create-temp-output-dir"
+    });
+    expect(capturedPayloads.full).toEqual({
+      command_id: "remove-temp-output-dir"
     });
   });
 });

@@ -572,7 +572,7 @@ export async function loadOpenClawCapabilityOverview(
   }
 
   return invoke<OpenClawCapabilityOverview>("openclaw_capability_overview", {
-    capabilityId
+    capability_id: capabilityId
   });
 }
 
@@ -630,7 +630,7 @@ export async function runReadonlyShellCommand(commandId: ReadonlyShellCommandId)
   }
 
   return invoke<ReadonlyShellCommandResult>("workspace_readonly_command", {
-    commandId
+    command_id: commandId
   });
 }
 
@@ -642,7 +642,7 @@ export async function runWorkspaceWriteShellCommand(
   }
 
   return invoke<WorkspaceWriteShellCommandResult>("workspace_write_command", {
-    commandId
+    command_id: commandId
   });
 }
 
@@ -738,7 +738,7 @@ export async function runControlledFullShellCommand(
   }
 
   return invoke<ControlledFullShellCommandResult>("controlled_full_command", {
-    commandId
+    command_id: commandId
   });
 }
 
