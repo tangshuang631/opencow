@@ -1,6 +1,8 @@
 import { startTransition, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
+  enableLocalSkill,
+  installLocalSkill,
   inspectLocalSkill,
   loadOpenClawCapabilityOverview,
   loadWorkspaceOverview,
@@ -183,6 +185,10 @@ function applyReadonlyTaskResult(
   });
 }
 
+function tokenizeIntent(input: string) {
+  return input.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
+}
+
 export function WebApp() {
   const [state, setState] = useState<WorkbenchState>(() =>
     hydrateWebState(loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState))
@@ -216,6 +222,7 @@ export function WebApp() {
 
   function handleSubmitTask(message: string) {
     const trimmed = message.trim();
+    const intentTokens = tokenizeIntent(trimmed);
 
     if (!trimmed) {
       return;
@@ -357,6 +364,55 @@ export function WebApp() {
           auditDetailLines: result.items
             .slice(0, 3)
             .map((item) => `${item.name} | ${item.enabled ? "enabled" : "disabled"} | ${item.path}`)
+        });
+      });
+      return;
+    }
+
+    if (intentTokens.includes("install") && intentTokens.includes("skill")) {
+      void installLocalSkill(trimmed).then((result) => {
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-install",
+          executionTitle: "本地 Skill 安装结果",
+          executionAuditSummary: "网页端触发了一次本地 Skill 安装预览",
+          executionAuditDetail: `web local skill install: ${trimmed}`,
+          resultTitle: "本地 Skill 安装结果",
+          resultSummary: [
+            `已安装 Skill：${result.installed_skill_name}。`,
+            `安装路径：${result.installed_skill_path}。`,
+            `来源：${result.source_skill_path}。`,
+            `状态：${result.status}。`
+          ].join(" "),
+          auditDetailLines: [
+            `Installed skill: ${result.installed_skill_name}`,
+            `Installed path: ${result.installed_skill_path}`,
+            `Source path: ${result.source_skill_path}`
+          ]
+        });
+      });
+      return;
+    }
+
+    if ((intentTokens.includes("enable") || intentTokens.includes("activate")) && intentTokens.includes("skill")) {
+      void enableLocalSkill(trimmed).then((result) => {
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-enable",
+          executionTitle: "本地 Skill 启用结果",
+          executionAuditSummary: "网页端触发了一次本地 Skill 启用预览",
+          executionAuditDetail: `web local skill enable: ${trimmed}`,
+          resultTitle: "本地 Skill 启用结果",
+          resultSummary: [
+            `已启用 Skill：${result.enabled_skill_name}。`,
+            `注册表：${result.registry_path}。`,
+            `状态：${result.status}。`
+          ].join(" "),
+          auditDetailLines: [
+            `Enabled skill: ${result.enabled_skill_name}`,
+            `Registry path: ${result.registry_path}`,
+            `Enable status: ${result.status}`
+          ]
         });
       });
       return;

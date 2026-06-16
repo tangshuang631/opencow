@@ -264,6 +264,41 @@ describe("WebApp", () => {
     });
   });
 
+  it("shows local skill install result on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "install the gpt-taste skill into this workspace skills folder" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skill 安装结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已安装 Skill：gpt-taste。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/安装路径：skills\/gpt-taste\/SKILL\.md。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/来源：vendor\/openclaw\/skills\/gpt-taste\/SKILL\.md。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/状态：installed。/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows local skill enable result on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "enable the coding-agent skill for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skill 启用结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已启用 Skill：coding-agent。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/状态：enabled。/)).toBeInTheDocument();
+    });
+  });
+
   it("shows readonly npc collaboration preview on web", async () => {
     render(<WebApp />);
 
