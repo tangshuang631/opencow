@@ -2,10 +2,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebApp } from "./WebApp";
 
-const { scanLocalSkillsMock, listEnabledLocalSkillsMock, scanLocalMcpPluginsMock } = vi.hoisted(() => ({
+const { scanLocalSkillsMock, listEnabledLocalSkillsMock, scanLocalMcpPluginsMock, loadOpenClawCapabilityOverviewMock } = vi.hoisted(() => ({
   scanLocalSkillsMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
-  scanLocalMcpPluginsMock: vi.fn()
+  scanLocalMcpPluginsMock: vi.fn(),
+  loadOpenClawCapabilityOverviewMock: vi.fn()
 }));
 const { loadOllamaOverviewMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn()
@@ -20,7 +21,8 @@ vi.mock("../../../desktop/src/features/assistant/localAssistantService", async (
     ...actual,
     scanLocalSkills: scanLocalSkillsMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
-    scanLocalMcpPlugins: scanLocalMcpPluginsMock
+    scanLocalMcpPlugins: scanLocalMcpPluginsMock,
+    loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock
   };
 });
 
@@ -50,6 +52,7 @@ describe("WebApp failure handling", () => {
     scanLocalSkillsMock.mockReset();
     listEnabledLocalSkillsMock.mockReset();
     scanLocalMcpPluginsMock.mockReset();
+    loadOpenClawCapabilityOverviewMock.mockReset();
     loadOllamaOverviewMock.mockReset();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
@@ -62,6 +65,16 @@ describe("WebApp failure handling", () => {
         { name: "gemma4:e4b", sizeLabel: "3.2 GB" },
         { name: "qwen3.5:9b", sizeLabel: "6.6 GB" }
       ]
+    });
+    loadOpenClawCapabilityOverviewMock.mockResolvedValue({
+      capability_id: "skills",
+      title: "Skills",
+      status: "partial-foundation",
+      required_package_count: 2,
+      available_package_count: 1,
+      available_packages: ["@openclaw/plugin-sdk"],
+      missing_packages: ["workspace skill runtime bridge"],
+      summary: "default mock capability overview"
     });
   });
 
@@ -122,6 +135,24 @@ describe("WebApp failure handling", () => {
       expect(scanLocalMcpPluginsMock).toHaveBeenCalledTimes(1);
       expect(conversation.textContent ?? "").toContain("本地 MCP 插件扫描失败");
       expect(conversation.textContent ?? "").toContain("mcp scan bridge unavailable");
+    });
+  });
+
+  it("reports a readable failure when openclaw capability overview loading rejects", async () => {
+    loadOpenClawCapabilityOverviewMock.mockRejectedValueOnce(new Error("openclaw capability bridge unavailable"));
+
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show skills capability overview" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(loadOpenClawCapabilityOverviewMock).toHaveBeenCalledWith("skills");
+      expect(conversation.textContent ?? "").toContain("SKILLS 能力概览读取失败");
+      expect(conversation.textContent ?? "").toContain("openclaw capability bridge unavailable");
     });
   });
 });

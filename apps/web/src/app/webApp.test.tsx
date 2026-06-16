@@ -5,6 +5,21 @@ import { WebApp } from "./WebApp";
 const { loadOllamaOverviewMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn()
 }));
+const { loadOpenClawCapabilityOverviewMock } = vi.hoisted(() => ({
+  loadOpenClawCapabilityOverviewMock: vi.fn()
+}));
+const fetchMock = vi.fn();
+
+vi.mock("../../../desktop/src/features/assistant/localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("../../../desktop/src/features/assistant/localAssistantService")>(
+    "../../../desktop/src/features/assistant/localAssistantService"
+  );
+
+  return {
+    ...actual,
+    loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock
+  };
+});
 
 vi.mock("../../../desktop/src/features/ollama/ollamaService", async () => {
   const actual = await vi.importActual<typeof import("../../../desktop/src/features/ollama/ollamaService")>(
@@ -29,6 +44,8 @@ describe("WebApp", () => {
   beforeEach(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
+    fetchMock.mockReset();
+    loadOpenClawCapabilityOverviewMock.mockReset();
     loadOllamaOverviewMock.mockReset();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
@@ -42,12 +59,30 @@ describe("WebApp", () => {
         { name: "qwen3.5:9b", sizeLabel: "6.6 GB" }
       ]
     });
+    loadOpenClawCapabilityOverviewMock.mockImplementation(async (capabilityId: "rag" | "skills" | "npc" | "mcp") => ({
+      capability_id: capabilityId,
+      title: capabilityId.toUpperCase(),
+      status: capabilityId === "rag" ? "ready-foundation" : "partial-foundation",
+      required_package_count: 3,
+      available_package_count: capabilityId === "rag" ? 3 : 2,
+      available_packages: capabilityId === "skills"
+        ? ["@openclaw/plugin-sdk", "@openclaw/skill-runtime"]
+        : capabilityId === "npc"
+          ? ["@openclaw/llm-runtime", "@openclaw/npc-runtime"]
+          : capabilityId === "mcp"
+            ? ["@openclaw/plugin-sdk", "@openclaw/mcp-registry"]
+            : ["@openclaw/llm-core", "@openclaw/llm-runtime", "@openclaw/model-catalog-core"],
+      missing_packages: capabilityId === "rag" ? [] : [`missing-${capabilityId}-bridge`],
+      summary: `real ${capabilityId} capability summary from openclaw`
+    }));
+    vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
     window.sessionStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   it("loads the current local Ollama models into the web composer", async () => {
@@ -238,6 +273,70 @@ describe("WebApp", () => {
       ).toBeGreaterThanOrEqual(1);
       expect(within(conversation).getAllByText("来源文件：web-history-mvp.md").length).toBe(1);
     });
+  });
+
+  it("answers a long local question with a real Ollama browser-preview response instead of echoing the full input on the right", async () => {
+    const chunks = [
+      {
+        model: "qwen2.5-coder:7b",
+        message: { content: "结论：错误项是 A。\n\n" }
+      },
+      {
+        model: "qwen2.5-coder:7b",
+        message: { content: "理由：m2 中对 x 的一次引用会绑定到 m2 自己定义的 x。" },
+        done_reason: "stop"
+      }
+    ];
+    fetchMock.mockResolvedValue({
+      ok: true,
+      body: new ReadableStream({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(new TextEncoder().encode(`${JSON.stringify(chunk)}\n`));
+          }
+          controller.close();
+        }
+      })
+    });
+
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：web-history-mvp.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：npc-notes.txt" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    const longInput = [
+      "请基于本地知识库回答这个长问题并给出简要解析，重点说明 browser history 在网页端预览里为什么不能自动消失。",
+      "我想确认 web history MVP 是不是要求 recent conversations 一直保留到用户手动删除，",
+      "同时 npc web preview 的说明里是不是也提到 keeps browser history guidance、readonly capability notes 和 staged execution reminders。",
+      "如果这些规则同时成立，请先直接给结论，再用两三句话解释网页端为什么要保留最近会话、知识来源和回查入口，",
+      "不要整段复读我的题干，但要参考 browser history、recent conversations、npc web preview 这些关键词。"
+    ].join(" ");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: longInput }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    const inspector = screen.getByLabelText("右侧面板");
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地模型答复")).toBeInTheDocument();
+      expect(within(conversation).getByText(/结论：错误项是 A。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/理由：m2 中对 x 的一次引用会绑定到 m2 自己定义的 x。/)).toBeInTheDocument();
+      expect(within(conversation).getByText("检索命中")).toBeInTheDocument();
+      expect(within(conversation).getByText("来源文件：npc-notes.txt")).toBeInTheDocument();
+      expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
+      expect(within(conversation).getByRole("button", { name: "只看来源：npc-notes.txt" })).toBeInTheDocument();
+    });
+
+    expect(within(inspector).queryByText("输出")).not.toBeInTheDocument();
+    expect(within(inspector).queryByText(/结论：错误项是 A。/)).not.toBeInTheDocument();
+    expect(within(inspector).queryByText(longInput)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(longInput)).not.toBeInTheDocument();
+    expect(within(conversation).getByRole("button", { name: "展开完整输入" })).toBeInTheDocument();
   });
 
   it("imports a real local md/txt file into the current knowledge library", async () => {
@@ -573,8 +672,11 @@ describe("WebApp", () => {
 
     const conversation = screen.getByRole("region", { name: "会话" });
     await waitFor(() => {
-      expect(within(conversation).getByText("Skills 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText("SKILLS 网页端能力概览")).toBeInTheDocument();
       expect(within(conversation).getByText(/状态：partial-foundation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/可用包：@openclaw\/plugin-sdk、@openclaw\/skill-runtime。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/缺失包：missing-skills-bridge。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/real skills capability summary from openclaw/)).toBeInTheDocument();
       expect(within(conversation).getByText(/样例项：coding-agent、docs-helper。/)).toBeInTheDocument();
       expect(within(conversation).getAllByText(/下一步优先补启用列表、匹配结果和安全确认前置展示。/).length).toBeGreaterThan(0);
     });
@@ -586,6 +688,8 @@ describe("WebApp", () => {
 
     await waitFor(() => {
       expect(within(conversation).getByText("NPC 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/real npc capability summary from openclaw/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/可用包：@openclaw\/llm-runtime、@openclaw\/npc-runtime。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/样例项：课程助手 NPC、文档处理 NPC。/)).toBeInTheDocument();
       expect(within(conversation).getAllByText(/网页端先给出 NPC 的状态、样例角色和协作入口。/).length).toBeGreaterThan(0);
     });
@@ -597,6 +701,8 @@ describe("WebApp", () => {
 
     await waitFor(() => {
       expect(within(conversation).getByText("MCP 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/real mcp capability summary from openclaw/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/缺失包：missing-mcp-bridge。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/样例项：browser、codex-supervisor。/)).toBeInTheDocument();
       expect(within(conversation).getAllByText(/下一步优先补插件扫描结果、激活方式和受控启动预览。/).length).toBeGreaterThan(0);
     });
@@ -721,7 +827,8 @@ describe("WebApp", () => {
 
     const conversation = screen.getByRole("region", { name: "会话" });
     await waitFor(() => {
-      expect(within(conversation).getByText(/状态：ready-foundation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/状态：partial-foundation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/real npc capability summary from openclaw/)).toBeInTheDocument();
       expect(within(conversation).getByText(/已启用 Skills：coding-agent。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/本地上下文：04-permission-safety-shell\.md、OPENCOW_CORE_RULES\.md。/)).toBeInTheDocument();

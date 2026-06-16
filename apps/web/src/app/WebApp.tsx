@@ -31,6 +31,7 @@ import {
   restoreRecentConversationState
 } from "../../../desktop/src/features/workbench/workbenchState";
 import { loadOllamaOverview } from "../../../desktop/src/features/ollama/ollamaService";
+import { chatWithOllamaModel } from "../../../desktop/src/features/ollama/ollamaService";
 import type {
   AvailableKnowledgeFile,
   ImportedKnowledgeFile,
@@ -286,18 +287,68 @@ function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKn
   ].join(" ");
 }
 
+function isLongWebPrompt(message: string) {
+  return normalizePrompt(message).length > 220;
+}
+
+function normalizePrompt(message: string) {
+  return message.replace(/\s+/g, " ").trim();
+}
+
+function resolveUsableWebChatModel(state: WorkbenchState) {
+  const activeModel = state.model.activeModel.trim();
+
+  if (activeModel && activeModel !== "未选择模型") {
+    return activeModel;
+  }
+
+  return state.model.availableModels[0]?.name ?? "";
+}
+
+function createWebLocalChatPrompt(message: string, libraryLabel: string, result: ReturnType<typeof searchWebKnowledge>) {
+  const hitLines = result.items.slice(0, 3).map((item, index) => (
+    `${index + 1}. ${item.title}: ${item.snippet}`
+  ));
+
+  return [
+    "你是 OpenCow 网页端的本地助手。",
+    "请优先用中文直接回答用户问题，先给结论，再给简要解析。",
+    "如果题目较长，请自行提炼重点，不要原样复读整段题干。",
+    "如果下方提供了本地知识命中，可按需参考；如果不相关，就忽略它们。",
+    "",
+    `当前知识库：${libraryLabel}`,
+    `用户问题：${message}`,
+    hitLines.length > 0 ? `本地知识命中：\n${hitLines.join("\n")}` : "本地知识命中：暂无明确命中"
+  ].join("\n");
+}
+
+function createWebLocalChatAuditDetailLines(
+  modelName: string,
+  result: ReturnType<typeof searchWebKnowledge>,
+  doneReason?: string
+) {
+  const topPaths = formatTopKnowledgeSources(result);
+
+  return [
+    `Ollama model: ${modelName}`,
+    `Knowledge library sources: ${topPaths}`,
+    `Indexed documents: ${result.indexed_document_count}`,
+    `Ollama done reason: ${doneReason ?? "stop"}`
+  ];
+}
+
 function formatTopKnowledgeSources(result: ReturnType<typeof searchWebKnowledge>) {
   return result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
 }
 
-function createWebCapabilityResultSummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
-  const overview = loadWebCapabilityOverview(capabilityId);
+function createWebCapabilityResultSummary(overview: Awaited<ReturnType<typeof loadWebCapabilityOverview>>) {
   const availableLine = overview.available_packages.join("、") || "无";
   const missingLine = overview.missing_packages.join("、") || "无";
   const sampleLine = overview.sampleItems.join("、") || "暂无";
 
   return [
     `状态：${overview.status}。`,
+    overview.summary,
     `可用包：${availableLine}。`,
     `缺失包：${missingLine}。`,
     `样例项：${sampleLine}。`,
@@ -485,23 +536,29 @@ export function WebApp() {
   }, []);
 
   function setReadonlyCapabilitySummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
-    const overview = loadWebCapabilityOverview(capabilityId);
+    const capabilityLabel = capabilityId.toUpperCase();
 
-    applyReadonlyTaskResult(setState, {
-      message: `查看 ${overview.title} 网页端能力概览`,
+    executeReadonlyAsyncTask(setState, {
+      message: `查看 ${capabilityLabel} 网页端能力概览`,
       executionKind: `capability-${capabilityId}-overview`,
-      executionTitle: `${overview.title} 能力概览`,
-      executionAuditSummary: `查看 ${overview.title} 网页端能力概览`,
+      executionTitle: `${capabilityLabel} 能力概览`,
+      executionAuditSummary: `查看 ${capabilityLabel} 网页端能力概览`,
       executionAuditDetail: `web capability overview: ${capabilityId}`,
-      resultTitle: `${overview.title} 网页端能力概览`,
-      resultSummary: createWebCapabilityResultSummary(capabilityId),
-      auditDetailLines: [
-        `Capability status: ${overview.status}`,
-        `Available packages: ${overview.available_packages.join(", ") || "(none)"}`,
-        `Missing packages: ${overview.missing_packages.join(", ") || "(none)"}`,
-        `Sample items: ${overview.sampleItems.join(", ") || "(none)"}`,
-        `Next step: ${overview.nextStep}`
-      ]
+      failureSummary: `${capabilityLabel} 能力概览读取失败`,
+      failureActionLabel: `请先检查 openclaw ${capabilityLabel} 能力桥接、本地 vendor 适配和网页端只读入口，再重试。`,
+      failureSource: `web_capability_${capabilityId}_overview`,
+      run: () => loadWebCapabilityOverview(capabilityId),
+      onSuccess: (overview) => ({
+        resultTitle: `${overview.title} 网页端能力概览`,
+        resultSummary: createWebCapabilityResultSummary(overview),
+        auditDetailLines: [
+          `Capability status: ${overview.status}`,
+          `Available packages: ${overview.available_packages.join(", ") || "(none)"}`,
+          `Missing packages: ${overview.missing_packages.join(", ") || "(none)"}`,
+          `Sample items: ${overview.sampleItems.join(", ") || "(none)"}`,
+          `Next step: ${overview.nextStep}`
+        ]
+      })
     });
   }
 
@@ -1081,23 +1138,71 @@ export function WebApp() {
       return;
     }
 
-    startTransition(() => {
-      setState((current) => {
-        const queued = createUserTaskSubmittedState(current, {
-          message: trimmed,
-          executionKind: "local-model-chat",
-          executionTitle: "网页端本地会话",
-          executionAuditSummary: "网页端提交了一条本地优先会话任务",
-          executionAuditDetail: `web local-first chat: ${trimmed}`
-        });
-        const started = createTaskExecutionStartedState(queued);
+    if (!isLongWebPrompt(trimmed)) {
+      startTransition(() => {
+        setState((current) => {
+          const queued = createUserTaskSubmittedState(current, {
+            message: trimmed,
+            executionKind: "local-model-chat",
+            executionTitle: "网页端本地会话",
+            executionAuditSummary: "网页端提交了一条本地优先会话任务",
+            executionAuditDetail: `web local-first chat: ${trimmed}`
+          });
+          const started = createTaskExecutionStartedState(queued);
 
-        return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
-          resultTitle: "网页端本地会话答复",
-          resultSummary: `已为网页端保留这段上下文：${trimmed}`,
-          auditDetailLines: ["Web MVP keeps browser history, recent sessions, and local knowledge context."]
-        }));
+          return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
+            resultTitle: "网页端本地会话答复",
+            resultSummary: `已为网页端保留这段上下文：${trimmed}`,
+            auditDetailLines: ["Web MVP keeps browser history, recent sessions, and local knowledge context."]
+          }));
+        });
       });
+      return;
+    }
+
+    executeReadonlyAsyncTask(setState, {
+      message: trimmed,
+      executionKind: "local-model-chat",
+      executionTitle: "网页端本地会话",
+      executionAuditSummary: "网页端提交了一条本地优先会话任务",
+      executionAuditDetail: `web local-first chat: ${trimmed}`,
+      failureSummary: "网页端本地会话失败",
+      failureActionLabel: "请先检查本机 Ollama 服务、当前已选模型和本地网络回环访问，再重试这条长文本请求。",
+      failureSource: "web_local_model_chat",
+      run: async () => {
+        const browserRecord = webKnowledgeRecordRef.current;
+        const activeLibraryLabel =
+          browserRecord.libraries.find((library) => library.id === browserRecord.activeLibraryId)?.label
+          ?? "默认知识库";
+        const ragResult = searchWebKnowledge(trimmed, browserRecord);
+        let activeModel = resolveUsableWebChatModel(state);
+
+        if (!activeModel) {
+          const overview = await loadOllamaOverview();
+          activeModel = overview.selectedModel.trim() || overview.models[0]?.name || "";
+        }
+
+        const chatResult = await chatWithOllamaModel({
+          model: activeModel,
+          message: createWebLocalChatPrompt(trimmed, activeLibraryLabel, ragResult)
+        });
+
+        return {
+          activeLibraryLabel,
+          ragResult,
+          chatResult,
+          activeModel
+        };
+      },
+      onSuccess: ({ activeLibraryLabel, ragResult, chatResult, activeModel }) => ({
+        resultTitle: "本地模型答复",
+        resultSummary: chatResult.message,
+        auditDetailLines: [
+          `Knowledge library: ${activeLibraryLabel}`,
+          ...createKnowledgeHitAuditDetailLines(ragResult),
+          ...createWebLocalChatAuditDetailLines(activeModel, ragResult, chatResult.doneReason)
+        ]
+      })
     });
   }
 

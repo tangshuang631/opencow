@@ -94,6 +94,7 @@ const TEXT = {
 
 const MAX_LOCAL_TASK_ATTEMPTS = 3;
 const LONG_TASK_SUMMARY_LIMIT = 120;
+const LONG_OUTPUT_SUMMARY_LIMIT = 220;
 const PENDING_APPROVAL_TEXT_LIMIT = 260;
 const EMPTY_OUTPUT_TITLE = "暂无产物";
 const EMPTY_OUTPUT_SUMMARY = "等待工具执行结果或本地产物摘要。";
@@ -364,7 +365,13 @@ function isNpcConfigModelFailure(detail: string) {
 
 function getConciseVisibleOutputSummary(summary: string) {
   if (!summary.includes("Previous failure ")) {
-    return summary;
+    const normalized = normalizeWorkbenchText(summary).replace(/\s+/g, " ").trim();
+
+    if (normalized.length <= LONG_OUTPUT_SUMMARY_LIMIT) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, LONG_OUTPUT_SUMMARY_LIMIT).trim()}... 详细内容请查看左侧会话。`;
   }
 
   const pendingCountMatch = summary.match(/^当前有\s+\d+\s+条待处理任务/);
