@@ -175,4 +175,41 @@ describe("WebApp", () => {
       expect(within(conversation).getAllByText(/下一步优先补插件扫描结果、激活方式和受控启动预览。/).length).toBeGreaterThan(0);
     });
   });
+
+  it("shows readonly local skills scan, enabled list, and detail results on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "scan local skills for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/扫描到 3 个本地 Skills，覆盖 2 个扫描根目录。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/已启用项：coding-agent。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show enabled skills for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText(/当前启用 1 个本地 Skill。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show details for the coding-agent skill" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText(/找到 1 个匹配 Skill，覆盖 2 个扫描根目录。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/匹配项：coding-agent。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/启用状态：已启用。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/内容预览：Use this skill when implementing focused coding tasks/)).toBeInTheDocument();
+    });
+  });
 });

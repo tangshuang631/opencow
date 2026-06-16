@@ -1,4 +1,10 @@
 import { startTransition, useEffect, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import {
+  inspectLocalSkill,
+  listEnabledLocalSkills,
+  scanLocalSkills
+} from "../../../desktop/src/features/assistant/localAssistantService";
 import { Workbench } from "../../../desktop/src/features/workbench/Workbench";
 import {
   createInitialWorkbenchState,
@@ -133,6 +139,39 @@ function createWebCapabilityResultSummary(capabilityId: "rag" | "skills" | "npc"
   ].join(" ");
 }
 
+function applyReadonlyTaskResult(
+  setState: Dispatch<SetStateAction<WorkbenchState>>,
+  payload: {
+    message: string;
+    executionKind: string;
+    executionTitle: string;
+    executionAuditSummary: string;
+    executionAuditDetail: string;
+    resultTitle: string;
+    resultSummary: string;
+    auditDetailLines: string[];
+  }
+) {
+  startTransition(() => {
+    setState((current) => {
+      const queued = createUserTaskSubmittedState(current, {
+        message: payload.message,
+        executionKind: payload.executionKind as never,
+        executionTitle: payload.executionTitle,
+        executionAuditSummary: payload.executionAuditSummary,
+        executionAuditDetail: payload.executionAuditDetail
+      });
+      const started = createTaskExecutionStartedState(queued);
+
+      return createTaskExecutionSucceededState(started, {
+        resultTitle: payload.resultTitle,
+        resultSummary: payload.resultSummary,
+        auditDetailLines: payload.auditDetailLines
+      });
+    });
+  });
+}
+
 export function WebApp() {
   const [state, setState] = useState<WorkbenchState>(() =>
     hydrateWebState(loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState))
@@ -146,29 +185,21 @@ export function WebApp() {
   function setReadonlyCapabilitySummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
     const overview = loadWebCapabilityOverview(capabilityId);
 
-    startTransition(() => {
-      setState((current) => {
-        const queued = createUserTaskSubmittedState(current, {
-          message: `查看 ${overview.title} 网页端能力概览`,
-          executionKind: `capability-${capabilityId}-overview` as never,
-          executionTitle: `${overview.title} 能力概览`,
-          executionAuditSummary: `查看 ${overview.title} 网页端能力概览`,
-          executionAuditDetail: `web capability overview: ${capabilityId}`
-        });
-        const started = createTaskExecutionStartedState(queued);
-
-        return createTaskExecutionSucceededState(started, {
-          resultTitle: `${overview.title} 网页端能力概览`,
-          resultSummary: createWebCapabilityResultSummary(capabilityId),
-          auditDetailLines: [
-            `Capability status: ${overview.status}`,
-            `Available packages: ${overview.available_packages.join(", ") || "(none)"}`,
-            `Missing packages: ${overview.missing_packages.join(", ") || "(none)"}`,
-            `Sample items: ${overview.sampleItems.join(", ") || "(none)"}`,
-            `Next step: ${overview.nextStep}`
-          ]
-        });
-      });
+    applyReadonlyTaskResult(setState, {
+      message: `查看 ${overview.title} 网页端能力概览`,
+      executionKind: `capability-${capabilityId}-overview`,
+      executionTitle: `${overview.title} 能力概览`,
+      executionAuditSummary: `查看 ${overview.title} 网页端能力概览`,
+      executionAuditDetail: `web capability overview: ${capabilityId}`,
+      resultTitle: `${overview.title} 网页端能力概览`,
+      resultSummary: createWebCapabilityResultSummary(capabilityId),
+      auditDetailLines: [
+        `Capability status: ${overview.status}`,
+        `Available packages: ${overview.available_packages.join(", ") || "(none)"}`,
+        `Missing packages: ${overview.missing_packages.join(", ") || "(none)"}`,
+        `Sample items: ${overview.sampleItems.join(", ") || "(none)"}`,
+        `Next step: ${overview.nextStep}`
+      ]
     });
   }
 
@@ -180,6 +211,98 @@ export function WebApp() {
     }
 
     const normalized = trimmed.toLowerCase();
+
+    if (normalized.includes("scan local skills")) {
+      void scanLocalSkills().then((result) => {
+        const topSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无可展示样例";
+        const enabledSkills =
+          result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join("、") || "暂无";
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-scan",
+          executionTitle: "本地 Skills 扫描",
+          executionAuditSummary: "网页端触发了一次本地 Skills 扫描",
+          executionAuditDetail: `web local skills scan: ${trimmed}`,
+          resultTitle: "本地 Skills 扫描",
+          resultSummary: [
+            `扫描到 ${result.total_count} 个本地 Skills，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+            `样例 Skills：${topSkills}。`,
+            `已启用项：${enabledSkills}。`
+          ].join(" "),
+          auditDetailLines: result.items
+            .slice(0, 3)
+            .map((item) => `${item.name} | ${item.enabled ? "enabled" : "disabled"} | ${item.path}`)
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("enabled skills")) {
+      void listEnabledLocalSkills().then((result) => {
+        const listedSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-enabled-list",
+          executionTitle: "已启用本地 Skills",
+          executionAuditSummary: "网页端查看已启用本地 Skills",
+          executionAuditDetail: `web enabled local skills list: ${trimmed}`,
+          resultTitle: "已启用本地 Skills",
+          resultSummary: [
+            `当前启用 ${result.total_count} 个本地 Skill。`,
+            `注册表：${result.registry_path}。`,
+            `已启用项：${listedSkills}。`
+          ].join(" "),
+          auditDetailLines: result.items
+            .slice(0, 3)
+            .map((item) => `${item.name} | ${item.source} | ${item.path}`)
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("details") && normalized.includes("skill")) {
+      void inspectLocalSkill(trimmed).then((result) => {
+        const topMatch = result.items[0];
+
+        if (!topMatch) {
+          applyReadonlyTaskResult(setState, {
+            message: trimmed,
+            executionKind: "skills-local-inspect",
+            executionTitle: "本地 Skill 详情",
+            executionAuditSummary: "网页端查看本地 Skill 详情",
+            executionAuditDetail: `web local skill inspect: ${trimmed}`,
+            resultTitle: "本地 Skill 详情",
+            resultSummary: `未找到匹配 Skill。检索问题：${result.query}。`,
+            auditDetailLines: ["No matching local skill found in browser preview."]
+          });
+          return;
+        }
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-inspect",
+          executionTitle: "本地 Skill 详情",
+          executionAuditSummary: "网页端查看本地 Skill 详情",
+          executionAuditDetail: `web local skill inspect: ${trimmed}`,
+          resultTitle: "本地 Skill 详情",
+          resultSummary: [
+            `找到 ${result.match_count} 个匹配 Skill，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+            `匹配项：${topMatch.name}。`,
+            `启用状态：${topMatch.enabled ? "已启用" : "未启用"}。`,
+            `说明：${topMatch.description}。`,
+            `内容预览：${topMatch.content_preview}`
+          ].join(" "),
+          auditDetailLines: [
+            `Skill path: ${topMatch.path}`,
+            `Skill source: ${topMatch.source}`,
+            `Skill enabled: ${topMatch.enabled ? "yes" : "no"}`
+          ]
+        });
+      });
+      return;
+    }
 
     if (normalized.includes("rag")) {
       setReadonlyCapabilitySummary("rag");
