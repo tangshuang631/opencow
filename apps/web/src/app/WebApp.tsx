@@ -1,6 +1,7 @@
 import { startTransition, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
+  disableLocalSkill,
   enableLocalSkill,
   installLocalSkill,
   inspectLocalSkill,
@@ -412,6 +413,75 @@ export function WebApp() {
             `Enabled skill: ${result.enabled_skill_name}`,
             `Registry path: ${result.registry_path}`,
             `Enable status: ${result.status}`
+          ]
+        });
+      });
+      return;
+    }
+
+    if ((intentTokens.includes("disable") || intentTokens.includes("deactivate")) && intentTokens.includes("skill")) {
+      void disableLocalSkill(trimmed).then((result) => {
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-disable",
+          executionTitle: "本地 Skill 禁用结果",
+          executionAuditSummary: "网页端触发了一次本地 Skill 禁用预览",
+          executionAuditDetail: `web local skill disable: ${trimmed}`,
+          resultTitle: "本地 Skill 禁用结果",
+          resultSummary: [
+            `已禁用 Skill：${result.disabled_skill_name}。`,
+            `注册表：${result.registry_path}。`,
+            `状态：${result.status}。`
+          ].join(" "),
+          auditDetailLines: [
+            `Disabled skill: ${result.disabled_skill_name}`,
+            `Registry path: ${result.registry_path}`,
+            `Disable status: ${result.status}`
+          ]
+        });
+      });
+      return;
+    }
+
+    if (
+      normalized.includes("which enabled skill")
+      || normalized.includes("recommend an enabled skill")
+      || normalized.includes("match this task against enabled skills")
+    ) {
+      void matchEnabledLocalSkills(trimmed).then((result) => {
+        const topMatch = result.items[0];
+
+        if (!topMatch) {
+          applyReadonlyTaskResult(setState, {
+            message: trimmed,
+            executionKind: "skills-local-enabled-match",
+            executionTitle: "已启用 Skill 推荐",
+            executionAuditSummary: "网页端查看已启用 Skill 推荐",
+            executionAuditDetail: `web enabled local skill match: ${trimmed}`,
+            resultTitle: "已启用 Skill 推荐",
+            resultSummary: `未找到匹配的已启用 Skill。注册表：${result.registry_path}。`,
+            auditDetailLines: ["No matching enabled local skill found in browser preview."]
+          });
+          return;
+        }
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "skills-local-enabled-match",
+          executionTitle: "已启用 Skill 推荐",
+          executionAuditSummary: "网页端查看已启用 Skill 推荐",
+          executionAuditDetail: `web enabled local skill match: ${trimmed}`,
+          resultTitle: "已启用 Skill 推荐",
+          resultSummary: [
+            `从 ${result.enabled_skill_count} 个已启用 Skill 中找到 ${result.match_count} 个推荐项。`,
+            `推荐 Skill：${topMatch.name}。`,
+            `注册表：${result.registry_path}。`,
+            `内容预览：${topMatch.content_preview}`
+          ].join(" "),
+          auditDetailLines: [
+            `Recommended skill: ${topMatch.name}`,
+            `Registry path: ${result.registry_path}`,
+            `Enabled skill count: ${result.enabled_skill_count}`
           ]
         });
       });

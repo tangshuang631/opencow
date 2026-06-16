@@ -299,6 +299,43 @@ describe("WebApp", () => {
     });
   });
 
+  it("shows local skill disable result on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "disable the coding-agent skill for this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skill 禁用结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已禁用 Skill：coding-agent。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/状态：disabled。/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows enabled local skill match result on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "which enabled skill should handle shell automation in this workspace" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("已启用 Skill 推荐")).toBeInTheDocument();
+      expect(within(conversation).getByText(/从 1 个已启用 Skill 中找到 1 个推荐项。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/推荐 Skill：shell-automation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
+      expect(
+        within(conversation).getByText(/内容预览：Use this skill when the task needs shell automation with local safety rails\./)
+      ).toBeInTheDocument();
+    });
+  });
+
   it("shows readonly npc collaboration preview on web", async () => {
     render(<WebApp />);
 
