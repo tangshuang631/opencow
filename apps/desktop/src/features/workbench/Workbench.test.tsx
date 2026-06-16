@@ -58,6 +58,16 @@ describe("Workbench", () => {
   it("switches the main workspace content when a sidebar item is selected", () => {
     const state = {
       ...createInitialWorkbenchState(),
+      conversation: {
+        entries: [
+          {
+            id: "current-session-entry",
+            kind: "user" as const,
+            title: "用户",
+            summary: "当前正在查看的会话"
+          }
+        ]
+      },
       history: {
         lastNonEmptyConversationEntries: [],
         recentConversations: [
@@ -94,6 +104,7 @@ describe("Workbench", () => {
     expect(screen.getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
     expect(screen.getByText("网页端历史修复上下文")).toBeInTheDocument();
     expect(screen.getByText("这里应该显示最近会话摘要。")).toBeInTheDocument();
+    expect(screen.getByText("当前会话")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
 

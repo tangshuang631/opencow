@@ -129,4 +129,45 @@ describe("createNewConversationState", () => {
       (entry) => entry.summary === "请把这段会话放进最近历史"
     )).toBe(true);
   });
+
+  it("keeps the newest recent conversation at the top of the history list", () => {
+    const initial = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-conversation-old",
+            title: "更早的最近会话",
+            summary: "这条应该被新会话顶到后面。",
+            entries: [
+              {
+                id: "old-entry",
+                kind: "user" as const,
+                title: "用户",
+                summary: "更早的最近会话"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    const completed = createTaskExecutionSucceededState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(initial, {
+          message: "新的最近会话应该排在最前面"
+        })
+      ),
+      {
+        resultTitle: "新的最近会话结果",
+        resultSummary: "这条最近会话应该成为列表第一项。"
+      }
+    );
+
+    const next = createNewConversationState(completed);
+
+    expect(next.history.recentConversations[0]?.title).toContain("新的最近会话应该排在最前面");
+    expect(next.history.recentConversations[1]?.title).toBe("更早的最近会话");
+  });
 });

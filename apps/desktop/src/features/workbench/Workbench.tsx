@@ -103,6 +103,18 @@ function RecentConversationsPanel({
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
 }) {
+  const currentConversationEntries = state.conversation.entries.filter((entry) => entry.kind !== "system");
+  const currentConversationNewestFirst = currentConversationEntries.slice().reverse();
+  const currentConversationLatestUserEntry = currentConversationNewestFirst.find((entry) => entry.kind === "user");
+  const currentConversationLatestAssistantEntry = currentConversationNewestFirst.find((entry) => entry.kind === "assistant");
+  const currentConversationTitle = currentConversationLatestUserEntry?.summary.trim()
+    || currentConversationLatestAssistantEntry?.title.trim()
+    || "当前会话";
+  const currentConversationSummary = currentConversationLatestAssistantEntry?.summary.trim()
+    || currentConversationLatestUserEntry?.summary.trim()
+    || "你当前正在进行的会话会在这里保留，直到你手动删除。";
+  const hasCurrentConversation = currentConversationEntries.length > 0;
+
   return (
     <section className="workspace-panel" aria-label="最近会话">
       <header className="workspace-panel-header">
@@ -110,6 +122,18 @@ function RecentConversationsPanel({
         <p>在这里恢复、查看和删除本地保留的最近对话，不需要先切回空白会话页。</p>
       </header>
       <div className="workspace-panel-list">
+        {hasCurrentConversation ? (
+          <div className="workspace-history-card workspace-history-card-current">
+            <div className="workspace-history-card-meta">
+              <span className="workspace-history-badge">当前会话</span>
+              <span className="workspace-history-meta-text">
+                {currentConversationEntries.length} 条消息
+              </span>
+            </div>
+            <p>{currentConversationTitle}</p>
+            <p className="muted">{currentConversationSummary}</p>
+          </div>
+        ) : null}
         {state.history.recentConversations.length === 0 ? (
           <p>还没有可恢复的最近会话。继续使用 opencow 后，新的非空会话会自动出现在这里。</p>
         ) : state.history.recentConversations.map((record) => (

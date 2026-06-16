@@ -108,6 +108,7 @@ describe("App workbench persistence", () => {
 
     const clearedConversation = getConversationRegion();
     await waitFor(() => {
+      expect(within(clearedConversation).queryByText("最近会话")).not.toBeInTheDocument();
       expect(within(clearedConversation).queryByText("生成一条会被清空的历史")).not.toBeInTheDocument();
       expect(within(clearedConversation).queryByText("这条历史稍后应该被手动清掉。")).not.toBeInTheDocument();
     });
@@ -119,6 +120,7 @@ describe("App workbench persistence", () => {
 
     const restoredConversation = getConversationRegion();
     await waitFor(() => {
+      expect(within(restoredConversation).queryByText("最近会话")).not.toBeInTheDocument();
       expect(within(restoredConversation).queryByText("生成一条会被清空的历史")).not.toBeInTheDocument();
       expect(within(restoredConversation).queryByText("这条历史稍后应该被手动清掉。")).not.toBeInTheDocument();
     });
@@ -201,7 +203,8 @@ describe("App workbench persistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "新对话" }));
 
     await waitFor(() => {
-      expect(within(getConversationRegion()).queryByText("请保留这次会话历史")).not.toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText("最近会话")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText("请保留这次会话历史")).toBeInTheDocument();
     });
 
     firstRender.unmount();
@@ -238,7 +241,7 @@ describe("App workbench persistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "新对话" }));
 
     await waitFor(() => {
-      expect(screen.getByText("最近会话")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "恢复这段会话" }));
@@ -272,7 +275,7 @@ describe("App workbench persistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "新对话" }));
 
     await waitFor(() => {
-      expect(screen.getByText("最近会话")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "删除这段会话" }));

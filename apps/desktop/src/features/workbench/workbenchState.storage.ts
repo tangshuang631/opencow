@@ -92,17 +92,21 @@ function buildCleanupState(
     nextStorage.knowledgeCount = 0;
   }
 
-  return {
-    ...nextState,
-    conversation: {
-      entries: prependConversationEntry(nextState.conversation.entries, {
+  const nextConversationEntries = target === "conversation"
+    ? []
+    : prependConversationEntry(nextState.conversation.entries, {
         id: `storage-cleanup-${target}`,
         kind: "system",
         title,
         summary: `${labelForSummary(target)}已完成，可继续安全执行本地任务。`,
         actionLabel: "预览回退到 启动基线",
         rollbackTargetId: "startup-baseline"
-      })
+      });
+
+  return {
+    ...nextState,
+    conversation: {
+      entries: nextConversationEntries
     },
     history: {
       lastNonEmptyConversationEntries: target === "conversation"
