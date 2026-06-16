@@ -1,5 +1,11 @@
 export type WebKnowledgeRecord = {
   activeLibraryId: string;
+  customFiles: Array<{
+    path: string;
+    title: string;
+    status: "ready" | "missing";
+    content: string;
+  }>;
   libraries: Array<{
     id: string;
     label: string;
@@ -22,6 +28,7 @@ export function readWebKnowledgeRecord(): WebKnowledgeRecord {
   if (!isBrowserStorageAvailable()) {
     return {
       activeLibraryId: "default-library",
+      customFiles: [],
       libraries: [
         {
           id: "default-library",
@@ -37,6 +44,7 @@ export function readWebKnowledgeRecord(): WebKnowledgeRecord {
   if (!candidate) {
     return {
       activeLibraryId: "default-library",
+      customFiles: [],
       libraries: [
         {
           id: "default-library",
@@ -58,11 +66,16 @@ export function readWebKnowledgeRecord(): WebKnowledgeRecord {
     };
 
     if (Array.isArray(parsed.libraries) && typeof parsed.activeLibraryId === "string") {
-      return parsed as WebKnowledgeRecord;
+      return {
+        activeLibraryId: parsed.activeLibraryId,
+        customFiles: parsed.customFiles ?? [],
+        libraries: parsed.libraries
+      } as WebKnowledgeRecord;
     }
 
     return {
       activeLibraryId: "default-library",
+      customFiles: [],
       libraries: [
         {
           id: "default-library",
@@ -74,6 +87,7 @@ export function readWebKnowledgeRecord(): WebKnowledgeRecord {
   } catch {
     return {
       activeLibraryId: "default-library",
+      customFiles: [],
       libraries: [
         {
           id: "default-library",

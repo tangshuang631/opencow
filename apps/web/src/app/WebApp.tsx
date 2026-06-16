@@ -60,6 +60,12 @@ const WEB_SAMPLE_DOCS: Array<{ path: string; title: string; content: string }> =
   }
 ];
 
+type WebKnowledgeSourceFile = {
+  path: string;
+  title: string;
+  content: string;
+};
+
 type WebKnowledgeLibrary = {
   id: string;
   label: string;
@@ -67,9 +73,21 @@ type WebKnowledgeLibrary = {
   availableFiles: AvailableKnowledgeFile[];
 };
 
+function createKnowledgeSourceFiles(record: WebKnowledgeRecord): WebKnowledgeSourceFile[] {
+  return [
+    ...WEB_SAMPLE_DOCS,
+    ...(record.customFiles ?? []).map((file) => ({
+      path: file.path,
+      title: file.title,
+      content: file.content
+    }))
+  ];
+}
+
 function createDefaultKnowledgeRecord(): WebKnowledgeRecord {
   return {
     activeLibraryId: "default-library",
+    customFiles: [],
     libraries: [
       {
         id: "default-library",
@@ -81,6 +99,7 @@ function createDefaultKnowledgeRecord(): WebKnowledgeRecord {
 }
 
 function createKnowledgeLibraryState(record: WebKnowledgeRecord, libraryId: string): WebKnowledgeLibrary {
+  const sourceFiles = createKnowledgeSourceFiles(record);
   const activeLibrary =
     record.libraries.find((library) => library.id === libraryId)
     ?? record.libraries[0]
@@ -91,7 +110,7 @@ function createKnowledgeLibraryState(record: WebKnowledgeRecord, libraryId: stri
     status: item.status
   }));
   const importedPaths = new Set(importedFiles.map((item) => item.path));
-  const availableFiles = WEB_SAMPLE_DOCS
+  const availableFiles = sourceFiles
     .filter((item) => !importedPaths.has(item.path))
     .map((item) => ({
       path: item.path,
@@ -143,6 +162,20 @@ function createKnowledgeStatePatch(record: WebKnowledgeRecord) {
       libraries: record.libraries
     }
   };
+}
+
+function readTextFileContent(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => reject(reader.error ?? new Error("Failed to read local knowledge file."));
+    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+    reader.readAsText(file);
+  });
 }
 
 function createKnowledgeLibraryId(name: string) {
@@ -878,7 +911,7 @@ export function WebApp() {
     });
   }
 
-  function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
+function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
     if (target === "conversation") {
       void clearPersistedWorkbenchState();
     }
@@ -887,6 +920,7 @@ export function WebApp() {
       const currentRecord = webKnowledgeRecordRef.current;
       const clearedRecord: WebKnowledgeRecord = {
         activeLibraryId: currentRecord.activeLibraryId,
+        customFiles: currentRecord.customFiles,
         libraries: currentRecord.libraries.map((library) => ({
           ...library,
           importedFiles: []
@@ -910,7 +944,8 @@ export function WebApp() {
   }
 
   function handleImportKnowledgeFile(path: string) {
-    const sample = WEB_SAMPLE_DOCS.find((item) => item.path === path);
+    const sourceFiles = createKnowledgeSourceFiles(webKnowledgeRecordRef.current);
+    const sample = sourceFiles.find((item) => item.path === path);
 
     if (!sample) {
       return;
@@ -929,18 +964,20 @@ export function WebApp() {
         ];
         const nextRecord: WebKnowledgeRecord = {
           ...browserRecord,
+          customFiles: browserRecord.customFiles ?? [],
           libraries: browserRecord.libraries.map((library) =>
             library.id === browserRecord.activeLibraryId
               ? {
                   ...library,
                   importedFiles: nextImported.map((item) => {
                     const importedSample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
+                    const customSample = (browserRecord.customFiles ?? []).find((doc) => doc.path === item.path);
 
                     return {
                       path: item.path,
                       title: item.title,
                       status: item.status,
-                      content: importedSample?.content ?? ""
+                      content: importedSample?.content ?? customSample?.content ?? ""
                     };
                   })
                 }
@@ -974,7 +1011,8 @@ export function WebApp() {
   }
 
   function handleRemoveKnowledgeFile(path: string) {
-    const sample = WEB_SAMPLE_DOCS.find((item) => item.path === path);
+    const sourceFiles = createKnowledgeSourceFiles(webKnowledgeRecordRef.current);
+    const sample = sourceFiles.find((item) => item.path === path);
 
     startTransition(() => {
       setState((current) => {
@@ -985,18 +1023,20 @@ export function WebApp() {
           : current.knowledge.availableFiles;
         const nextRecord: WebKnowledgeRecord = {
           ...browserRecord,
+          customFiles: browserRecord.customFiles ?? [],
           libraries: browserRecord.libraries.map((library) =>
             library.id === browserRecord.activeLibraryId
               ? {
                   ...library,
                   importedFiles: nextImported.map((item) => {
                     const importedSample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
+                    const customSample = (browserRecord.customFiles ?? []).find((doc) => doc.path === item.path);
 
                     return {
                       path: item.path,
                       title: item.title,
                       status: item.status,
-                      content: importedSample?.content ?? ""
+                      content: importedSample?.content ?? customSample?.content ?? ""
                     };
                   })
                 }
@@ -1048,6 +1088,92 @@ export function WebApp() {
     });
   }
 
+  function handleImportLocalKnowledgeFile(file: File) {
+    const normalizedName = file.name.trim();
+    const lowerName = normalizedName.toLowerCase();
+
+    if (!normalizedName || (!lowerName.endsWith(".md") && !lowerName.endsWith(".txt"))) {
+      return;
+    }
+
+    void readTextFileContent(file).then((content) => {
+      startTransition(() => {
+        setState((current) => {
+          const browserRecord = webKnowledgeRecordRef.current;
+          const nextPath = `uploads/${normalizedName}`;
+          const nextCustomFile = {
+            path: nextPath,
+            title: normalizedName,
+            status: "ready" as const,
+            content
+          };
+          const nextCustomFiles = [
+            nextCustomFile,
+            ...browserRecord.customFiles.filter((item) => item.path !== nextPath)
+          ];
+          const existingImported = current.knowledge.importedFiles.find((item) => item.path === nextPath);
+          const nextImported = existingImported
+            ? current.knowledge.importedFiles
+            : [
+                ...current.knowledge.importedFiles,
+                {
+                  path: nextPath,
+                  title: normalizedName,
+                  status: "ready" as const
+                }
+              ];
+          const nextRecord: WebKnowledgeRecord = {
+            ...browserRecord,
+            customFiles: nextCustomFiles,
+            libraries: browserRecord.libraries.map((library) =>
+              library.id === browserRecord.activeLibraryId
+                ? {
+                    ...library,
+                    importedFiles: nextImported.map((item) => {
+                      const importedSample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
+                      const customSample = nextCustomFiles.find((doc) => doc.path === item.path);
+
+                      return {
+                        path: item.path,
+                        title: item.title,
+                        status: item.status,
+                        content: importedSample?.content ?? customSample?.content ?? ""
+                      };
+                    })
+                  }
+                : {
+                    ...library,
+                    importedFiles: library.importedFiles.map((item) => {
+                      const updatedCustom = nextCustomFiles.find((doc) => doc.path === item.path);
+
+                      return updatedCustom ? { ...item, content: updatedCustom.content } : item;
+                    })
+                  }
+            )
+          };
+          webKnowledgeRecordRef.current = nextRecord;
+
+          return withKnowledgeRecord({
+            ...current,
+            output: {
+              title: "知识库已更新",
+              summary: `已导入本地文件 ${normalizedName}，后续检索会使用这份真实内容。`
+            },
+            audit: {
+              summary: "网页端知识库已导入本地文件",
+              lastEvent: {
+                module: "knowledge",
+                detail: `imported local file ${nextPath}`,
+                timestamp: "imported",
+                source: "web_knowledge_local_file_import"
+              }
+            }
+          } as WorkbenchState, nextRecord);
+        });
+      });
+    });
+  }
+
   function handleCreateKnowledgeLibrary(name: string) {
     startTransition(() => {
       setState((current) => {
@@ -1066,6 +1192,7 @@ export function WebApp() {
 
         const nextRecord: WebKnowledgeRecord = {
           activeLibraryId: nextLibraryId,
+          customFiles: currentRecord.customFiles ?? [],
           libraries: [
             ...currentRecord.libraries,
             {
@@ -1191,6 +1318,7 @@ export function WebApp() {
       onCreateKnowledgeLibrary={handleCreateKnowledgeLibrary}
       onSelectKnowledgeLibrary={handleSelectKnowledgeLibrary}
       onSubmitTask={handleSubmitTask}
+      onImportLocalKnowledgeFile={handleImportLocalKnowledgeFile}
     />
   );
 }

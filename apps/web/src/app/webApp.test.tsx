@@ -143,6 +143,44 @@ describe("WebApp", () => {
     });
   });
 
+  it("imports a real local md/txt file into the current knowledge library", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const uploadInput = screen.getByLabelText("导入本地 md/txt 文件");
+    const file = new File(
+      ["# 产品规则\n\nOpenCow web upload keeps real project notes searchable."],
+      "product-rules.md",
+      { type: "text/markdown" }
+    );
+
+    fireEvent.change(uploadInput, {
+      target: {
+        files: [file]
+      }
+    });
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 1")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("product-rules.md")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search local knowledge for project notes" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 RAG 文档检索")).toBeInTheDocument();
+      expect(within(conversation).getByText(/找到 1 条匹配片段，已索引 1 个文档。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/主要来源：product-rules\.md。/)).toBeInTheDocument();
+    });
+  });
+
   it("removes imported knowledge files and makes them available for re-import", async () => {
     render(<WebApp />);
 

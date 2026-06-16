@@ -39,6 +39,7 @@ type WorkbenchProps = {
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
   onImportKnowledgeFile: (path: string) => void;
+  onImportLocalKnowledgeFile?: (file: File) => void;
   onRemoveKnowledgeFile: (path: string) => void;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
@@ -190,6 +191,7 @@ function renderKnowledgeFileCard(
 function KnowledgePanel({
   state,
   onImportKnowledgeFile,
+  onImportLocalKnowledgeFile,
   onRemoveKnowledgeFile,
   knowledgeLibraryLabel,
   knowledgeLibraries,
@@ -198,6 +200,7 @@ function KnowledgePanel({
 }: {
   state: WorkbenchState;
   onImportKnowledgeFile: (path: string) => void;
+  onImportLocalKnowledgeFile?: (file: File) => void;
   onRemoveKnowledgeFile: (path: string) => void;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
@@ -269,6 +272,25 @@ function KnowledgePanel({
         {state.knowledge.importedFiles.length === 0 ? (
           <p>还没有已纳入知识库的文件。先从下方候选文件中手动加入。</p>
         ) : state.knowledge.importedFiles.map((file) => renderKnowledgeFileCard(file, onRemoveKnowledgeFile))}
+        <div className="workspace-history-card">
+          <p>导入本地 md/txt 文件</p>
+          <p className="muted">支持把你当前机器上的真实文档直接纳入当前知识库。</p>
+          <input
+            aria-label="导入本地 md/txt 文件"
+            accept=".md,.txt,text/markdown,text/plain"
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+
+              if (!file) {
+                return;
+              }
+
+              onImportLocalKnowledgeFile?.(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </div>
         <p>可导入文件</p>
         {state.knowledge.availableFiles.length === 0 ? (
           <p>当前没有新的可导入文件，稍后可以把更多 md、txt 文档放进工作区。</p>
@@ -638,6 +660,7 @@ export function Workbench({
   onRestoreRecentConversation,
   onDeleteRecentConversation,
   onImportKnowledgeFile,
+  onImportLocalKnowledgeFile,
   onRemoveKnowledgeFile,
   knowledgeLibraryLabel,
   knowledgeLibraries,
@@ -704,6 +727,7 @@ export function Workbench({
           <KnowledgePanel
             state={state}
             onImportKnowledgeFile={onImportKnowledgeFile}
+            onImportLocalKnowledgeFile={onImportLocalKnowledgeFile}
             onRemoveKnowledgeFile={onRemoveKnowledgeFile}
             knowledgeLibraryLabel={knowledgeLibraryLabel}
             knowledgeLibraries={knowledgeLibraries}
