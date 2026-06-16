@@ -23,6 +23,7 @@ import {
   persistWorkbenchState
 } from "../../../desktop/src/features/workbench/workbenchState.persistence";
 import { clearWebKnowledgeRecord, persistWebKnowledgeRecord, readWebKnowledgeRecord } from "./webKnowledgeStorage";
+import { searchWebKnowledge } from "./webKnowledgeSearch";
 import { loadWebCapabilityOverview } from "./webCapabilityService";
 
 const WEB_SAMPLE_DOCS: Array<{ path: string; title: string; content: string }> = [
@@ -34,7 +35,7 @@ const WEB_SAMPLE_DOCS: Array<{ path: string; title: string; content: string }> =
   {
     path: "docs/npc-notes.txt",
     title: "npc-notes.txt",
-    content: "NPC web preview keeps readonly capability guidance and staged execution notes."
+    content: "NPC web preview keeps browser history guidance, readonly capability notes, and staged execution reminders."
   }
 ];
 
@@ -106,6 +107,16 @@ function persistKnowledgeFromState(state: WorkbenchState) {
   });
 }
 
+function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKnowledge>) {
+  const topPaths = result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+  return [
+    `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `主要来源：${topPaths}。`,
+    `检索问题：${result.query}。`
+  ].join(" ");
+}
+
 export function WebApp() {
   const [state, setState] = useState<WorkbenchState>(() =>
     hydrateWebState(loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState))
@@ -169,6 +180,29 @@ export function WebApp() {
 
     if (normalized.includes("mcp")) {
       setReadonlyCapabilitySummary("mcp");
+      return;
+    }
+
+    if (normalized.includes("search local knowledge")) {
+      startTransition(() => {
+        setState((current) => {
+          const queued = createUserTaskSubmittedState(current, {
+            message: trimmed,
+            executionKind: "rag-local-doc-search",
+            executionTitle: "本地 RAG 文档检索",
+            executionAuditSummary: "网页端触发了一次本地知识检索",
+            executionAuditDetail: `web local rag search: ${trimmed}`
+          });
+          const started = createTaskExecutionStartedState(queued);
+          const result = searchWebKnowledge(trimmed);
+
+          return createTaskExecutionSucceededState(started, {
+            resultTitle: "本地 RAG 文档检索",
+            resultSummary: createLocalRagSearchResultSummary(result),
+            auditDetailLines: result.items.slice(0, 3).map((item) => `${item.title}: ${item.snippet}`)
+          });
+        });
+      });
       return;
     }
 

@@ -112,4 +112,28 @@ describe("WebApp", () => {
       expect(within(restoredKnowledgePanel).getByText("npc-notes.txt")).toBeInTheDocument();
     });
   });
+
+  it("searches imported local knowledge and shows a local RAG-style result summary", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：web-history-mvp.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：npc-notes.txt" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search local knowledge for browser history" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 RAG 文档检索")).toBeInTheDocument();
+      expect(within(conversation).getByText(/找到 2 条匹配片段，已索引 2 个文档。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/主要来源：/)).toBeInTheDocument();
+      expect(within(conversation).getAllByText(/npc-notes\.txt/).length).toBeGreaterThan(0);
+      expect(within(conversation).getAllByText(/web-history-mvp\.md/).length).toBeGreaterThan(0);
+      expect(within(conversation).getByText(/检索问题：search local knowledge for browser history。/)).toBeInTheDocument();
+    });
+  });
 });
