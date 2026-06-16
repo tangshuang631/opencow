@@ -98,5 +98,29 @@ describe("workbenchState.persistence", () => {
     await clearPersistedWorkbenchState();
     expect(window.localStorage.getItem("opencow.desktop.workbench-state.v1")).toBeNull();
   });
-});
 
+  it("restores the most recent non-empty conversation after a blank new-conversation state was persisted", async () => {
+    const populatedState = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "keep this history after a blank new conversation"
+    });
+
+    await persistWorkbenchState(populatedState);
+
+    await persistWorkbenchState({
+      ...populatedState,
+      conversation: {
+        entries: []
+      },
+      history: {
+        lastNonEmptyConversationEntries: populatedState.conversation.entries
+      }
+    });
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.conversation.entries.some((entry) => entry.summary === "keep this history after a blank new conversation")).toBe(true);
+    expect(restored.history.lastNonEmptyConversationEntries.some(
+      (entry) => entry.summary === "keep this history after a blank new conversation"
+    )).toBe(true);
+  });
+});

@@ -92,4 +92,17 @@ describe("createNewConversationState", () => {
     expect(next.tasks.items).toHaveLength(2);
     expect(next.audit.lastEvent.detail).toContain("Preserved active local task queue: queued=1, running=1.");
   });
+
+  it("keeps the latest non-empty conversation in history when starting a blank new conversation", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "保留这段历史，供下次恢复"
+    });
+
+    const next = createNewConversationState(submitted);
+
+    expect(next.conversation.entries).toHaveLength(0);
+    expect(next.history.lastNonEmptyConversationEntries.some(
+      (entry) => entry.summary === "保留这段历史，供下次恢复"
+    )).toBe(true);
+  });
 });

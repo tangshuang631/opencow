@@ -101,8 +101,22 @@ function revivePersistedTask(task: LocalTaskItem): LocalTaskItem {
 }
 
 function revivePersistedState(state: WorkbenchState): WorkbenchState {
+  const revivedHistoryEntries =
+    state.history?.lastNonEmptyConversationEntries
+    ?? (state.conversation.entries.length > 0 ? state.conversation.entries : []);
+  const revivedConversationEntries =
+    state.conversation.entries.length > 0
+      ? state.conversation.entries
+      : revivedHistoryEntries;
+
   return {
     ...state,
+    conversation: {
+      entries: revivedConversationEntries
+    },
+    history: {
+      lastNonEmptyConversationEntries: revivedHistoryEntries
+    },
     tasks: revivePersistedTasks(state.tasks),
     confirmation: {
       pending: null
@@ -165,15 +179,23 @@ export function loadPersistedWorkbenchStateFromBrowserStorage(
 }
 
 export async function persistWorkbenchState(state: WorkbenchState) {
-  const payload = createPersistedEnvelope(state);
+  const normalizedState: WorkbenchState = {
+    ...state,
+    history: {
+      lastNonEmptyConversationEntries: state.conversation.entries.length > 0
+        ? state.conversation.entries
+        : state.history.lastNonEmptyConversationEntries
+    }
+  };
+  const normalizedPayload = createPersistedEnvelope(normalizedState);
 
   if (isTauriDesktopAvailable()) {
-    await invoke("workbench_state_save", { payload });
+    await invoke("workbench_state_save", { payload: normalizedPayload });
     clearLegacyBrowserEnvelope();
     return;
   }
 
-  persistLegacyBrowserEnvelope(payload);
+  persistLegacyBrowserEnvelope(normalizedPayload);
 }
 
 export async function clearPersistedWorkbenchState() {

@@ -27,6 +27,9 @@ export function createInitialWorkbenchState(): WorkbenchState {
     conversation: {
       entries: []
     },
+    history: {
+      lastNonEmptyConversationEntries: []
+    },
     rollback: {
       ...createRollbackJournal({
         baselineEntry: createWorkbenchRollbackEntry(

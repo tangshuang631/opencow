@@ -174,6 +174,9 @@ export type WorkbenchState = {
   conversation: {
     entries: ConversationEntry[];
   };
+  history: {
+    lastNonEmptyConversationEntries: ConversationEntry[];
+  };
   rollback: {
     defaultLimit: number;
     activeLimit: number;

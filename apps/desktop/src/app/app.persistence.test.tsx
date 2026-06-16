@@ -177,4 +177,41 @@ describe("App workbench persistence", () => {
     readPersistedSpy.mockRestore();
     persistSpy.mockRestore();
   });
+
+  it("restores the last non-empty conversation after starting a new blank conversation", async () => {
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "这段答复应该在重新进入后继续保留。"
+    });
+
+    const firstRender = render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "请保留这次会话历史" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(screen.getAllByText("请保留这次会话历史").length).toBeGreaterThan(0);
+      expect(screen.getByText("这段答复应该在重新进入后继续保留。")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).queryByText("请保留这次会话历史")).not.toBeInTheDocument();
+    });
+
+    firstRender.unmount();
+
+    render(<App />);
+
+    const restoredConversation = await screen.findByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(restoredConversation).getAllByText("请保留这次会话历史").length).toBeGreaterThan(0);
+      expect(within(restoredConversation).getByText("这段答复应该在重新进入后继续保留。")).toBeInTheDocument();
+    });
+  });
 });

@@ -2781,8 +2781,6 @@ export function App() {
       setState((current) => {
         const nextState = createNewConversationState(createTaskExecutionCancelledState(current));
 
-        void clearPersistedWorkbenchState();
-
         return nextState;
       });
     });

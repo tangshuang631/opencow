@@ -26,11 +26,18 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
     : null;
   const preservedTasks = state.tasks.items.filter((item) => item.status === "queued" || item.status === "running");
   const preservedActiveTaskId = activeTask?.status === "running" ? state.tasks.activeTaskId : null;
+  const preservedConversationEntries = state.conversation.entries.filter((entry) => entry.id !== "conversation-auto-summary");
+  const shouldPreserveConversationHistory = preservedConversationEntries.length > 0;
 
   return {
     ...state,
     conversation: {
       entries: []
+    },
+    history: {
+      lastNonEmptyConversationEntries: shouldPreserveConversationHistory
+        ? state.conversation.entries
+        : state.history.lastNonEmptyConversationEntries
     },
     permission: {
       ...state.permission,

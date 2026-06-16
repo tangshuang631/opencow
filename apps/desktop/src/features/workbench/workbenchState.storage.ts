@@ -104,6 +104,11 @@ function buildCleanupState(
         rollbackTargetId: "startup-baseline"
       })
     },
+    history: {
+      lastNonEmptyConversationEntries: target === "conversation"
+        ? []
+        : nextState.history.lastNonEmptyConversationEntries
+    },
     storage: nextStorage,
     audit: {
       summary: title,
