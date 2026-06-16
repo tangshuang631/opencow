@@ -2,7 +2,11 @@ import { startTransition, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   inspectLocalSkill,
+  loadOpenClawCapabilityOverview,
+  loadWorkspaceOverview,
   listEnabledLocalSkills,
+  matchEnabledLocalSkills,
+  searchLocalKnowledge,
   scanLocalSkills
 } from "../../../desktop/src/features/assistant/localAssistantService";
 import { Workbench } from "../../../desktop/src/features/workbench/Workbench";
@@ -123,6 +127,10 @@ function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKn
   ].join(" ");
 }
 
+function formatTopKnowledgeSources(result: ReturnType<typeof searchWebKnowledge>) {
+  return result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+}
+
 function createWebCapabilityResultSummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
   const overview = loadWebCapabilityOverview(capabilityId);
   const availableLine = overview.available_packages.join("、") || "无";
@@ -211,6 +219,119 @@ export function WebApp() {
     }
 
     const normalized = trimmed.toLowerCase();
+
+    if (normalized.includes("npc collaboration") && normalized.includes("preview the next safe shell step")) {
+      void Promise.all([
+        loadOpenClawCapabilityOverview("npc"),
+        matchEnabledLocalSkills(trimmed),
+        loadWorkspaceOverview()
+      ]).then(async ([npcOverview, skillMatch, workspaceOverview]) => {
+        const topMatch = skillMatch.items[0];
+        const ragResult = await searchLocalKnowledge(trimmed);
+        const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "npc-local-enabled-rag-shell-handoff-preview",
+          executionTitle: "NPC-assisted RAG shell handoff preview",
+          executionAuditSummary: "网页端查看 NPC 协作 RAG shell handoff 预览",
+          executionAuditDetail: `web npc rag shell handoff preview: ${trimmed}`,
+          resultTitle: "NPC-assisted RAG shell handoff preview",
+          resultSummary: [
+            `${npcOverview.summary}`,
+            `状态：${npcOverview.status}。`,
+            `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
+            `注册表：${skillMatch.registry_path}。`,
+            `主要来源：${topPaths}。`,
+            "命令预览：Remove-Item -Recurse -Force temp-output。",
+            `工作区根目录：${workspaceOverview.root_path}。`,
+            "所需权限：controlled-full。",
+            "安全状态：requires-snapshot。"
+          ].join(" "),
+          auditDetailLines: [
+            `NPC status: ${npcOverview.status}`,
+            `Recommended skill: ${topMatch?.name ?? "(none)"}`,
+            `Registry: ${skillMatch.registry_path}`,
+            `Top matches: ${topPaths}`,
+            `Workspace root: ${workspaceOverview.root_path}`
+          ]
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("npc collaboration shell plan")) {
+      void Promise.all([
+        loadOpenClawCapabilityOverview("npc"),
+        matchEnabledLocalSkills(trimmed),
+        loadWorkspaceOverview()
+      ]).then(([npcOverview, skillMatch, workspaceOverview]) => {
+        const topMatch = skillMatch.items[0];
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "npc-local-shell-plan-preview",
+          executionTitle: "NPC shell plan preview",
+          executionAuditSummary: "网页端查看 NPC shell 计划预览",
+          executionAuditDetail: `web npc shell plan preview: ${trimmed}`,
+          resultTitle: "NPC shell plan preview",
+          resultSummary: [
+            `${npcOverview.summary}`,
+            `状态：${npcOverview.status}。`,
+            `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
+            `注册表：${skillMatch.registry_path}。`,
+            "命令预览：Remove-Item -Recurse -Force temp-output。",
+            `工作区根目录：${workspaceOverview.root_path}。`,
+            "所需权限：controlled-full。",
+            "安全状态：requires-snapshot。"
+          ].join(" "),
+          auditDetailLines: [
+            `NPC status: ${npcOverview.status}`,
+            `Recommended skill: ${topMatch?.name ?? "(none)"}`,
+            `Registry: ${skillMatch.registry_path}`,
+            `Workspace root: ${workspaceOverview.root_path}`,
+            "Command preview: Remove-Item -Recurse -Force temp-output"
+          ]
+        });
+      });
+      return;
+    }
+
+    if (normalized.includes("npc collaboration plan")) {
+      void Promise.all([
+        loadOpenClawCapabilityOverview("npc"),
+        listEnabledLocalSkills()
+      ]).then(async ([npcOverview, enabledSkills]) => {
+        const ragResult = await searchLocalKnowledge(trimmed);
+        const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+        const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+
+        applyReadonlyTaskResult(setState, {
+          message: trimmed,
+          executionKind: "npc-local-collaboration-preview",
+          executionTitle: "NPC collaboration preview",
+          executionAuditSummary: "网页端查看 NPC 协作预览",
+          executionAuditDetail: `web npc collaboration preview: ${trimmed}`,
+          resultTitle: "NPC collaboration preview",
+          resultSummary: [
+            `${npcOverview.summary}`,
+            `状态：${npcOverview.status}。`,
+            `已启用 Skills：${skillNames}。`,
+            `注册表：${enabledSkills.registry_path}。`,
+            `本地上下文：${topPaths}。`,
+            `已索引文档：${ragResult.indexed_document_count}。`
+          ].join(" "),
+          auditDetailLines: [
+            `NPC status: ${npcOverview.status}`,
+            `Enabled skills: ${skillNames}`,
+            `Registry: ${enabledSkills.registry_path}`,
+            `Local context: ${topPaths}`,
+            `Indexed documents: ${ragResult.indexed_document_count}`
+          ]
+        });
+      });
+      return;
+    }
 
     if (normalized.includes("scan local skills")) {
       void scanLocalSkills().then((result) => {

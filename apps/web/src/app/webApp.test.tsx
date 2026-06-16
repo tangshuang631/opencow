@@ -212,4 +212,61 @@ describe("WebApp", () => {
       expect(within(conversation).getByText(/内容预览：Use this skill when implementing focused coding tasks/)).toBeInTheDocument();
     });
   });
+
+  it("shows readonly npc collaboration preview on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "preview an npc collaboration plan for local shell permission rules" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/状态：ready-foundation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/已启用 Skills：coding-agent。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/本地上下文：04-permission-safety-shell\.md、OPENCOW_CORE_RULES\.md。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/已索引文档：7。/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows readonly npc shell plan preview on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "preview an npc collaboration shell plan to delete temp-output" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/推荐 Skill：shell-automation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/命令预览：Remove-Item -Recurse -Force temp-output/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/工作区根目录：E:\\2026\\opencow。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/所需权限：controlled-full。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/安全状态：requires-snapshot。/)).toBeInTheDocument();
+    });
+  });
+
+  it("shows readonly npc rag shell handoff preview on web", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: {
+        value: "use npc collaboration to review local shell permission rules and preview the next safe shell step to delete temp-output"
+      }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText(/推荐 Skill：shell-automation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/主要来源：04-permission-safety-shell\.md、OPENCOW_CORE_RULES\.md。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/命令预览：Remove-Item -Recurse -Force temp-output/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/工作区根目录：E:\\2026\\opencow。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/所需权限：controlled-full。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/安全状态：requires-snapshot。/)).toBeInTheDocument();
+    });
+  });
 });
