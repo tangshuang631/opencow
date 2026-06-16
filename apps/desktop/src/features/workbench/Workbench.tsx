@@ -39,7 +39,7 @@ type WorkbenchProps = {
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
   onImportKnowledgeFile: (path: string) => void;
-  onImportLocalKnowledgeFile?: (file: File) => void;
+  onImportLocalKnowledgeFiles?: (files: File[]) => void;
   onRemoveKnowledgeFile: (path: string) => void;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
@@ -191,7 +191,7 @@ function renderKnowledgeFileCard(
 function KnowledgePanel({
   state,
   onImportKnowledgeFile,
-  onImportLocalKnowledgeFile,
+  onImportLocalKnowledgeFiles,
   onRemoveKnowledgeFile,
   knowledgeLibraryLabel,
   knowledgeLibraries,
@@ -200,7 +200,7 @@ function KnowledgePanel({
 }: {
   state: WorkbenchState;
   onImportKnowledgeFile: (path: string) => void;
-  onImportLocalKnowledgeFile?: (file: File) => void;
+  onImportLocalKnowledgeFiles?: (files: File[]) => void;
   onRemoveKnowledgeFile: (path: string) => void;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
@@ -216,6 +216,16 @@ function KnowledgePanel({
   const availableKnowledgeLibraries = knowledgeLibraries ?? [];
   const handleSelectLibrary = onSelectKnowledgeLibrary ?? (() => undefined);
   const handleCreateLibrary = onCreateKnowledgeLibrary ?? (() => undefined);
+
+  function handleImportLocalFiles(files: FileList | File[]) {
+    const fileList = Array.from(files);
+
+    if (fileList.length === 0) {
+      return;
+    }
+
+    onImportLocalKnowledgeFiles?.(fileList);
+  }
 
   return (
     <section className="workspace-panel" aria-label="知识库">
@@ -279,15 +289,23 @@ function KnowledgePanel({
             aria-label="导入本地 md/txt 文件"
             accept=".md,.txt,text/markdown,text/plain"
             type="file"
+            multiple
             onChange={(event) => {
-              const file = event.target.files?.[0];
+              const files = event.target.files;
 
-              if (!file) {
+              if (!files || files.length === 0) {
                 return;
               }
 
-              onImportLocalKnowledgeFile?.(file);
+              handleImportLocalFiles(files);
               event.currentTarget.value = "";
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              handleImportLocalFiles(event.dataTransfer.files);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
             }}
           />
         </div>
@@ -660,7 +678,7 @@ export function Workbench({
   onRestoreRecentConversation,
   onDeleteRecentConversation,
   onImportKnowledgeFile,
-  onImportLocalKnowledgeFile,
+  onImportLocalKnowledgeFiles,
   onRemoveKnowledgeFile,
   knowledgeLibraryLabel,
   knowledgeLibraries,
@@ -727,7 +745,7 @@ export function Workbench({
           <KnowledgePanel
             state={state}
             onImportKnowledgeFile={onImportKnowledgeFile}
-            onImportLocalKnowledgeFile={onImportLocalKnowledgeFile}
+            onImportLocalKnowledgeFiles={onImportLocalKnowledgeFiles}
             onRemoveKnowledgeFile={onRemoveKnowledgeFile}
             knowledgeLibraryLabel={knowledgeLibraryLabel}
             knowledgeLibraries={knowledgeLibraries}

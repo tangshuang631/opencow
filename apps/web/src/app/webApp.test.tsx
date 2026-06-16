@@ -181,6 +181,57 @@ describe("WebApp", () => {
     });
   });
 
+  it("imports multiple local md/txt files into the current knowledge library in one selection", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const uploadInput = screen.getByLabelText("导入本地 md/txt 文件");
+    const files = [
+      new File(["# Alpha\n\nProject planning notes."], "alpha.md", { type: "text/markdown" }),
+      new File(["Beta release checklist"], "beta.txt", { type: "text/plain" })
+    ];
+
+    fireEvent.change(uploadInput, {
+      target: {
+        files
+      }
+    });
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 2")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("alpha.md")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("beta.txt")).toBeInTheDocument();
+    });
+  });
+
+  it("imports local md/txt files by drag and drop", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const uploadInput = screen.getByLabelText("导入本地 md/txt 文件");
+    const files = [
+      new File(["Dragged markdown content"], "drag-notes.md", { type: "text/markdown" }),
+      new File(["Dragged txt content"], "drag-checklist.txt", { type: "text/plain" })
+    ];
+
+    fireEvent.dragOver(uploadInput);
+    fireEvent.drop(uploadInput, {
+      dataTransfer: {
+        files
+      }
+    });
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 2")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("drag-notes.md")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("drag-checklist.txt")).toBeInTheDocument();
+    });
+  });
+
   it("removes imported knowledge files and makes them available for re-import", async () => {
     render(<WebApp />);
 

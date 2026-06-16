@@ -1088,40 +1088,49 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
     });
   }
 
-  function handleImportLocalKnowledgeFile(file: File) {
-    const normalizedName = file.name.trim();
-    const lowerName = normalizedName.toLowerCase();
+  function handleImportLocalKnowledgeFiles(files: File[]) {
+    const validFiles = files.filter((file) => {
+      const normalizedName = file.name.trim().toLowerCase();
+      return normalizedName.endsWith(".md") || normalizedName.endsWith(".txt");
+    });
 
-    if (!normalizedName || (!lowerName.endsWith(".md") && !lowerName.endsWith(".txt"))) {
+    if (validFiles.length === 0) {
       return;
     }
 
-    void readTextFileContent(file).then((content) => {
+    void Promise.all(validFiles.map(async (file) => ({
+      name: file.name.trim(),
+      content: await readTextFileContent(file)
+    }))).then((resolvedFiles) => {
       startTransition(() => {
         setState((current) => {
           const browserRecord = webKnowledgeRecordRef.current;
-          const nextPath = `uploads/${normalizedName}`;
-          const nextCustomFile = {
-            path: nextPath,
-            title: normalizedName,
-            status: "ready" as const,
-            content
-          };
           const nextCustomFiles = [
-            nextCustomFile,
-            ...browserRecord.customFiles.filter((item) => item.path !== nextPath)
+            ...resolvedFiles.map((file) => ({
+              path: `uploads/${file.name}`,
+              title: file.name,
+              status: "ready" as const,
+              content: file.content
+            })),
+            ...browserRecord.customFiles.filter((item) =>
+              !resolvedFiles.some((file) => `uploads/${file.name}` === item.path)
+            )
           ];
-          const existingImported = current.knowledge.importedFiles.find((item) => item.path === nextPath);
-          const nextImported = existingImported
-            ? current.knowledge.importedFiles
-            : [
-                ...current.knowledge.importedFiles,
-                {
-                  path: nextPath,
-                  title: normalizedName,
-                  status: "ready" as const
-                }
-              ];
+          const nextImported = [...current.knowledge.importedFiles];
+
+          for (const file of resolvedFiles) {
+            const nextPath = `uploads/${file.name}`;
+            const alreadyImported = nextImported.some((item) => item.path === nextPath);
+
+            if (!alreadyImported) {
+              nextImported.push({
+                path: nextPath,
+                title: file.name,
+                status: "ready" as const
+              });
+            }
+          }
+
           const nextRecord: WebKnowledgeRecord = {
             ...browserRecord,
             customFiles: nextCustomFiles,
@@ -1157,13 +1166,13 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
             ...current,
             output: {
               title: "知识库已更新",
-              summary: `已导入本地文件 ${normalizedName}，后续检索会使用这份真实内容。`
+              summary: `已导入 ${resolvedFiles.length} 个本地文件，后续检索会使用这些真实内容。`
             },
             audit: {
               summary: "网页端知识库已导入本地文件",
               lastEvent: {
                 module: "knowledge",
-                detail: `imported local file ${nextPath}`,
+                detail: `imported local files ${resolvedFiles.map((file) => `uploads/${file.name}`).join(", ")}`,
                 timestamp: "imported",
                 source: "web_knowledge_local_file_import"
               }
@@ -1318,7 +1327,7 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
       onCreateKnowledgeLibrary={handleCreateKnowledgeLibrary}
       onSelectKnowledgeLibrary={handleSelectKnowledgeLibrary}
       onSubmitTask={handleSubmitTask}
-      onImportLocalKnowledgeFile={handleImportLocalKnowledgeFile}
+      onImportLocalKnowledgeFiles={handleImportLocalKnowledgeFiles}
     />
   );
 }
