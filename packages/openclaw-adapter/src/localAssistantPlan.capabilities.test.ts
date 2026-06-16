@@ -480,4 +480,54 @@ describe("local assistant task planner capability catalogs", () => {
       queuedExecutionTitle: "Local MCP plugin start"
     });
   });
+
+  it("plans key capability and local tool flows from Chinese requests", () => {
+    expect(planLocalAssistantTask({
+      message: "查看 skills 能力概览",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "capability-skills-overview",
+      title: "OpenClaw Skills capability overview"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "扫描本地 skills",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-scan",
+      title: "Local Skills scan"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "查看已启用 skills",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-enabled-list",
+      title: "Enabled local skills"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "查看 browser mcp 插件详情",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "mcp-local-plugin-inspect",
+      title: "Local MCP plugin detail"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "搜索本地知识库里的 browser history",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "rag-local-doc-search",
+      title: "Local RAG document search"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "预览一个 npc 协作方案，用来检查本地 shell 权限规则",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "npc-local-collaboration-preview",
+      title: "NPC collaboration preview"
+    });
+  });
 });

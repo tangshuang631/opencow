@@ -927,4 +927,70 @@ describe("WebApp", () => {
       expect(within(conversation).getByText(/风险说明：仅预览插件 manifest，不会启动真实 MCP 进程。/)).toBeInTheDocument();
     });
   });
+
+  it("supports Chinese capability and local-tool requests on web", async () => {
+    render(<WebApp />);
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "查看 skills 能力概览" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("SKILLS 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/real skills capability summary from openclaw/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "扫描本地 skills" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skills 扫描")).toBeInTheDocument();
+      expect(within(conversation).getByText(/扫描到 3 个本地 Skills，覆盖 2 个扫描根目录。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "查看已启用 skills" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("已启用本地 Skills")).toBeInTheDocument();
+      expect(within(conversation).getByText(/当前启用 1 个本地 Skill。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "查看 browser mcp 插件详情" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 MCP 插件详情")).toBeInTheDocument();
+      expect(within(conversation).getByText(/匹配项：browser。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "搜索本地知识库里的 browser history" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 RAG 文档检索")).toBeInTheDocument();
+      expect(within(conversation).getByText(/检索问题：搜索本地知识库里的 browser history。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "预览一个 npc 协作方案，用来检查本地 shell 权限规则" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("NPC collaboration preview")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已启用 Skills：coding-agent。/)).toBeInTheDocument();
+    });
+  });
 });

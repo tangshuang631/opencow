@@ -495,7 +495,35 @@ function tokenizeIntent(input: string) {
 
 function isCapabilityOverviewRequest(normalized: string, capabilityId: "rag" | "skills" | "npc" | "mcp") {
   return normalized.includes(`show ${capabilityId} capability overview`)
-    || normalized.includes(`${capabilityId} capability overview`);
+    || normalized.includes(`${capabilityId} capability overview`)
+    || normalized.includes(`查看 ${capabilityId} 能力概览`)
+    || normalized.includes(`${capabilityId} 能力概览`);
+}
+
+function isChineseSkillScanRequest(normalized: string) {
+  return normalized.includes("扫描本地 skills") || normalized.includes("扫描本地 skill");
+}
+
+function isChineseEnabledSkillsListRequest(normalized: string) {
+  return normalized.includes("查看已启用 skills")
+    || normalized.includes("查看已启用 skill")
+    || normalized.includes("查看启用的 skills");
+}
+
+function isChineseSkillInspectRequest(normalized: string) {
+  return normalized.includes("查看") && normalized.includes("skill") && normalized.includes("详情");
+}
+
+function isChineseMcpInspectRequest(normalized: string) {
+  return normalized.includes("查看") && normalized.includes("mcp") && normalized.includes("插件详情");
+}
+
+function isChineseKnowledgeSearchRequest(normalized: string) {
+  return normalized.includes("搜索本地知识库") || normalized.includes("检索本地知识库");
+}
+
+function isChineseNpcCollaborationPreviewRequest(normalized: string) {
+  return normalized.includes("npc") && normalized.includes("协作") && (normalized.includes("预览") || normalized.includes("方案"));
 }
 
 export function WebApp() {
@@ -572,7 +600,10 @@ export function WebApp() {
 
     const normalized = trimmed.toLowerCase();
 
-    if (normalized.includes("npc collaboration") && normalized.includes("preview the next safe shell step")) {
+    if (
+      (normalized.includes("npc collaboration") && normalized.includes("preview the next safe shell step"))
+      || (normalized.includes("npc") && normalized.includes("预览下一步安全 shell"))
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "npc-local-enabled-rag-shell-handoff-preview",
@@ -622,7 +653,10 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("npc collaboration shell plan")) {
+    if (
+      normalized.includes("npc collaboration shell plan")
+      || (normalized.includes("npc") && normalized.includes("shell") && normalized.includes("计划预览"))
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "npc-local-shell-plan-preview",
@@ -669,7 +703,7 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("npc collaboration plan")) {
+    if (normalized.includes("npc collaboration plan") || isChineseNpcCollaborationPreviewRequest(normalized)) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "npc-local-collaboration-preview",
@@ -715,7 +749,7 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("scan local skills")) {
+    if (normalized.includes("scan local skills") || isChineseSkillScanRequest(normalized)) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "skills-local-scan",
@@ -836,6 +870,7 @@ export function WebApp() {
       normalized.includes("which enabled skill")
       || normalized.includes("recommend an enabled skill")
       || normalized.includes("match this task against enabled skills")
+      || (normalized.includes("推荐") && normalized.includes("已启用") && normalized.includes("skill"))
     ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
@@ -877,7 +912,10 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("scan local mcp plugins")) {
+    if (
+      normalized.includes("scan local mcp plugins")
+      || (normalized.includes("扫描") && normalized.includes("mcp"))
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "mcp-local-plugin-scan",
@@ -909,7 +947,10 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("details") && normalized.includes("mcp plugin")) {
+    if (
+      (normalized.includes("details") && normalized.includes("mcp plugin"))
+      || isChineseMcpInspectRequest(normalized)
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "mcp-local-plugin-inspect",
@@ -955,7 +996,10 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("preview starting") && normalized.includes("mcp plugin")) {
+    if (
+      (normalized.includes("preview starting") && normalized.includes("mcp plugin"))
+      || (normalized.includes("预览") && normalized.includes("启动") && normalized.includes("mcp"))
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "mcp-local-plugin-start-preview",
@@ -1012,7 +1056,7 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("enabled skills")) {
+    if (normalized.includes("enabled skills") || isChineseEnabledSkillsListRequest(normalized)) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "skills-local-enabled-list",
@@ -1042,7 +1086,7 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("details") && normalized.includes("skill")) {
+    if ((normalized.includes("details") && normalized.includes("skill")) || isChineseSkillInspectRequest(normalized)) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "skills-local-inspect",
@@ -1084,7 +1128,7 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("search local knowledge")) {
+    if (normalized.includes("search local knowledge") || isChineseKnowledgeSearchRequest(normalized)) {
       startTransition(() => {
         setState((current) => {
           const currentBrowserState = current as WorkbenchState & {

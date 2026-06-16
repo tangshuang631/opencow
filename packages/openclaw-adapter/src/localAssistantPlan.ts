@@ -191,6 +191,50 @@ const longDocumentIntentPatterns = [
   /\u6587\u4ef6/
 ];
 
+function hasSkillKeyword(message: string) {
+  return /\bskills?\b/i.test(message) || /技能/.test(message);
+}
+
+function hasMcpKeyword(message: string) {
+  return mcpCapabilityPatterns.some((pattern) => pattern.test(message)) || /插件/.test(message);
+}
+
+function hasCapabilityOverviewIntent(message: string) {
+  return capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+    || /能力概览/.test(message)
+    || /查看.*概览/.test(message);
+}
+
+function hasShowIntent(message: string) {
+  return /\bshow\b/i.test(message)
+    || /\blist\b/i.test(message)
+    || /\bwhat\b/i.test(message)
+    || /查看/.test(message)
+    || /列出/.test(message);
+}
+
+function hasInspectIntent(message: string) {
+  return localSkillInspectPatterns.some((pattern) => pattern.test(message))
+    || mcpLocalPluginInspectPatterns.some((pattern) => pattern.test(message))
+    || /详情/.test(message)
+    || /查看/.test(message);
+}
+
+function hasScanIntent(message: string) {
+  return localSkillsScanPatterns.some((pattern) => pattern.test(message))
+    || mcpLocalPluginScanPatterns.some((pattern) => pattern.test(message))
+    || /扫描/.test(message);
+}
+
+function hasSearchIntent(message: string) {
+  return localRagSearchPatterns.some((pattern) => pattern.test(message))
+    || /搜索/.test(message)
+    || /检索/.test(message)
+    || /搜索本地知识库/.test(message)
+    || /检索本地知识库/.test(message)
+    || /知识库里的/.test(message);
+}
+
 export function planLocalAssistantTask(request: LocalAssistantTaskRequest): LocalAssistantTaskPlan {
   const message = request.message.trim();
   const normalizedLowerMessage = message.toLowerCase();
@@ -983,9 +1027,11 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    localRagSearchPatterns.some((pattern) => pattern.test(message))
-    && (/knowledge/i.test(message) || /docs?/i.test(message) || /rules?/i.test(message))
+    hasSearchIntent(message)
+    && ((/knowledge/i.test(message) || /docs?/i.test(message) || /rules?/i.test(message)) || /知识库/.test(message))
     && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
+    && !/什么是\s*rag/i.test(message)
+    && !/配置.*知识库/.test(message)
   ) {
     return {
       kind: "rag-local-doc-search",
@@ -1182,8 +1228,8 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    /\bskills?\b/i.test(message)
-    && localEnabledSkillsPatterns.some((pattern) => pattern.test(message))
+    hasSkillKeyword(message)
+    && (localEnabledSkillsPatterns.some((pattern) => pattern.test(message)) || /已启用/.test(message))
     && localEnabledSkillMatchPatterns.some((pattern) => pattern.test(message))
     && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
   ) {
@@ -1197,9 +1243,9 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    /\bskills?\b/i.test(message)
-    && localEnabledSkillsPatterns.some((pattern) => pattern.test(message))
-    && (/\bshow\b/i.test(message) || /\blist\b/i.test(message) || /\bwhat\b/i.test(message))
+    hasSkillKeyword(message)
+    && (localEnabledSkillsPatterns.some((pattern) => pattern.test(message)) || /已启用/.test(message))
+    && hasShowIntent(message)
   ) {
     return {
       kind: "skills-local-enabled-list",
@@ -1211,8 +1257,8 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    /\bskills?\b/i.test(message)
-    && localSkillsScanPatterns.some((pattern) => pattern.test(message))
+    hasSkillKeyword(message)
+    && hasScanIntent(message)
   ) {
     return {
       kind: "skills-local-scan",
@@ -1224,20 +1270,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    /\bskills?\b/i.test(message)
-    && localSkillInspectPatterns.some((pattern) => pattern.test(message))
-  ) {
-    return {
-      kind: "skills-local-inspect",
-      title: "Local Skill detail",
-      summary: message,
-      auditSummary: "Local assistant planned a local skill detail lookup.",
-      auditDetail: `Readonly local skill detail task: ${message}`
-    };
-  }
-
-  if (
-    /\bskills?\b/i.test(message)
+    hasSkillKeyword(message)
     && localSkillInstallPatterns.some((pattern) => pattern.test(message))
   ) {
     if (request.permissionMode === "readonly") {
@@ -1266,7 +1299,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    /\bskills?\b/i.test(message)
+    hasSkillKeyword(message)
     && localSkillDisablePatterns.some((pattern) => pattern.test(message))
   ) {
     if (request.permissionMode === "readonly") {
@@ -1295,7 +1328,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    /\bskills?\b/i.test(message)
+    hasSkillKeyword(message)
     && localSkillEnablePatterns.some((pattern) => pattern.test(message))
   ) {
     if (request.permissionMode === "readonly") {
@@ -1324,8 +1357,8 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    skillsCapabilityPatterns.some((pattern) => pattern.test(message))
-    && capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+    (skillsCapabilityPatterns.some((pattern) => pattern.test(message)) || hasSkillKeyword(message))
+    && hasCapabilityOverviewIntent(message)
   ) {
     return {
       kind: "capability-skills-overview",
@@ -1337,8 +1370,21 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
+    hasSkillKeyword(message)
+    && hasInspectIntent(message)
+  ) {
+    return {
+      kind: "skills-local-inspect",
+      title: "Local Skill detail",
+      summary: message,
+      auditSummary: "Local assistant planned a local skill detail lookup.",
+      auditDetail: `Readonly local skill detail task: ${message}`
+    };
+  }
+
+  if (
     npcCapabilityPatterns.some((pattern) => pattern.test(message))
-    && npcPreviewPatterns.some((pattern) => pattern.test(message))
+    && (npcPreviewPatterns.some((pattern) => pattern.test(message)) || /预览/.test(message) || /方案/.test(message))
   ) {
     return {
       kind: "npc-local-collaboration-preview",
@@ -1382,7 +1428,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
 
   if (
     npcCapabilityPatterns.some((pattern) => pattern.test(message))
-    && capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))
+    && hasCapabilityOverviewIntent(message)
   ) {
     return {
       kind: "capability-npc-overview",
@@ -1393,7 +1439,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     };
   }
 
-  if (mcpCapabilityPatterns.some((pattern) => pattern.test(message))) {
+  if (hasMcpKeyword(message)) {
     if (troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))) {
       return {
         kind: "local-model-chat",
@@ -1405,7 +1451,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     }
 
     if (
-      /\bplugins?\b/i.test(message)
+      (/\bplugins?\b/i.test(message) || /插件/.test(message))
       && /\bstart\b/i.test(message)
       && /\b(local|locally)\b/i.test(message)
       && !/\bpreview\b/i.test(message)
@@ -1446,8 +1492,8 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     }
 
     if (
-      /\bplugins?\b/i.test(message)
-      && mcpLocalPluginStartPreviewPatterns.some((pattern) => pattern.test(message))
+      (/\bplugins?\b/i.test(message) || /插件/.test(message))
+      && (mcpLocalPluginStartPreviewPatterns.some((pattern) => pattern.test(message)) || /预览/.test(message))
       && /\b(local|locally)\b/i.test(message)
     ) {
       return {
@@ -1460,8 +1506,8 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
     }
 
     if (
-      /\bplugins?\b/i.test(message)
-      && mcpLocalPluginInspectPatterns.some((pattern) => pattern.test(message))
+      (/\bplugins?\b/i.test(message) || /插件/.test(message))
+      && hasInspectIntent(message)
     ) {
       return {
         kind: "mcp-local-plugin-inspect",
@@ -1472,7 +1518,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       };
     }
 
-    if (mcpLocalPluginScanPatterns.some((pattern) => pattern.test(message))) {
+    if (hasScanIntent(message)) {
       return {
         kind: "mcp-local-plugin-scan",
         title: "Local MCP plugin scan",
@@ -1482,7 +1528,7 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       };
     }
 
-    if (capabilityOverviewIntentPatterns.some((pattern) => pattern.test(message))) {
+    if (hasCapabilityOverviewIntent(message)) {
       return {
         kind: "capability-mcp-overview",
         title: "OpenClaw MCP capability overview",
