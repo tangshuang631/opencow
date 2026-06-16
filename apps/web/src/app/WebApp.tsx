@@ -593,7 +593,9 @@ export function WebApp() {
           return createTaskExecutionSucceededState(started, {
             resultTitle: "本地 RAG 文档检索",
             resultSummary: createLocalRagSearchResultSummary(result),
-            auditDetailLines: result.items.slice(0, 3).map((item) => `${item.title}: ${item.snippet}`)
+            auditDetailLines: result.items
+              .slice(0, 3)
+              .map((item) => `命中片段：${item.title}: ${item.snippet}`)
           });
         });
       });

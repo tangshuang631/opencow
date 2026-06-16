@@ -134,6 +134,57 @@ describe("WebApp", () => {
       expect(within(conversation).getAllByText(/npc-notes\.txt/).length).toBeGreaterThan(0);
       expect(within(conversation).getAllByText(/web-history-mvp\.md/).length).toBeGreaterThan(0);
       expect(within(conversation).getByText(/检索问题：search local knowledge for browser history。/)).toBeInTheDocument();
+      expect(
+        within(conversation).getByText(/命中片段：npc-notes\.txt: NPC web preview keeps browser history guidance/)
+      ).toBeInTheDocument();
+      expect(
+        within(conversation).getByText(/命中片段：web-history-mvp\.md: # Web History MVP Keep recent conversations/)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("removes imported knowledge files and makes them available for re-import", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：web-history-mvp.md" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 1")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("web-history-mvp.md")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "移出知识库：web-history-mvp.md" }));
+
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 0")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("还没有已纳入知识库的文件。先从下方候选文件中手动加入。")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByRole("button", { name: "加入知识库：web-history-mvp.md" })).toBeInTheDocument();
+    });
+  });
+
+  it("clears all imported knowledge entries and resets knowledge count", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：web-history-mvp.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：npc-notes.txt" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 2")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "清空知识库索引" }));
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const resetKnowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(resetKnowledgePanel).getByText("已索引文件 0")).toBeInTheDocument();
+      expect(within(resetKnowledgePanel).getByRole("button", { name: "加入知识库：web-history-mvp.md" })).toBeInTheDocument();
+      expect(within(resetKnowledgePanel).getByRole("button", { name: "加入知识库：npc-notes.txt" })).toBeInTheDocument();
     });
   });
 
