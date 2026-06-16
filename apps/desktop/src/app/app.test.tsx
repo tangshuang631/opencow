@@ -228,6 +228,56 @@ describe("App", () => {
     });
   });
 
+  it("keeps knowledge inventory intact and surfaces an error when clearing imports fails", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadKnowledgeInventoryMock.mockResolvedValueOnce({
+      importedFiles: [
+        {
+          path: "notes/guide.txt",
+          title: "guide.txt",
+          status: "ready"
+        }
+      ],
+      availableFiles: [
+        {
+          path: "docs/rag-checklist.md",
+          title: "rag-checklist.md"
+        }
+      ],
+      indexedDocumentCount: 1,
+      registryPath: ".opencow/knowledge/imported-files.json",
+      summary: "loaded"
+    });
+    clearKnowledgeImportsMock.mockRejectedValueOnce(new Error("knowledge clear failed"));
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    expect(screen.getByText("知识库索引 1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "清空知识库索引" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("知识库索引 1")).toBeInTheDocument();
+      expect(screen.getByText("知识库索引清理失败")).toBeInTheDocument();
+      expect(screen.getByText("请检查知识库目录权限或稍后重试")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("已索引文件 1")).toBeInTheDocument();
+      expect(screen.getAllByText("guide.txt").length).toBeGreaterThan(0);
+    });
+  });
+
   it("keeps Ollama load details in settings while the main conversation stays minimal", async () => {
     loadOllamaOverviewMock.mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
 

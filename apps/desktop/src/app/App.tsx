@@ -50,6 +50,7 @@ import {
   createTaskExecutionStartedState,
   createTaskExecutionStreamingChunkState,
   createTaskExecutionSucceededState,
+  createToolExecutionErrorState,
   createToolExecutionRecoveredState,
   createUserTaskSubmittedState,
   mergeOllamaOverview,
@@ -2786,9 +2787,17 @@ export function App() {
             }, target));
           });
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          const detail = error instanceof Error ? error.message : "Unknown knowledge cleanup error";
+
           startTransition(() => {
-            setState((current) => createStorageCleanupState(current, target));
+            setState((current) => createToolExecutionErrorState(current, {
+              toolLabel: "知识库清理",
+              summary: "知识库索引清理失败",
+              detail,
+              actionLabel: "请检查知识库目录权限或稍后重试",
+              source: "knowledge_cleanup"
+            }));
           });
         });
       return;
