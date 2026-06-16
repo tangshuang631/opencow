@@ -188,6 +188,36 @@ describe("WebApp", () => {
     });
   });
 
+  it("keeps named knowledge libraries after clearing indexed knowledge", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "新知识库名称" }), {
+      target: { value: "规则库" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：npc-notes.txt" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("当前知识库：规则库")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("已索引文件 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "清空知识库索引" }));
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const clearedKnowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(clearedKnowledgePanel).getByText("当前知识库：规则库")).toBeInTheDocument();
+      expect(within(clearedKnowledgePanel).getByRole("button", { name: "切换到知识库：默认知识库" })).toBeInTheDocument();
+      expect(within(clearedKnowledgePanel).getByRole("button", { name: "当前知识库：规则库" })).toBeInTheDocument();
+      expect(within(clearedKnowledgePanel).getByText("已索引文件 0")).toBeInTheDocument();
+      expect(within(clearedKnowledgePanel).getByRole("button", { name: "加入知识库：npc-notes.txt" })).toBeInTheDocument();
+    });
+  });
+
   it("creates and persists named knowledge libraries across remounts", async () => {
     const firstRender = render(<WebApp />);
 

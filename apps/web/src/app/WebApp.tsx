@@ -126,83 +126,6 @@ function createKnowledgeStateFromRecord(record: WebKnowledgeRecord): {
   };
 }
 
-function hydrateWebState(state: WorkbenchState): WorkbenchState {
-  const knowledge = createKnowledgeStateFromRecord(readWebKnowledgeRecord());
-
-  return mergeOllamaOverview(
-    {
-      ...state,
-      knowledge: {
-        importedFiles: knowledge.importedFiles,
-        availableFiles: knowledge.availableFiles
-      },
-      storage: {
-        ...state.storage,
-        knowledgeCount: knowledge.knowledgeCount
-      }
-    },
-    {
-      reachable: true,
-      endpoint: "browser://local-first",
-      selectedModel: "opencow-web-preview",
-      diagnostic: "",
-      models: [{ name: "opencow-web-preview", sizeLabel: "Browser Preview" }]
-    }
-  );
-}
-
-function persistKnowledgeFromState(state: WorkbenchState) {
-  const browserState = state as WorkbenchState & {
-    webKnowledge?: {
-      activeLibraryId: string;
-      activeLibraryLabel: string;
-      libraries: WebKnowledgeRecord["libraries"];
-    };
-  };
-  const persisted = readWebKnowledgeRecord();
-  const libraryMeta = browserState.webKnowledge?.libraries ?? [
-    {
-      id: "default-library",
-      label: "默认知识库",
-      importedFiles: []
-    }
-  ];
-  const activeLibraryId = browserState.webKnowledge?.activeLibraryId ?? "default-library";
-  const nextLibraries = libraryMeta.map((library) => {
-    const previous = persisted.libraries.find((item) => item.id === library.id);
-
-    if (library.id !== activeLibraryId) {
-      return {
-        id: library.id,
-        label: library.label,
-        importedFiles: library.importedFiles ?? previous?.importedFiles ?? []
-      };
-    }
-
-    const importedDocs = state.knowledge.importedFiles.map((item) => {
-      const sample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
-
-      return {
-        path: item.path,
-        title: item.title,
-        status: item.status,
-        content: sample?.content ?? ""
-      };
-    });
-
-    return {
-      id: library.id,
-      label: library.label,
-      importedFiles: importedDocs
-    };
-  });
-
-  persistWebKnowledgeRecord({
-    activeLibraryId,
-    libraries: nextLibraries
-  });
-}
-
 function createKnowledgeStatePatch(record: WebKnowledgeRecord) {
   const activeLibrary = createKnowledgeLibraryState(record, record.activeLibraryId);
 
@@ -229,11 +152,6 @@ function createKnowledgeLibraryId(name: string) {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-\u4e00-\u9fa5]/g, "")
     || `knowledge-${Date.now()}`;
-}
-
-function createKnowledgeAuditLine(record: WebKnowledgeRecord) {
-  const activeLibrary = record.libraries.find((library) => library.id === record.activeLibraryId);
-  return activeLibrary?.label ?? "默认知识库";
 }
 
 function createLocalRagSearchResultSummaryWithLibrary(
@@ -309,39 +227,6 @@ function withKnowledgeRecord(current: WorkbenchState, record: WebKnowledgeRecord
     },
     webKnowledge: patch.webKnowledge
   } as WorkbenchState;
-}
-
-function createBrowserKnowledgeRecordFromState(state: WorkbenchState): WebKnowledgeRecord {
-  const browserState = state as WorkbenchState & {
-    webKnowledge?: {
-      activeLibraryId: string;
-      libraries: WebKnowledgeRecord["libraries"];
-    };
-  };
-  const importedDocs = state.knowledge.importedFiles.map((item) => {
-    const sample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
-
-    return {
-      path: item.path,
-      title: item.title,
-      status: item.status,
-      content: sample?.content ?? ""
-    };
-  });
-  const libraryMeta = browserState.webKnowledge?.libraries ?? createDefaultKnowledgeRecord().libraries;
-  const activeLibraryId = browserState.webKnowledge?.activeLibraryId ?? "default-library";
-
-  return {
-    activeLibraryId,
-    libraries: libraryMeta.map((library) => ({
-      id: library.id,
-      label: library.label,
-      importedFiles:
-        library.id === activeLibraryId
-          ? importedDocs
-          : library.importedFiles ?? []
-    }))
-  };
 }
 
 function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKnowledge>) {
@@ -999,7 +884,16 @@ export function WebApp() {
     }
 
     if (target === "knowledge") {
-      clearWebKnowledgeRecord();
+      const currentRecord = webKnowledgeRecordRef.current;
+      const clearedRecord: WebKnowledgeRecord = {
+        activeLibraryId: currentRecord.activeLibraryId,
+        libraries: currentRecord.libraries.map((library) => ({
+          ...library,
+          importedFiles: []
+        }))
+      };
+      webKnowledgeRecordRef.current = clearedRecord;
+      persistWebKnowledgeRecord(clearedRecord);
     }
 
     startTransition(() => {
@@ -1010,21 +904,7 @@ export function WebApp() {
           return cleared;
         }
 
-        return {
-          ...cleared,
-          knowledge: {
-            importedFiles: [],
-            availableFiles: WEB_SAMPLE_DOCS.map((item) => ({
-              path: item.path,
-              title: item.title
-            }))
-          },
-          storage: {
-            ...cleared.storage,
-            knowledgeCount: 0
-          },
-          webKnowledge: (current as WorkbenchState & { webKnowledge?: unknown }).webKnowledge
-        };
+        return withKnowledgeRecord(cleared, webKnowledgeRecordRef.current);
       });
     });
   }
