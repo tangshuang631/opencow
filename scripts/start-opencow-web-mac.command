@@ -10,6 +10,7 @@ LOG_FILE="/tmp/opencow-web-dev.log"
 START_COMMAND=(npm --workspace apps/web run dev)
 
 export PATH="${NODE_BIN}:$PATH"
+export SHELL="/bin/zsh"
 
 is_pid_running() {
   local pid="$1"

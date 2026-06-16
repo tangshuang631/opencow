@@ -1,5 +1,6 @@
 property repoRoot : "/Users/apple/Desktop/2026/opencow"
 property nodeBin : "/Users/apple/.local/opt/node-v24.16.0-darwin-arm64/bin"
+property nohupBin : "/usr/bin/nohup"
 property appUrl : "http://127.0.0.1:1421"
 property pidFile : "/tmp/opencow-web-dev.pid"
 property logFile : "/tmp/opencow-web-dev.log"
@@ -54,8 +55,11 @@ on isServerReady(appUrl)
 end isServerReady
 
 on startServer(repoRoot, nodeBin, pidFile, logFile)
-  set commandText to "cd " & quoted form of repoRoot & " && PATH=" & quoted form of (nodeBin & ":$PATH") & " nohup npm --workspace apps/web run dev > " & quoted form of logFile & " 2>&1 & echo $! > " & quoted form of pidFile
-  do shell script commandText
+  set launchScript to "cd " & quoted form of repoRoot & "\n" & ¬
+    "export PATH=" & quoted form of (nodeBin & ":/usr/bin:/bin:/usr/sbin:/sbin") & "\n" & ¬
+    quoted form of nohupBin & " npm --workspace apps/web run dev > " & quoted form of logFile & " 2>&1 &\n" & ¬
+    "echo $! > " & quoted form of pidFile
+  do shell script "/bin/zsh -lc " & quoted form of launchScript
 end startServer
 
 on stopServer(pidFile)
