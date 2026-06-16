@@ -136,4 +136,43 @@ describe("WebApp", () => {
       expect(within(conversation).getByText(/检索问题：search local knowledge for browser history。/)).toBeInTheDocument();
     });
   });
+
+  it("shows structured readonly capability details for skills, npc, and mcp requests", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show skills capability overview" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("Skills 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/状态：partial-foundation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/样例项：coding-agent、docs-helper。/)).toBeInTheDocument();
+      expect(within(conversation).getAllByText(/下一步优先补启用列表、匹配结果和安全确认前置展示。/).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show npc capability overview" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("NPC 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/样例项：课程助手 NPC、文档处理 NPC。/)).toBeInTheDocument();
+      expect(within(conversation).getAllByText(/网页端先给出 NPC 的状态、样例角色和协作入口。/).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "show mcp capability overview" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("MCP 网页端能力概览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/样例项：browser、codex-supervisor。/)).toBeInTheDocument();
+      expect(within(conversation).getAllByText(/下一步优先补插件扫描结果、激活方式和受控启动预览。/).length).toBeGreaterThan(0);
+    });
+  });
 });

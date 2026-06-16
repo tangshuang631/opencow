@@ -117,6 +117,22 @@ function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKn
   ].join(" ");
 }
 
+function createWebCapabilityResultSummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
+  const overview = loadWebCapabilityOverview(capabilityId);
+  const availableLine = overview.available_packages.join("、") || "无";
+  const missingLine = overview.missing_packages.join("、") || "无";
+  const sampleLine = overview.sampleItems.join("、") || "暂无";
+
+  return [
+    `状态：${overview.status}。`,
+    `可用包：${availableLine}。`,
+    `缺失包：${missingLine}。`,
+    `样例项：${sampleLine}。`,
+    overview.contextLine,
+    overview.nextStep
+  ].join(" ");
+}
+
 export function WebApp() {
   const [state, setState] = useState<WorkbenchState>(() =>
     hydrateWebState(loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState))
@@ -143,11 +159,13 @@ export function WebApp() {
 
         return createTaskExecutionSucceededState(started, {
           resultTitle: `${overview.title} 网页端能力概览`,
-          resultSummary: overview.summary,
+          resultSummary: createWebCapabilityResultSummary(capabilityId),
           auditDetailLines: [
             `Capability status: ${overview.status}`,
             `Available packages: ${overview.available_packages.join(", ") || "(none)"}`,
-            `Missing packages: ${overview.missing_packages.join(", ") || "(none)"}`
+            `Missing packages: ${overview.missing_packages.join(", ") || "(none)"}`,
+            `Sample items: ${overview.sampleItems.join(", ") || "(none)"}`,
+            `Next step: ${overview.nextStep}`
           ]
         });
       });
