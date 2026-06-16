@@ -6,6 +6,7 @@ const {
   cancelOllamaChatMock,
   chatWithOllamaModelMock,
   loadOllamaOverviewMock,
+  loadKnowledgeInventoryMock,
   loadOpenClawCapabilityOverviewMock,
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
@@ -17,7 +18,10 @@ const {
   previewLocalMcpPluginStartMock,
   enableLocalSkillMock,
   installLocalSkillMock,
+  importKnowledgeFileMock,
   listEnabledLocalSkillsMock,
+  removeKnowledgeFileMock,
+  clearKnowledgeImportsMock,
   disableLocalSkillMock,
   matchEnabledLocalSkillsMock,
   runReadonlyShellCommandMock,
@@ -28,6 +32,7 @@ const {
   cancelOllamaChatMock: vi.fn(),
   chatWithOllamaModelMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
+  loadKnowledgeInventoryMock: vi.fn(),
   loadOpenClawCapabilityOverviewMock: vi.fn(),
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
@@ -39,7 +44,10 @@ const {
   previewLocalMcpPluginStartMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
+  importKnowledgeFileMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
+  removeKnowledgeFileMock: vi.fn(),
+  clearKnowledgeImportsMock: vi.fn(),
   disableLocalSkillMock: vi.fn(),
   matchEnabledLocalSkillsMock: vi.fn(),
   runReadonlyShellCommandMock: vi.fn(),
@@ -61,6 +69,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 
   return {
     ...actual,
+    loadKnowledgeInventory: loadKnowledgeInventoryMock,
     loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
     loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
@@ -72,7 +81,10 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     previewLocalMcpPluginStart: previewLocalMcpPluginStartMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
+    importKnowledgeFile: importKnowledgeFileMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
+    removeKnowledgeFile: removeKnowledgeFileMock,
+    clearKnowledgeImports: clearKnowledgeImportsMock,
     disableLocalSkill: disableLocalSkillMock,
     matchEnabledLocalSkills: matchEnabledLocalSkillsMock,
     runReadonlyShellCommand: runReadonlyShellCommandMock,
@@ -103,6 +115,7 @@ describe("App", () => {
     cancelOllamaChatMock.mockReset();
     chatWithOllamaModelMock.mockReset();
     loadOllamaOverviewMock.mockReset();
+    loadKnowledgeInventoryMock.mockReset();
     loadOpenClawCapabilityOverviewMock.mockReset();
     loadWorkspacePackagesOverviewMock.mockReset();
     loadWorkspaceConfigOverviewMock.mockReset();
@@ -114,13 +127,23 @@ describe("App", () => {
     previewLocalMcpPluginStartMock.mockReset();
     enableLocalSkillMock.mockReset();
     installLocalSkillMock.mockReset();
+    importKnowledgeFileMock.mockReset();
     listEnabledLocalSkillsMock.mockReset();
+    removeKnowledgeFileMock.mockReset();
+    clearKnowledgeImportsMock.mockReset();
     disableLocalSkillMock.mockReset();
     matchEnabledLocalSkillsMock.mockReset();
     runReadonlyShellCommandMock.mockReset();
     runWorkspaceWriteShellCommandMock.mockReset();
     runControlledFullShellCommandMock.mockReset();
     writeNpcConfigMock.mockReset();
+    loadKnowledgeInventoryMock.mockResolvedValue({
+      importedFiles: [],
+      availableFiles: [],
+      indexedDocumentCount: 0,
+      registryPath: ".opencow/knowledge/imported-files.json",
+      summary: "empty"
+    });
   });
 
   it("renders the desktop workbench shell after loading Ollama", async () => {
@@ -163,6 +186,46 @@ describe("App", () => {
 
     expect(getConversationRegion()).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新对话" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("loads knowledge inventory into the knowledge workspace after startup", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadKnowledgeInventoryMock.mockResolvedValueOnce({
+      importedFiles: [
+        {
+          path: "notes/guide.txt",
+          title: "guide.txt",
+          status: "ready"
+        }
+      ],
+      availableFiles: [
+        {
+          path: "docs/rag-checklist.md",
+          title: "rag-checklist.md"
+        }
+      ],
+      indexedDocumentCount: 1,
+      registryPath: ".opencow/knowledge/imported-files.json",
+      summary: "loaded"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("已索引文件 1")).toBeInTheDocument();
+      expect(screen.getByText("guide.txt")).toBeInTheDocument();
+      expect(screen.getByText("rag-checklist.md")).toBeInTheDocument();
+    });
   });
 
   it("keeps Ollama load details in settings while the main conversation stays minimal", async () => {

@@ -42,6 +42,8 @@ function createWorkbenchProps(
     onNewConversation: noop,
     onRestoreRecentConversation: noop,
     onDeleteRecentConversation: noop,
+    onImportKnowledgeFile: noop,
+    onRemoveKnowledgeFile: noop,
     onSubmitTask: noop,
     ...overrides
   };
@@ -96,7 +98,7 @@ describe("Workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "知识库" }));
 
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
-    expect(screen.getByText("导入、索引和检索本地长文档，后续会接入 doc、md、pptx 等工作区内容。")).toBeInTheDocument();
+    expect(screen.getByText("导入、索引和检索本地知识文件，优先保持工作区内可追踪、可恢复。")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "最近会话" }));
@@ -110,6 +112,57 @@ describe("Workbench", () => {
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
+  });
+
+  it("shows imported and importable knowledge files in the knowledge workspace", () => {
+    const onImportKnowledgeFile = vi.fn();
+    const onRemoveKnowledgeFile = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      storage: {
+        ...createInitialWorkbenchState().storage,
+        knowledgeCount: 2
+      },
+      knowledge: {
+        importedFiles: [
+          {
+            path: "docs/v1.0/06-rag-skills-npc-mcp.md",
+            title: "06-rag-skills-npc-mcp.md",
+            status: "ready" as const
+          },
+          {
+            path: "notes/local-rag-rules.txt",
+            title: "local-rag-rules.txt",
+            status: "missing" as const
+          }
+        ],
+        availableFiles: [
+          {
+            path: "notes/faq.txt",
+            title: "faq.txt"
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state, { onImportKnowledgeFile, onRemoveKnowledgeFile })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+
+    expect(within(knowledgePanel).getByText("已索引文件 2")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText("06-rag-skills-npc-mcp.md")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText("docs/v1.0/06-rag-skills-npc-mcp.md")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText("local-rag-rules.txt")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText("文件已失效，检索时会自动跳过。")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText("faq.txt")).toBeInTheDocument();
+
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "移出知识库：06-rag-skills-npc-mcp.md" }));
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "加入知识库：faq.txt" }));
+
+    expect(onRemoveKnowledgeFile).toHaveBeenCalledWith("docs/v1.0/06-rag-skills-npc-mcp.md");
+    expect(onImportKnowledgeFile).toHaveBeenCalledWith("notes/faq.txt");
   });
 
   it("switches every left sidebar destination into the main workspace", () => {

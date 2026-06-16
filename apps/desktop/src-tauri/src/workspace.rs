@@ -361,6 +361,39 @@ pub struct LocalKnowledgeSearchItem {
     score: usize,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct ImportedKnowledgeFileRecord {
+    path: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct KnowledgeImportRegistry {
+    version: usize,
+    imported_files: Vec<ImportedKnowledgeFileRecord>,
+}
+
+#[derive(Serialize)]
+pub struct KnowledgeInventoryFileItem {
+    path: String,
+    title: String,
+    status: String,
+}
+
+#[derive(Serialize)]
+pub struct KnowledgeInventoryAvailableFileItem {
+    path: String,
+    title: String,
+}
+
+#[derive(Serialize)]
+pub struct KnowledgeInventoryResult {
+    imported_files: Vec<KnowledgeInventoryFileItem>,
+    available_files: Vec<KnowledgeInventoryAvailableFileItem>,
+    indexed_document_count: usize,
+    registry_path: String,
+    summary: String,
+}
+
 #[derive(Serialize)]
 pub struct LocalSkillScanResult {
     summary: String,
@@ -1212,6 +1245,65 @@ pub fn local_knowledge_search(query: String) -> Result<LocalKnowledgeSearchResul
         indexed_document_count,
         items,
     })
+}
+
+#[tauri::command]
+pub fn knowledge_inventory() -> Result<KnowledgeInventoryResult, String> {
+    let root = resolve_workspace_root()?;
+    build_knowledge_inventory(&root)
+}
+
+#[tauri::command]
+pub fn knowledge_file_import(path: String) -> Result<KnowledgeInventoryResult, String> {
+    let root = resolve_workspace_root()?;
+    let normalized = normalize_workspace_relative_knowledge_path(&root, &path)?;
+
+    if !is_local_knowledge_file(&root.join(&normalized)) {
+        return Err(format!(
+            "knowledge import only supports md/txt files: {normalized}"
+        ));
+    }
+
+    let mut registry = read_knowledge_import_registry(&root)?;
+
+    if !registry
+        .imported_files
+        .iter()
+        .any(|entry| entry.path == normalized)
+    {
+        registry
+            .imported_files
+            .push(ImportedKnowledgeFileRecord { path: normalized });
+        registry.imported_files.sort_by(|left, right| left.path.cmp(&right.path));
+        write_knowledge_import_registry(&root, &registry)?;
+    }
+
+    build_knowledge_inventory(&root)
+}
+
+#[tauri::command]
+pub fn knowledge_file_remove(path: String) -> Result<KnowledgeInventoryResult, String> {
+    let root = resolve_workspace_root()?;
+    let normalized = normalize_workspace_relative_knowledge_path(&root, &path)?;
+    let mut registry = read_knowledge_import_registry(&root)?;
+
+    registry.imported_files.retain(|entry| entry.path != normalized);
+    write_knowledge_import_registry(&root, &registry)?;
+
+    build_knowledge_inventory(&root)
+}
+
+#[tauri::command]
+pub fn knowledge_imports_clear() -> Result<KnowledgeInventoryResult, String> {
+    let root = resolve_workspace_root()?;
+    write_knowledge_import_registry(
+        &root,
+        &KnowledgeImportRegistry {
+            version: 1,
+            imported_files: Vec::new(),
+        },
+    )?;
+    build_knowledge_inventory(&root)
 }
 
 #[tauri::command]
@@ -2947,6 +3039,160 @@ fn collect_local_knowledge_candidates(root: &Path) -> Result<Vec<PathBuf>, Strin
         collect_local_knowledge_candidates_recursive(&docs_root, &mut candidates)?;
     }
 
+    let knowledge_registry = read_knowledge_import_registry(root)?;
+
+    for entry in knowledge_registry.imported_files {
+        let candidate = root.join(&entry.path);
+
+        if candidate.exists() && is_local_knowledge_file(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+
+    candidates.sort();
+    candidates.dedup();
+
+    Ok(candidates)
+}
+
+fn knowledge_registry_path(root: &Path) -> PathBuf {
+    root.join(".opencow")
+        .join("knowledge")
+        .join("imported-files.json")
+}
+
+fn read_knowledge_import_registry(root: &Path) -> Result<KnowledgeImportRegistry, String> {
+    let path = knowledge_registry_path(root);
+
+    if !path.exists() {
+        return Ok(KnowledgeImportRegistry {
+            version: 1,
+            imported_files: Vec::new(),
+        });
+    }
+
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    serde_json::from_str(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", path.display()))
+}
+
+fn write_knowledge_import_registry(
+    root: &Path,
+    registry: &KnowledgeImportRegistry,
+) -> Result<(), String> {
+    let path = knowledge_registry_path(root);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    }
+
+    let serialized = serde_json::to_string_pretty(registry)
+        .map_err(|error| format!("failed to serialize knowledge import registry: {error}"))?;
+    fs::write(&path, format!("{serialized}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))
+}
+
+fn normalize_workspace_relative_knowledge_path(root: &Path, path: &str) -> Result<String, String> {
+    let candidate = root.join(path);
+    ensure_path_stays_in_workspace(root, &candidate)?;
+
+    Ok(to_workspace_relative_path(root, &candidate))
+}
+
+fn build_knowledge_inventory(root: &Path) -> Result<KnowledgeInventoryResult, String> {
+    let registry = read_knowledge_import_registry(root)?;
+    let registry_path = to_workspace_relative_path(root, &knowledge_registry_path(root));
+    let mut imported_files = Vec::new();
+
+    for entry in &registry.imported_files {
+        let absolute_path = root.join(&entry.path);
+        let title = absolute_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("document")
+            .to_string();
+        let status = if absolute_path.exists() { "ready" } else { "missing" };
+
+        imported_files.push(KnowledgeInventoryFileItem {
+            path: entry.path.clone(),
+            title,
+            status: status.to_string(),
+        });
+    }
+
+    imported_files.sort_by(|left, right| left.path.cmp(&right.path));
+
+    let imported_paths: std::collections::BTreeSet<String> = imported_files
+        .iter()
+        .map(|entry| entry.path.clone())
+        .collect();
+    let indexed_document_count = imported_files
+        .iter()
+        .filter(|entry| entry.status == "ready")
+        .count();
+    let mut available_files = collect_all_workspace_knowledge_candidates(root)?
+        .into_iter()
+        .map(|path| to_workspace_relative_path(root, &path))
+        .filter(|path| !imported_paths.contains(path))
+        .map(|path| {
+            let title = Path::new(&path)
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("document")
+                .to_string();
+
+            KnowledgeInventoryAvailableFileItem { path, title }
+        })
+        .collect::<Vec<_>>();
+
+    available_files.sort_by(|left, right| left.path.cmp(&right.path));
+
+    Ok(KnowledgeInventoryResult {
+        imported_files,
+        available_files,
+        indexed_document_count,
+        registry_path,
+        summary: format!(
+            "Knowledge inventory loaded with {} imported files and {} available files.",
+            indexed_document_count,
+            available_files.len()
+        ),
+    })
+}
+
+fn collect_all_workspace_knowledge_candidates(root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut candidates = Vec::new();
+
+    for entry in
+        fs::read_dir(root).map_err(|error| format!("failed to read workspace root: {error}"))?
+    {
+        let entry =
+            entry.map_err(|error| format!("failed to inspect workspace root entry: {error}"))?;
+        let path = entry.path();
+
+        if entry
+            .file_type()
+            .map(|kind| kind.is_file())
+            .unwrap_or(false)
+            && is_local_knowledge_file(&path)
+        {
+            candidates.push(path);
+        }
+    }
+
+    collect_local_knowledge_candidates_recursive(root, &mut candidates)?;
+
+    candidates.retain(|path| {
+        let normalized = path.to_string_lossy().replace('\\', "/");
+        !normalized.contains("/node_modules/")
+            && !normalized.contains("/target/")
+            && !normalized.contains("/.git/")
+            && !normalized.contains("/vendor/")
+            && !normalized.contains("/.opencow/")
+    });
+
     candidates.sort();
     candidates.dedup();
 
@@ -3944,7 +4190,58 @@ mod tests {
         assert!(is_local_knowledge_file(Path::new(
             "docs/v1.0/06-rag-skills-npc-mcp.md"
         )));
+        assert!(is_local_knowledge_file(Path::new("notes/local-rag-rules.txt")));
+        assert!(!is_local_knowledge_file(Path::new("docs/product/faq.mdx")));
         assert!(!is_local_knowledge_file(Path::new("package.json")));
+    }
+
+    #[test]
+    fn reads_missing_knowledge_registry_as_empty() {
+        let _guard = lock_workspace_test_guard();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-knowledge-registry-empty-{unique}"));
+
+        fs::create_dir_all(&workspace_root).unwrap();
+
+        let registry = read_knowledge_import_registry(&workspace_root).unwrap();
+
+        assert_eq!(registry.version, 1);
+        assert!(registry.imported_files.is_empty());
+
+        let _ = fs::remove_dir_all(&workspace_root);
+    }
+
+    #[test]
+    fn persists_knowledge_registry_entries() {
+        let _guard = lock_workspace_test_guard();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-knowledge-registry-write-{unique}"));
+
+        fs::create_dir_all(&workspace_root).unwrap();
+
+        write_knowledge_import_registry(
+            &workspace_root,
+            &KnowledgeImportRegistry {
+                version: 1,
+                imported_files: vec![ImportedKnowledgeFileRecord {
+                    path: "docs/guide.md".to_string(),
+                }],
+            },
+        )
+        .unwrap();
+
+        let registry = read_knowledge_import_registry(&workspace_root).unwrap();
+
+        assert_eq!(registry.imported_files.len(), 1);
+        assert_eq!(registry.imported_files[0].path, "docs/guide.md");
+
+        let _ = fs::remove_dir_all(&workspace_root);
     }
 
     #[test]

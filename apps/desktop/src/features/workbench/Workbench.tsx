@@ -1,4 +1,4 @@
-import type { StorageCleanupTarget, WorkbenchState } from "./workbenchState";
+import type { ImportedKnowledgeFile, StorageCleanupTarget, WorkbenchState } from "./workbenchState";
 import { useEffect, useState } from "react";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
@@ -38,19 +38,16 @@ type WorkbenchProps = {
   onNewConversation: () => void;
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
+  onImportKnowledgeFile: (path: string) => void;
+  onRemoveKnowledgeFile: (path: string) => void;
   onSubmitTask: (message: string) => void;
 };
 
-const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety">, { title: string; summary: string; details: string[] }> = {
+const viewContent: Record<Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety" | "knowledge">, { title: string; summary: string; details: string[] }> = {
   search: {
     title: "搜索",
     summary: "联网搜索能力会通过显式开关启用，默认保持本地优先。",
     details: ["从设置中配置 Provider 后，可在对话中请求联网搜索。", "所有联网能力都会留下来源和审计记录。"]
-  },
-  knowledge: {
-    title: "知识库",
-    summary: "导入、索引和检索本地长文档，后续会接入 doc、md、pptx 等工作区内容。",
-    details: ["当前优先补齐本地 RAG 的可追踪入口。", "长文本处理会继续沿权限、日志和回退链路收口。"]
   },
   skills: {
     title: "Skills",
@@ -146,6 +143,75 @@ function RecentConversationsPanel({
               </button>
               <button className="action-button" type="button" onClick={() => onDeleteRecentConversation(record.id)}>
                 删除这段会话
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function renderKnowledgeFileCard(
+  file: ImportedKnowledgeFile,
+  onRemoveKnowledgeFile: (path: string) => void
+) {
+  return (
+    <div className="workspace-history-card" key={file.path}>
+      <p>{file.title}</p>
+      <p className="muted">{file.path}</p>
+      {file.status === "missing" ? (
+        <p className="workspace-knowledge-warning">文件已失效，检索时会自动跳过。</p>
+      ) : null}
+      <div className="action-row">
+        <button
+          aria-label={`移出知识库：${file.title}`}
+          className="action-button"
+          type="button"
+          onClick={() => onRemoveKnowledgeFile(file.path)}
+        >
+          移出知识库
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgePanel({
+  state,
+  onImportKnowledgeFile,
+  onRemoveKnowledgeFile
+}: {
+  state: WorkbenchState;
+  onImportKnowledgeFile: (path: string) => void;
+  onRemoveKnowledgeFile: (path: string) => void;
+}) {
+  return (
+    <section className="workspace-panel" aria-label="知识库">
+      <header className="workspace-panel-header">
+        <h1>知识库</h1>
+        <p>导入、索引和检索本地知识文件，优先保持工作区内可追踪、可恢复。</p>
+      </header>
+      <div className="workspace-panel-list">
+        <p>已索引文件 {state.storage.knowledgeCount}</p>
+        {state.knowledge.importedFiles.length === 0 ? (
+          <p>还没有已纳入知识库的文件。先从下方候选文件中手动加入。</p>
+        ) : state.knowledge.importedFiles.map((file) => renderKnowledgeFileCard(file, onRemoveKnowledgeFile))}
+        <p>可导入文件</p>
+        {state.knowledge.availableFiles.length === 0 ? (
+          <p>当前没有新的可导入文件，稍后可以把更多 md、txt 文档放进工作区。</p>
+        ) : state.knowledge.availableFiles.map((file) => (
+          <div className="workspace-history-card" key={file.path}>
+            <p>{file.title}</p>
+            <p className="muted">{file.path}</p>
+            <div className="action-row">
+              <button
+                aria-label={`加入知识库：${file.title}`}
+                className="action-button"
+                type="button"
+                onClick={() => onImportKnowledgeFile(file.path)}
+              >
+                加入知识库
               </button>
             </div>
           </div>
@@ -499,6 +565,8 @@ export function Workbench({
   onNewConversation,
   onRestoreRecentConversation,
   onDeleteRecentConversation,
+  onImportKnowledgeFile,
+  onRemoveKnowledgeFile,
   onSubmitTask
 }: WorkbenchProps) {
   const [activeView, setActiveView] = useState<WorkbenchViewId>("chat");
@@ -555,6 +623,12 @@ export function Workbench({
             state={state}
             onRestoreRecentConversation={onRestoreRecentConversation}
             onDeleteRecentConversation={onDeleteRecentConversation}
+          />
+        ) : activeView === "knowledge" ? (
+          <KnowledgePanel
+            state={state}
+            onImportKnowledgeFile={onImportKnowledgeFile}
+            onRemoveKnowledgeFile={onRemoveKnowledgeFile}
           />
         ) : activeView === "audit" ? (
           <AuditPanel state={state} onCleanupStorage={onCleanupStorage} />

@@ -1,5 +1,8 @@
 export type {
+  AvailableKnowledgeFile,
   ConversationEntry,
+  ImportedKnowledgeFile,
+  KnowledgeFileStatus,
   LocalTaskExecutionKind,
   LocalTaskItem,
   PendingConfirmation,

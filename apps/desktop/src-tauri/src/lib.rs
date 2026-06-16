@@ -42,6 +42,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             health,
+            workspace::knowledge_file_import,
+            workspace::knowledge_file_remove,
+            workspace::knowledge_imports_clear,
+            workspace::knowledge_inventory,
             workspace::local_knowledge_search,
             workspace::local_mcp_plugin_inspect,
             workspace::local_mcp_plugin_start,

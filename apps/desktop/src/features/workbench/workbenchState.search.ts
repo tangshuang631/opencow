@@ -56,8 +56,7 @@ export function createSearchEnabledState(
         }
       },
       {
-        cacheCount: state.storage.cacheCount + 1,
-        knowledgeCount: state.storage.knowledgeCount + 1
+        cacheCount: state.storage.cacheCount + 1
       }
     ),
     rollbackEntryId,

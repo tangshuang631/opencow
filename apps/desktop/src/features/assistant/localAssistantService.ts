@@ -91,6 +91,21 @@ export type LocalKnowledgeSearchResult = {
   }>;
 };
 
+export type KnowledgeInventoryResult = {
+  importedFiles: Array<{
+    path: string;
+    title: string;
+    status: "ready" | "missing";
+  }>;
+  availableFiles: Array<{
+    path: string;
+    title: string;
+  }>;
+  indexedDocumentCount: number;
+  registryPath: string;
+  summary: string;
+};
+
 export type LocalSkillScanResult = {
   summary: string;
   total_count: number;
@@ -365,6 +380,42 @@ export async function searchLocalKnowledge(query: string): Promise<LocalKnowledg
   return invoke<LocalKnowledgeSearchResult>("local_knowledge_search", {
     query
   });
+}
+
+export async function loadKnowledgeInventory(): Promise<KnowledgeInventoryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewKnowledgeInventory();
+  }
+
+  return invoke<KnowledgeInventoryResult>("knowledge_inventory");
+}
+
+export async function importKnowledgeFile(path: string): Promise<KnowledgeInventoryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewKnowledgeInventory();
+  }
+
+  return invoke<KnowledgeInventoryResult>("knowledge_file_import", {
+    path
+  });
+}
+
+export async function removeKnowledgeFile(path: string): Promise<KnowledgeInventoryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewKnowledgeInventory();
+  }
+
+  return invoke<KnowledgeInventoryResult>("knowledge_file_remove", {
+    path
+  });
+}
+
+export async function clearKnowledgeImports(): Promise<KnowledgeInventoryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewKnowledgeInventory();
+  }
+
+  return invoke<KnowledgeInventoryResult>("knowledge_imports_clear");
 }
 
 export async function scanLocalSkills(): Promise<LocalSkillScanResult> {
@@ -753,6 +804,16 @@ function createBrowserPreviewProjectRunPreview(query: string): WorkspaceProjectR
         script_names: ["build", "test"]
       }
     ]
+  };
+}
+
+function createBrowserPreviewKnowledgeInventory(): KnowledgeInventoryResult {
+  return {
+    importedFiles: [],
+    availableFiles: [],
+    indexedDocumentCount: 0,
+    registryPath: ".opencow/knowledge/imported-files.json",
+    summary: "Browser preview mode cannot inspect the real knowledge inventory and returns an empty preview."
   };
 }
 

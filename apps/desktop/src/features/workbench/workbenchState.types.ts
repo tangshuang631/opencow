@@ -60,6 +60,19 @@ export type SearchSourceItem = {
   summary: string;
 };
 
+export type KnowledgeFileStatus = "ready" | "missing";
+
+export type ImportedKnowledgeFile = {
+  path: string;
+  title: string;
+  status: KnowledgeFileStatus;
+};
+
+export type AvailableKnowledgeFile = {
+  path: string;
+  title: string;
+};
+
 export type RecentConversationRecord = {
   id: string;
   title: string;
@@ -197,6 +210,10 @@ export type WorkbenchState = {
   search: {
     enabled: boolean;
     providerLabel: string;
+  };
+  knowledge: {
+    importedFiles: ImportedKnowledgeFile[];
+    availableFiles: AvailableKnowledgeFile[];
   };
   sources: {
     items: SearchSourceItem[];

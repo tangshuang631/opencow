@@ -105,6 +105,10 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
     state.history?.lastNonEmptyConversationEntries
     ?? (state.conversation.entries.length > 0 ? state.conversation.entries : []);
   const revivedRecentConversations = state.history?.recentConversations ?? [];
+  const revivedKnowledge = state.knowledge ?? {
+    importedFiles: [],
+    availableFiles: []
+  };
   const revivedConversationEntries =
     state.conversation.entries.length > 0
       ? state.conversation.entries
@@ -119,6 +123,7 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
       lastNonEmptyConversationEntries: revivedHistoryEntries,
       recentConversations: revivedRecentConversations
     },
+    knowledge: revivedKnowledge,
     tasks: revivePersistedTasks(state.tasks),
     confirmation: {
       pending: null

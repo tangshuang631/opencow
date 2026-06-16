@@ -12,6 +12,12 @@ import { Workbench } from "../features/workbench/Workbench";
 import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapability";
 import { writeNpcConfig } from "../features/assistant/localAssistantService";
 import {
+  clearKnowledgeImports,
+  importKnowledgeFile,
+  loadKnowledgeInventory,
+  removeKnowledgeFile
+} from "../features/assistant/localAssistantService";
+import {
   applyPendingRollbackState,
   approvePendingConfirmationState,
   approvePermissionModeChangeState,
@@ -1814,6 +1820,40 @@ export function App() {
       return;
     }
 
+    let cancelled = false;
+
+    void loadKnowledgeInventory()
+      .then((inventory) => {
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            knowledge: {
+              importedFiles: inventory.importedFiles,
+              availableFiles: inventory.availableFiles
+            },
+            storage: {
+              ...current.storage,
+              knowledgeCount: inventory.indexedDocumentCount
+            }
+          }));
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasHydratedPersistedState]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistedState) {
+      return;
+    }
+
     const idle = state.tasks.activeTaskId === null && state.tasks.pendingCount === 0;
 
     if (!idle || hasLoadedOllamaOverviewRef.current) {
@@ -2729,6 +2769,31 @@ export function App() {
   }
 
   function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
+    if (target === "knowledge") {
+      void clearKnowledgeImports()
+        .then((inventory) => {
+          startTransition(() => {
+            setState((current) => createStorageCleanupState({
+              ...current,
+              knowledge: {
+                importedFiles: inventory.importedFiles,
+                availableFiles: inventory.availableFiles
+              },
+              storage: {
+                ...current.storage,
+                knowledgeCount: inventory.indexedDocumentCount
+              }
+            }, target));
+          });
+        })
+        .catch(() => {
+          startTransition(() => {
+            setState((current) => createStorageCleanupState(current, target));
+          });
+        });
+      return;
+    }
+
     startTransition(() => {
       setState((current) => {
         const nextState = createStorageCleanupState(current, target);
@@ -2798,6 +2863,46 @@ export function App() {
     startTransition(() => {
       setState((current) => deleteRecentConversationState(current, conversationId));
     });
+  }
+
+  function handleImportKnowledgeFile(path: string) {
+    void importKnowledgeFile(path)
+      .then((inventory) => {
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            knowledge: {
+              importedFiles: inventory.importedFiles,
+              availableFiles: inventory.availableFiles
+            },
+            storage: {
+              ...current.storage,
+              knowledgeCount: inventory.indexedDocumentCount
+            }
+          }));
+        });
+      })
+      .catch(() => undefined);
+  }
+
+  function handleRemoveKnowledgeFile(path: string) {
+    void removeKnowledgeFile(path)
+      .then((inventory) => {
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            knowledge: {
+              importedFiles: inventory.importedFiles,
+              availableFiles: inventory.availableFiles
+            },
+            storage: {
+              ...current.storage,
+              knowledgeCount: inventory.indexedDocumentCount
+            }
+          }));
+        });
+      })
+      .catch(() => undefined);
   }
 
   function handleSubmitTask(message: string) {
@@ -2928,6 +3033,8 @@ export function App() {
       onNewConversation={handleNewConversation}
       onRestoreRecentConversation={handleRestoreRecentConversation}
       onDeleteRecentConversation={handleDeleteRecentConversation}
+      onImportKnowledgeFile={handleImportKnowledgeFile}
+      onRemoveKnowledgeFile={handleRemoveKnowledgeFile}
       onSubmitTask={handleSubmitTask}
     />
   );

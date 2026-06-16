@@ -47,6 +47,10 @@ export function createInitialWorkbenchState(): WorkbenchState {
       enabled: false,
       providerLabel: ""
     },
+    knowledge: {
+      importedFiles: [],
+      availableFiles: []
+    },
     sources: {
       items: []
     },

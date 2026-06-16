@@ -1307,6 +1307,7 @@ describe("createInitialWorkbenchState", () => {
       kind: "system",
       title: "联网搜索已开启"
     });
+    expect(updated.storage.knowledgeCount).toBe(0);
     expect(updated.rollback.entries[0]?.label).toBe("联网搜索");
   });
 
