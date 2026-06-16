@@ -17,6 +17,7 @@ import {
 } from "../../../desktop/src/features/assistant/localAssistantService";
 import { Workbench } from "../../../desktop/src/features/workbench/Workbench";
 import {
+  createOllamaLoadErrorState,
   createInitialWorkbenchState,
   createModelSelectedState,
   createNewConversationState,
@@ -29,6 +30,7 @@ import {
   mergeOllamaOverview,
   restoreRecentConversationState
 } from "../../../desktop/src/features/workbench/workbenchState";
+import { loadOllamaOverview } from "../../../desktop/src/features/ollama/ollamaService";
 import type {
   AvailableKnowledgeFile,
   ImportedKnowledgeFile,
@@ -200,6 +202,17 @@ function createLocalRagSearchResultSummaryWithLibrary(
     `主要来源：${topPaths}。`,
     `检索问题：${result.query}。`
   ].join(" ");
+}
+
+function createKnowledgeHitAuditDetailLines(result: ReturnType<typeof searchWebKnowledge>) {
+  return result.items.slice(0, 3).flatMap((item) => {
+    const followUpQuery = `search local knowledge in ${item.title} for ${result.query.replace(/^search local knowledge for /i, "").trim()}`;
+
+    return [
+      `命中片段：${item.title}: ${item.snippet}`,
+      `命中卡片：来源文件=${item.title}；匹配分数=${item.score}；片段预览=${item.snippet}；回查指令=${followUpQuery}`
+    ];
+  });
 }
 
 function createHydratedWebState(state: WorkbenchState): WorkbenchState {
@@ -429,21 +442,18 @@ function tokenizeIntent(input: string) {
   return input.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean);
 }
 
+function isCapabilityOverviewRequest(normalized: string, capabilityId: "rag" | "skills" | "npc" | "mcp") {
+  return normalized.includes(`show ${capabilityId} capability overview`)
+    || normalized.includes(`${capabilityId} capability overview`);
+}
+
 export function WebApp() {
   const webKnowledgeRecordRef = useRef<WebKnowledgeRecord>(readWebKnowledgeRecord());
+  const hasLoadedOllamaOverviewRef = useRef(false);
   const [state, setState] = useState<WorkbenchState>(() =>
-    mergeOllamaOverview(
-      withKnowledgeRecord(
-        loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState),
-        webKnowledgeRecordRef.current
-      ),
-      {
-        reachable: true,
-        endpoint: "browser://local-first",
-        selectedModel: "opencow-web-preview",
-        diagnostic: "",
-        models: [{ name: "opencow-web-preview", sizeLabel: "Browser Preview" }]
-      }
+    withKnowledgeRecord(
+      loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState),
+      webKnowledgeRecordRef.current
     )
   );
 
@@ -451,6 +461,28 @@ export function WebApp() {
     void persistWorkbenchState(state);
     persistWebKnowledgeRecord(webKnowledgeRecordRef.current);
   }, [state]);
+
+  useEffect(() => {
+    if (hasLoadedOllamaOverviewRef.current) {
+      return;
+    }
+
+    hasLoadedOllamaOverviewRef.current = true;
+
+    void loadOllamaOverview()
+      .then((overview) => {
+        startTransition(() => {
+          setState((current) => preserveWebKnowledgeState(current, mergeOllamaOverview(current, overview)));
+        });
+      })
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : "Unknown ollama load error";
+
+        startTransition(() => {
+          setState((current) => preserveWebKnowledgeState(current, createOllamaLoadErrorState(current, detail)));
+        });
+      });
+  }, []);
 
   function setReadonlyCapabilitySummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
     const overview = loadWebCapabilityOverview(capabilityId);
@@ -995,26 +1027,6 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("rag")) {
-      setReadonlyCapabilitySummary("rag");
-      return;
-    }
-
-    if (normalized.includes("skills")) {
-      setReadonlyCapabilitySummary("skills");
-      return;
-    }
-
-    if (normalized.includes("npc")) {
-      setReadonlyCapabilitySummary("npc");
-      return;
-    }
-
-    if (normalized.includes("mcp")) {
-      setReadonlyCapabilitySummary("mcp");
-      return;
-    }
-
     if (normalized.includes("search local knowledge")) {
       startTransition(() => {
         setState((current) => {
@@ -1040,14 +1052,32 @@ export function WebApp() {
               currentBrowserState.webKnowledge?.activeLibraryLabel ?? "默认知识库",
               result
             ),
-            auditDetailLines: result.items
-              .slice(0, 3)
-              .map((item) => `命中片段：${item.title}: ${item.snippet}`)
+            auditDetailLines: createKnowledgeHitAuditDetailLines(result)
           });
 
           return preserveWebKnowledgeState(current, succeeded);
         });
       });
+      return;
+    }
+
+    if (isCapabilityOverviewRequest(normalized, "rag")) {
+      setReadonlyCapabilitySummary("rag");
+      return;
+    }
+
+    if (isCapabilityOverviewRequest(normalized, "skills")) {
+      setReadonlyCapabilitySummary("skills");
+      return;
+    }
+
+    if (isCapabilityOverviewRequest(normalized, "npc")) {
+      setReadonlyCapabilitySummary("npc");
+      return;
+    }
+
+    if (isCapabilityOverviewRequest(normalized, "mcp")) {
+      setReadonlyCapabilitySummary("mcp");
       return;
     }
 

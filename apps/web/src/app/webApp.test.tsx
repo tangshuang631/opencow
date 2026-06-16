@@ -1,5 +1,21 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebApp } from "./WebApp";
+
+const { loadOllamaOverviewMock } = vi.hoisted(() => ({
+  loadOllamaOverviewMock: vi.fn()
+}));
+
+vi.mock("../../../desktop/src/features/ollama/ollamaService", async () => {
+  const actual = await vi.importActual<typeof import("../../../desktop/src/features/ollama/ollamaService")>(
+    "../../../desktop/src/features/ollama/ollamaService"
+  );
+
+  return {
+    ...actual,
+    loadOllamaOverview: loadOllamaOverviewMock
+  };
+});
 
 function getComposerInput() {
   return screen.getByLabelText("输入任务");
@@ -10,6 +26,52 @@ function getComposerSendButton() {
 }
 
 describe("WebApp", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    loadOllamaOverviewMock.mockReset();
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [
+        { name: "gemma4:12b", sizeLabel: "7.2 GB" },
+        { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" },
+        { name: "gemma4:e4b", sizeLabel: "3.2 GB" },
+        { name: "qwen3.5:9b", sizeLabel: "6.6 GB" }
+      ]
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+
+  it("loads the current local Ollama models into the web composer", async () => {
+    render(<WebApp />);
+
+    const modelButton = await screen.findByRole("button", { name: "选择模型：qwen2.5-coder:7b" });
+    fireEvent.click(modelButton);
+
+    expect(await screen.findByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "qwen2.5-coder:7b 4.1 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "gemma4:e4b 3.2 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "qwen3.5:9b 6.6 GB" })).toBeInTheDocument();
+  });
+
+  it("switches the active web model from the real local Ollama list", async () => {
+    render(<WebApp />);
+
+    const modelButton = await screen.findByRole("button", { name: "选择模型：qwen2.5-coder:7b" });
+    fireEvent.click(modelButton);
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "qwen3.5:9b 6.6 GB" }));
+
+    expect(await screen.findByRole("button", { name: "选择模型：qwen3.5:9b" })).toBeInTheDocument();
+  });
+
   it("restores browser conversation history after remount", async () => {
     const firstRender = render(<WebApp />);
 
@@ -140,6 +202,41 @@ describe("WebApp", () => {
       expect(
         within(conversation).getByText(/命中片段：web-history-mvp\.md: # Web History MVP Keep recent conversations/)
       ).toBeInTheDocument();
+      expect(within(conversation).getByText("检索命中")).toBeInTheDocument();
+      expect(within(conversation).getByText("来源文件：npc-notes.txt")).toBeInTheDocument();
+      expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
+      expect(within(conversation).getAllByText(/匹配分数：10/).length).toBeGreaterThan(0);
+    });
+  });
+
+  it("supports follow-up search by clicking a matched knowledge source", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：web-history-mvp.md" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：npc-notes.txt" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search local knowledge for browser history" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByRole("button", { name: "只看来源：npc-notes.txt" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(conversation).getByRole("button", { name: "只看来源：npc-notes.txt" }));
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText(/知识库：默认知识库。/).length).toBeGreaterThanOrEqual(2);
+      expect(within(conversation).getByText(/找到 1 条匹配片段，已索引 2 个文档。/)).toBeInTheDocument();
+      expect(within(conversation).getAllByText(/主要来源：npc-notes\.txt。/).length).toBeGreaterThanOrEqual(1);
+      expect(
+        within(conversation).getAllByText(/检索问题：search local knowledge in npc-notes\.txt for browser history。/).length
+      ).toBeGreaterThanOrEqual(1);
+      expect(within(conversation).getAllByText("来源文件：web-history-mvp.md").length).toBe(1);
     });
   });
 
@@ -430,6 +527,39 @@ describe("WebApp", () => {
       expect(within(switchedConversation).getByText(/知识库：规则库。/)).toBeInTheDocument();
       expect(within(switchedConversation).getByText(/找到 1 条匹配片段，已索引 1 个文档。/)).toBeInTheDocument();
       expect(within(switchedConversation).getByText(/主要来源：npc-notes\.txt。/)).toBeInTheDocument();
+    });
+  });
+
+  it("filters imported and available knowledge files by the current library search input", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "加入知识库：web-history-mvp.md" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    const filterInput = within(knowledgePanel).getByRole("textbox", { name: "筛选当前知识库文件" });
+
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("web-history-mvp.md")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByRole("button", { name: "加入知识库：npc-notes.txt" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(filterInput, {
+      target: { value: "history" }
+    });
+
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("web-history-mvp.md")).toBeInTheDocument();
+      expect(within(knowledgePanel).queryByRole("button", { name: "加入知识库：npc-notes.txt" })).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(filterInput, {
+      target: { value: "npc" }
+    });
+
+    await waitFor(() => {
+      expect(within(knowledgePanel).queryByText("web-history-mvp.md")).not.toBeInTheDocument();
+      expect(within(knowledgePanel).getByRole("button", { name: "加入知识库：npc-notes.txt" })).toBeInTheDocument();
     });
   });
 

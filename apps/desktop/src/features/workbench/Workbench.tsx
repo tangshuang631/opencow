@@ -213,10 +213,22 @@ function KnowledgePanel({
   onSelectKnowledgeLibrary?: (libraryId: string) => void;
 }) {
   const [draftLibraryName, setDraftLibraryName] = useState("");
+  const [knowledgeFilter, setKnowledgeFilter] = useState("");
   const supportsNamedLibraries = Boolean(knowledgeLibraryLabel && knowledgeLibraries && onCreateKnowledgeLibrary && onSelectKnowledgeLibrary);
   const availableKnowledgeLibraries = knowledgeLibraries ?? [];
   const handleSelectLibrary = onSelectKnowledgeLibrary ?? (() => undefined);
   const handleCreateLibrary = onCreateKnowledgeLibrary ?? (() => undefined);
+  const normalizedFilter = knowledgeFilter.trim().toLowerCase();
+  const filteredImportedFiles = normalizedFilter.length === 0
+    ? state.knowledge.importedFiles
+    : state.knowledge.importedFiles.filter((file) =>
+      `${file.title} ${file.path}`.toLowerCase().includes(normalizedFilter)
+    );
+  const filteredAvailableFiles = normalizedFilter.length === 0
+    ? state.knowledge.availableFiles
+    : state.knowledge.availableFiles.filter((file) =>
+      `${file.title} ${file.path}`.toLowerCase().includes(normalizedFilter)
+    );
 
   function handleImportLocalFiles(files: FileList | File[]) {
     const fileList = Array.from(files);
@@ -279,10 +291,21 @@ function KnowledgePanel({
             </div>
           </>
         ) : null}
+        <div className="workspace-history-card">
+          <p>筛选当前知识库文件</p>
+          <p className="muted">按文件名或路径快速定位当前知识库里的已导入和可导入文档。</p>
+          <input
+            aria-label="筛选当前知识库文件"
+            className="settings-textarea"
+            type="text"
+            value={knowledgeFilter}
+            onChange={(event) => setKnowledgeFilter(event.target.value)}
+          />
+        </div>
         <p>已索引文件 {state.storage.knowledgeCount}</p>
-        {state.knowledge.importedFiles.length === 0 ? (
+        {filteredImportedFiles.length === 0 ? (
           <p>还没有已纳入知识库的文件。先从下方候选文件中手动加入。</p>
-        ) : state.knowledge.importedFiles.map((file) => renderKnowledgeFileCard(file, onRemoveKnowledgeFile))}
+        ) : filteredImportedFiles.map((file) => renderKnowledgeFileCard(file, onRemoveKnowledgeFile))}
         <div className="workspace-history-card">
           <p>导入本地 md/txt 文件</p>
           <p className="muted">支持把你当前机器上的真实文档直接纳入当前知识库。</p>
@@ -311,9 +334,9 @@ function KnowledgePanel({
           />
         </div>
         <p>可导入文件</p>
-        {state.knowledge.availableFiles.length === 0 ? (
+        {filteredAvailableFiles.length === 0 ? (
           <p>当前没有新的可导入文件，稍后可以把更多 md、txt 文档放进工作区。</p>
-        ) : state.knowledge.availableFiles.map((file) => (
+        ) : filteredAvailableFiles.map((file) => (
           <div className="workspace-history-card" key={file.path}>
             <p>{file.title}</p>
             <p className="muted">{file.path}</p>
@@ -735,6 +758,7 @@ export function Workbench({
             onCancelActiveTask={onCancelActiveTask}
             onRestoreRecentConversation={onRestoreRecentConversation}
             onDeleteRecentConversation={onDeleteRecentConversation}
+            onSubmitTask={onSubmitTask}
           />
         ) : activeView === "history" ? (
           <RecentConversationsPanel

@@ -12,13 +12,38 @@ function createQueryTokens(query: string) {
     .filter((token) => !["search", "local", "knowledge", "for", "the", "and"].includes(token));
 }
 
+function parseScopedSourceFilter(query: string) {
+  const match = query.match(/search local knowledge in (.+?) for (.+)/i);
+
+  if (!match) {
+    return {
+      sourceFilter: "",
+      tokenQuery: query
+    };
+  }
+
+  return {
+    sourceFilter: normalizeText(match[1] ?? ""),
+    tokenQuery: match[2] ?? query
+  };
+}
+
 export function searchWebKnowledge(query: string, record = readWebKnowledgeRecord()): LocalKnowledgeSearchResult {
   const activeLibrary =
     record.libraries.find((library) => library.id === record.activeLibraryId)
     ?? record.libraries[0]
     ?? { importedFiles: [] };
-  const tokens = createQueryTokens(query);
+  const { sourceFilter, tokenQuery } = parseScopedSourceFilter(query);
+  const tokens = createQueryTokens(tokenQuery);
   const items = activeLibrary.importedFiles
+    .filter((file) => {
+      if (!sourceFilter) {
+        return true;
+      }
+
+      const searchableSource = normalizeText(`${file.title} ${file.path}`);
+      return searchableSource.includes(sourceFilter);
+    })
     .map((file) => {
       const haystack = normalizeText(`${file.title} ${file.content}`);
       const matchedTokenCount = tokens.filter((token) => haystack.includes(token)).length;

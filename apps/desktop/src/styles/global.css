@@ -221,6 +221,28 @@ input {
   border-radius: 0;
 }
 
+.message-knowledge-results {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.message-detail-title {
+  margin: 0;
+  color: #45525c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.message-knowledge-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(31, 37, 43, 0.09);
+  border-radius: 14px;
+  background: rgba(247, 249, 248, 0.92);
+}
+
 .assistant-row {
   background: transparent;
 }

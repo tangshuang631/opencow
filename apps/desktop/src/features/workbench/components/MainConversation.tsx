@@ -16,6 +16,7 @@ type MainConversationProps = {
   onCancelActiveTask: () => void;
   onRestoreRecentConversation?: (conversationId: string) => void;
   onDeleteRecentConversation?: (conversationId: string) => void;
+  onSubmitTask?: (message: string) => void;
 };
 
 const TEXT = {
@@ -76,6 +77,36 @@ function getVisibleDetailLines(entry: WorkbenchState["conversation"]["entries"][
   return detailLines.filter(
     (line) => !SUCCESS_TRACE_PREFIXES.some((prefix) => line.startsWith(prefix))
   );
+}
+
+type KnowledgeHitCard = {
+  sourceTitle: string;
+  score: string;
+  snippet: string;
+  followUpQuery: string;
+};
+
+function parseKnowledgeHitCards(detailLines: string[]) {
+  const cards: KnowledgeHitCard[] = [];
+  const remainingLines: string[] = [];
+
+  for (const line of detailLines) {
+    const match = line.match(/^命中卡片：来源文件=(.+?)；匹配分数=(.+?)；片段预览=(.+?)；回查指令=(.+)$/);
+
+    if (!match) {
+      remainingLines.push(line);
+      continue;
+    }
+
+    cards.push({
+      sourceTitle: match[1]?.trim() ?? "",
+      score: match[2]?.trim() ?? "",
+      snippet: match[3]?.trim() ?? "",
+      followUpQuery: match[4]?.trim() ?? ""
+    });
+  }
+
+  return { cards, remainingLines };
 }
 
 function isDuplicatePendingApprovalSkippedEntry(entry: WorkbenchState["conversation"]["entries"][number]) {
@@ -347,7 +378,8 @@ export function MainConversation({
   state,
   onPreviewRollback,
   onRestoreRecentConversation,
-  onDeleteRecentConversation
+  onDeleteRecentConversation,
+  onSubmitTask
 }: MainConversationProps) {
   const activeTask = state.tasks.activeTaskId
     ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
@@ -435,7 +467,7 @@ export function MainConversation({
         ) : null}
         {visibleEntries.map((entry) => {
           const isUser = entry.kind === "user";
-          const visibleDetailLines = getVisibleDetailLines(entry);
+          const { cards: knowledgeHitCards, remainingLines: visibleDetailLines } = parseKnowledgeHitCards(getVisibleDetailLines(entry));
           const userRollbackTargetId = getRollbackTargetBeforeUserEntry(entry, state);
 
           return (
@@ -455,6 +487,26 @@ export function MainConversation({
                   </p>
                 )}
                 <CollapsibleWorkbenchText text={getVisibleSummary(entry)} isUser={isUser} />
+                {knowledgeHitCards.length > 0 ? (
+                  <section className="message-knowledge-results" aria-label="检索命中">
+                    <p className="message-detail-title">检索命中</p>
+                    {knowledgeHitCards.map((card) => (
+                      <div className="message-knowledge-card" key={`${entry.id}-${card.sourceTitle}-${card.score}`}>
+                        <p className="message-detail">来源文件：{normalizeWorkbenchText(card.sourceTitle)}</p>
+                        <p className="message-detail">匹配分数：{normalizeWorkbenchText(card.score)}</p>
+                        <p className="message-detail">{normalizeWorkbenchText(card.snippet)}</p>
+                        <button
+                          className="action-button"
+                          type="button"
+                          aria-label={`只看来源：${card.sourceTitle}`}
+                          onClick={() => onSubmitTask?.(card.followUpQuery)}
+                        >
+                          只看来源：{normalizeWorkbenchText(card.sourceTitle)}
+                        </button>
+                      </div>
+                    ))}
+                  </section>
+                ) : null}
                 {visibleDetailLines.map((line) => (
                   <p className="message-detail" key={`${entry.id}-${line}`}>
                     {normalizeWorkbenchText(line)}
