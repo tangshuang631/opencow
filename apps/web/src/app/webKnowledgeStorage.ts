@@ -1,9 +1,14 @@
 export type WebKnowledgeRecord = {
-  importedFiles: Array<{
-    path: string;
-    title: string;
-    status: "ready" | "missing";
-    content: string;
+  activeLibraryId: string;
+  libraries: Array<{
+    id: string;
+    label: string;
+    importedFiles: Array<{
+      path: string;
+      title: string;
+      status: "ready" | "missing";
+      content: string;
+    }>;
   }>;
 };
 
@@ -15,19 +20,68 @@ function isBrowserStorageAvailable() {
 
 export function readWebKnowledgeRecord(): WebKnowledgeRecord {
   if (!isBrowserStorageAvailable()) {
-    return { importedFiles: [] };
+    return {
+      activeLibraryId: "default-library",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          importedFiles: []
+        }
+      ]
+    };
   }
 
   const candidate = window.localStorage.getItem(WEB_KNOWLEDGE_STORAGE_KEY);
 
   if (!candidate) {
-    return { importedFiles: [] };
+    return {
+      activeLibraryId: "default-library",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          importedFiles: []
+        }
+      ]
+    };
   }
 
   try {
-    return JSON.parse(candidate) as WebKnowledgeRecord;
+    const parsed = JSON.parse(candidate) as Partial<WebKnowledgeRecord> & {
+      importedFiles?: Array<{
+        path: string;
+        title: string;
+        status: "ready" | "missing";
+        content: string;
+      }>;
+    };
+
+    if (Array.isArray(parsed.libraries) && typeof parsed.activeLibraryId === "string") {
+      return parsed as WebKnowledgeRecord;
+    }
+
+    return {
+      activeLibraryId: "default-library",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          importedFiles: parsed.importedFiles ?? []
+        }
+      ]
+    };
   } catch {
-    return { importedFiles: [] };
+    return {
+      activeLibraryId: "default-library",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          importedFiles: []
+        }
+      ]
+    };
   }
 }
 

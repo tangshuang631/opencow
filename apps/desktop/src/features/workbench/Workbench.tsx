@@ -40,6 +40,14 @@ type WorkbenchProps = {
   onDeleteRecentConversation: (conversationId: string) => void;
   onImportKnowledgeFile: (path: string) => void;
   onRemoveKnowledgeFile: (path: string) => void;
+  knowledgeLibraryLabel?: string;
+  knowledgeLibraries?: Array<{
+    id: string;
+    label: string;
+    active: boolean;
+  }>;
+  onCreateKnowledgeLibrary?: (name: string) => void;
+  onSelectKnowledgeLibrary?: (libraryId: string) => void;
   onSubmitTask: (message: string) => void;
 };
 
@@ -182,12 +190,30 @@ function renderKnowledgeFileCard(
 function KnowledgePanel({
   state,
   onImportKnowledgeFile,
-  onRemoveKnowledgeFile
+  onRemoveKnowledgeFile,
+  knowledgeLibraryLabel,
+  knowledgeLibraries,
+  onCreateKnowledgeLibrary,
+  onSelectKnowledgeLibrary
 }: {
   state: WorkbenchState;
   onImportKnowledgeFile: (path: string) => void;
   onRemoveKnowledgeFile: (path: string) => void;
+  knowledgeLibraryLabel?: string;
+  knowledgeLibraries?: Array<{
+    id: string;
+    label: string;
+    active: boolean;
+  }>;
+  onCreateKnowledgeLibrary?: (name: string) => void;
+  onSelectKnowledgeLibrary?: (libraryId: string) => void;
 }) {
+  const [draftLibraryName, setDraftLibraryName] = useState("");
+  const supportsNamedLibraries = Boolean(knowledgeLibraryLabel && knowledgeLibraries && onCreateKnowledgeLibrary && onSelectKnowledgeLibrary);
+  const availableKnowledgeLibraries = knowledgeLibraries ?? [];
+  const handleSelectLibrary = onSelectKnowledgeLibrary ?? (() => undefined);
+  const handleCreateLibrary = onCreateKnowledgeLibrary ?? (() => undefined);
+
   return (
     <section className="workspace-panel" aria-label="知识库">
       <header className="workspace-panel-header">
@@ -195,6 +221,50 @@ function KnowledgePanel({
         <p>导入、索引和检索本地知识文件，优先保持工作区内可追踪、可恢复。</p>
       </header>
       <div className="workspace-panel-list">
+        {supportsNamedLibraries ? (
+          <>
+            <p>当前知识库：{knowledgeLibraryLabel}</p>
+            <p>知识库列表</p>
+            <div className="action-row" aria-label="知识库列表">
+              {availableKnowledgeLibraries.map((library) => (
+                <button
+                  key={library.id}
+                  aria-label={library.active ? `当前知识库：${library.label}` : `切换到知识库：${library.label}`}
+                  className="action-button"
+                  type="button"
+                  onClick={() => handleSelectLibrary(library.id)}
+                >
+                  {library.active ? `${library.label}（当前）` : `切换到知识库：${library.label}`}
+                </button>
+              ))}
+            </div>
+            <div className="action-row" aria-label="创建知识库">
+              <input
+                aria-label="新知识库名称"
+                className="settings-textarea"
+                type="text"
+                value={draftLibraryName}
+                onChange={(event) => setDraftLibraryName(event.target.value)}
+              />
+              <button
+                className="action-button"
+                type="button"
+                onClick={() => {
+                  const nextName = draftLibraryName.trim();
+
+                  if (!nextName) {
+                    return;
+                  }
+
+                  handleCreateLibrary(nextName);
+                  setDraftLibraryName("");
+                }}
+              >
+                创建知识库
+              </button>
+            </div>
+          </>
+        ) : null}
         <p>已索引文件 {state.storage.knowledgeCount}</p>
         {state.knowledge.importedFiles.length === 0 ? (
           <p>还没有已纳入知识库的文件。先从下方候选文件中手动加入。</p>
@@ -569,6 +639,10 @@ export function Workbench({
   onDeleteRecentConversation,
   onImportKnowledgeFile,
   onRemoveKnowledgeFile,
+  knowledgeLibraryLabel,
+  knowledgeLibraries,
+  onCreateKnowledgeLibrary,
+  onSelectKnowledgeLibrary,
   onSubmitTask
 }: WorkbenchProps) {
   const [activeView, setActiveView] = useState<WorkbenchViewId>("chat");
@@ -631,6 +705,10 @@ export function Workbench({
             state={state}
             onImportKnowledgeFile={onImportKnowledgeFile}
             onRemoveKnowledgeFile={onRemoveKnowledgeFile}
+            knowledgeLibraryLabel={knowledgeLibraryLabel}
+            knowledgeLibraries={knowledgeLibraries}
+            onCreateKnowledgeLibrary={onCreateKnowledgeLibrary}
+            onSelectKnowledgeLibrary={onSelectKnowledgeLibrary}
           />
         ) : activeView === "audit" ? (
           <AuditPanel state={state} onCleanupStorage={onCleanupStorage} />

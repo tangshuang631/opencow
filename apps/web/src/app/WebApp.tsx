@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   disableLocalSkill,
@@ -38,7 +38,12 @@ import {
   loadPersistedWorkbenchStateFromBrowserStorage,
   persistWorkbenchState
 } from "../../../desktop/src/features/workbench/workbenchState.persistence";
-import { clearWebKnowledgeRecord, persistWebKnowledgeRecord, readWebKnowledgeRecord } from "./webKnowledgeStorage";
+import {
+  clearWebKnowledgeRecord,
+  persistWebKnowledgeRecord,
+  readWebKnowledgeRecord,
+  type WebKnowledgeRecord
+} from "./webKnowledgeStorage";
 import { searchWebKnowledge } from "./webKnowledgeSearch";
 import { loadWebCapabilityOverview } from "./webCapabilityService";
 
@@ -55,13 +60,32 @@ const WEB_SAMPLE_DOCS: Array<{ path: string; title: string; content: string }> =
   }
 ];
 
-function createKnowledgeStateFromStorage(): {
+type WebKnowledgeLibrary = {
+  id: string;
+  label: string;
   importedFiles: ImportedKnowledgeFile[];
   availableFiles: AvailableKnowledgeFile[];
-  knowledgeCount: number;
-} {
-  const persisted = readWebKnowledgeRecord();
-  const importedFiles = persisted.importedFiles.map((item) => ({
+};
+
+function createDefaultKnowledgeRecord(): WebKnowledgeRecord {
+  return {
+    activeLibraryId: "default-library",
+    libraries: [
+      {
+        id: "default-library",
+        label: "默认知识库",
+        importedFiles: []
+      }
+    ]
+  };
+}
+
+function createKnowledgeLibraryState(record: WebKnowledgeRecord, libraryId: string): WebKnowledgeLibrary {
+  const activeLibrary =
+    record.libraries.find((library) => library.id === libraryId)
+    ?? record.libraries[0]
+    ?? createDefaultKnowledgeRecord().libraries[0];
+  const importedFiles = activeLibrary.importedFiles.map((item) => ({
     path: item.path,
     title: item.title,
     status: item.status
@@ -75,14 +99,35 @@ function createKnowledgeStateFromStorage(): {
     }));
 
   return {
+    id: activeLibrary.id,
+    label: activeLibrary.label,
     importedFiles,
-    availableFiles,
-    knowledgeCount: importedFiles.length
+    availableFiles
+  };
+}
+
+function createKnowledgeStateFromRecord(record: WebKnowledgeRecord): {
+  activeLibraryId: string;
+  activeLibraryLabel: string;
+  libraries: WebKnowledgeRecord["libraries"];
+  importedFiles: ImportedKnowledgeFile[];
+  availableFiles: AvailableKnowledgeFile[];
+  knowledgeCount: number;
+} {
+  const activeLibrary = createKnowledgeLibraryState(record, record.activeLibraryId);
+
+  return {
+    activeLibraryId: activeLibrary.id,
+    activeLibraryLabel: activeLibrary.label,
+    libraries: record.libraries,
+    importedFiles: activeLibrary.importedFiles,
+    availableFiles: activeLibrary.availableFiles,
+    knowledgeCount: activeLibrary.importedFiles.length
   };
 }
 
 function hydrateWebState(state: WorkbenchState): WorkbenchState {
-  const knowledge = createKnowledgeStateFromStorage();
+  const knowledge = createKnowledgeStateFromRecord(readWebKnowledgeRecord());
 
   return mergeOllamaOverview(
     {
@@ -107,6 +152,172 @@ function hydrateWebState(state: WorkbenchState): WorkbenchState {
 }
 
 function persistKnowledgeFromState(state: WorkbenchState) {
+  const browserState = state as WorkbenchState & {
+    webKnowledge?: {
+      activeLibraryId: string;
+      activeLibraryLabel: string;
+      libraries: WebKnowledgeRecord["libraries"];
+    };
+  };
+  const persisted = readWebKnowledgeRecord();
+  const libraryMeta = browserState.webKnowledge?.libraries ?? [
+    {
+      id: "default-library",
+      label: "默认知识库",
+      importedFiles: []
+    }
+  ];
+  const activeLibraryId = browserState.webKnowledge?.activeLibraryId ?? "default-library";
+  const nextLibraries = libraryMeta.map((library) => {
+    const previous = persisted.libraries.find((item) => item.id === library.id);
+
+    if (library.id !== activeLibraryId) {
+      return {
+        id: library.id,
+        label: library.label,
+        importedFiles: library.importedFiles ?? previous?.importedFiles ?? []
+      };
+    }
+
+    const importedDocs = state.knowledge.importedFiles.map((item) => {
+      const sample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
+
+      return {
+        path: item.path,
+        title: item.title,
+        status: item.status,
+        content: sample?.content ?? ""
+      };
+    });
+
+    return {
+      id: library.id,
+      label: library.label,
+      importedFiles: importedDocs
+    };
+  });
+
+  persistWebKnowledgeRecord({
+    activeLibraryId,
+    libraries: nextLibraries
+  });
+}
+
+function createKnowledgeStatePatch(record: WebKnowledgeRecord) {
+  const activeLibrary = createKnowledgeLibraryState(record, record.activeLibraryId);
+
+  return {
+    knowledge: {
+      importedFiles: activeLibrary.importedFiles,
+      availableFiles: activeLibrary.availableFiles
+    },
+    storage: {
+      knowledgeCount: activeLibrary.importedFiles.length
+    },
+    webKnowledge: {
+      activeLibraryId: activeLibrary.id,
+      activeLibraryLabel: activeLibrary.label,
+      libraries: record.libraries
+    }
+  };
+}
+
+function createKnowledgeLibraryId(name: string) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-\u4e00-\u9fa5]/g, "")
+    || `knowledge-${Date.now()}`;
+}
+
+function createKnowledgeAuditLine(record: WebKnowledgeRecord) {
+  const activeLibrary = record.libraries.find((library) => library.id === record.activeLibraryId);
+  return activeLibrary?.label ?? "默认知识库";
+}
+
+function createLocalRagSearchResultSummaryWithLibrary(
+  libraryLabel: string,
+  result: ReturnType<typeof searchWebKnowledge>
+) {
+  const topPaths = result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+  return [
+    `知识库：${libraryLabel}。`,
+    `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `主要来源：${topPaths}。`,
+    `检索问题：${result.query}。`
+  ].join(" ");
+}
+
+function createHydratedWebState(state: WorkbenchState): WorkbenchState {
+  const knowledge = createKnowledgeStateFromRecord(readWebKnowledgeRecord());
+
+  return {
+    ...state,
+    knowledge: {
+      importedFiles: knowledge.importedFiles,
+      availableFiles: knowledge.availableFiles
+    },
+    storage: {
+      ...state.storage,
+      knowledgeCount: knowledge.knowledgeCount
+    },
+    webKnowledge: {
+      activeLibraryId: knowledge.activeLibraryId,
+      activeLibraryLabel: knowledge.activeLibraryLabel,
+      libraries: knowledge.libraries
+    }
+  } as WorkbenchState;
+}
+
+function preserveWebKnowledgeState(current: WorkbenchState, next: WorkbenchState): WorkbenchState {
+  const currentBrowserState = current as WorkbenchState & {
+    webKnowledge?: {
+      activeLibraryId: string;
+      activeLibraryLabel: string;
+      libraries: WebKnowledgeRecord["libraries"];
+    };
+  };
+  const nextBrowserState = next as WorkbenchState & {
+    webKnowledge?: {
+      activeLibraryId: string;
+      activeLibraryLabel: string;
+      libraries: WebKnowledgeRecord["libraries"];
+    };
+  };
+
+  if (nextBrowserState.webKnowledge || !currentBrowserState.webKnowledge) {
+    return next;
+  }
+
+  return {
+    ...next,
+    webKnowledge: currentBrowserState.webKnowledge
+  } as WorkbenchState;
+}
+
+function withKnowledgeRecord(current: WorkbenchState, record: WebKnowledgeRecord) {
+  const patch = createKnowledgeStatePatch(record);
+
+  return {
+    ...current,
+    knowledge: patch.knowledge,
+    storage: {
+      ...current.storage,
+      ...patch.storage
+    },
+    webKnowledge: patch.webKnowledge
+  } as WorkbenchState;
+}
+
+function createBrowserKnowledgeRecordFromState(state: WorkbenchState): WebKnowledgeRecord {
+  const browserState = state as WorkbenchState & {
+    webKnowledge?: {
+      activeLibraryId: string;
+      libraries: WebKnowledgeRecord["libraries"];
+    };
+  };
   const importedDocs = state.knowledge.importedFiles.map((item) => {
     const sample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
 
@@ -117,10 +328,20 @@ function persistKnowledgeFromState(state: WorkbenchState) {
       content: sample?.content ?? ""
     };
   });
+  const libraryMeta = browserState.webKnowledge?.libraries ?? createDefaultKnowledgeRecord().libraries;
+  const activeLibraryId = browserState.webKnowledge?.activeLibraryId ?? "default-library";
 
-  persistWebKnowledgeRecord({
-    importedFiles: importedDocs
-  });
+  return {
+    activeLibraryId,
+    libraries: libraryMeta.map((library) => ({
+      id: library.id,
+      label: library.label,
+      importedFiles:
+        library.id === activeLibraryId
+          ? importedDocs
+          : library.importedFiles ?? []
+    }))
+  };
 }
 
 function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKnowledge>) {
@@ -177,11 +398,11 @@ function applyReadonlyTaskResult(
       });
       const started = createTaskExecutionStartedState(queued);
 
-      return createTaskExecutionSucceededState(started, {
+      return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
         resultTitle: payload.resultTitle,
         resultSummary: payload.resultSummary,
         auditDetailLines: payload.auditDetailLines
-      });
+      }));
     });
   });
 }
@@ -191,13 +412,26 @@ function tokenizeIntent(input: string) {
 }
 
 export function WebApp() {
+  const webKnowledgeRecordRef = useRef<WebKnowledgeRecord>(readWebKnowledgeRecord());
   const [state, setState] = useState<WorkbenchState>(() =>
-    hydrateWebState(loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState))
+    mergeOllamaOverview(
+      withKnowledgeRecord(
+        loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState),
+        webKnowledgeRecordRef.current
+      ),
+      {
+        reachable: true,
+        endpoint: "browser://local-first",
+        selectedModel: "opencow-web-preview",
+        diagnostic: "",
+        models: [{ name: "opencow-web-preview", sizeLabel: "Browser Preview" }]
+      }
+    )
   );
 
   useEffect(() => {
     void persistWorkbenchState(state);
-    persistKnowledgeFromState(state);
+    persistWebKnowledgeRecord(webKnowledgeRecordRef.current);
   }, [state]);
 
   function setReadonlyCapabilitySummary(capabilityId: "rag" | "skills" | "npc" | "mcp") {
@@ -706,6 +940,12 @@ export function WebApp() {
     if (normalized.includes("search local knowledge")) {
       startTransition(() => {
         setState((current) => {
+          const currentBrowserState = current as WorkbenchState & {
+            webKnowledge?: {
+              activeLibraryLabel: string;
+            };
+          };
+          const browserRecord = webKnowledgeRecordRef.current;
           const queued = createUserTaskSubmittedState(current, {
             message: trimmed,
             executionKind: "rag-local-doc-search",
@@ -714,15 +954,20 @@ export function WebApp() {
             executionAuditDetail: `web local rag search: ${trimmed}`
           });
           const started = createTaskExecutionStartedState(queued);
-          const result = searchWebKnowledge(trimmed);
+          const result = searchWebKnowledge(trimmed, browserRecord);
 
-          return createTaskExecutionSucceededState(started, {
+          const succeeded = createTaskExecutionSucceededState(started, {
             resultTitle: "本地 RAG 文档检索",
-            resultSummary: createLocalRagSearchResultSummary(result),
+            resultSummary: createLocalRagSearchResultSummaryWithLibrary(
+              currentBrowserState.webKnowledge?.activeLibraryLabel ?? "默认知识库",
+              result
+            ),
             auditDetailLines: result.items
               .slice(0, 3)
               .map((item) => `命中片段：${item.title}: ${item.snippet}`)
           });
+
+          return preserveWebKnowledgeState(current, succeeded);
         });
       });
       return;
@@ -739,11 +984,11 @@ export function WebApp() {
         });
         const started = createTaskExecutionStartedState(queued);
 
-        return createTaskExecutionSucceededState(started, {
+        return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
           resultTitle: "网页端本地会话答复",
           resultSummary: `已为网页端保留这段上下文：${trimmed}`,
           auditDetailLines: ["Web MVP keeps browser history, recent sessions, and local knowledge context."]
-        });
+        }));
       });
     });
   }
@@ -777,7 +1022,8 @@ export function WebApp() {
           storage: {
             ...cleared.storage,
             knowledgeCount: 0
-          }
+          },
+          webKnowledge: (current as WorkbenchState & { webKnowledge?: unknown }).webKnowledge
         };
       });
     });
@@ -792,6 +1038,7 @@ export function WebApp() {
 
     startTransition(() => {
       setState((current) => {
+        const browserRecord = webKnowledgeRecordRef.current;
         const nextImported = [
           ...current.knowledge.importedFiles,
           {
@@ -800,13 +1047,30 @@ export function WebApp() {
             status: "ready" as const
           }
         ];
+        const nextRecord: WebKnowledgeRecord = {
+          ...browserRecord,
+          libraries: browserRecord.libraries.map((library) =>
+            library.id === browserRecord.activeLibraryId
+              ? {
+                  ...library,
+                  importedFiles: nextImported.map((item) => {
+                    const importedSample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
 
-        return {
+                    return {
+                      path: item.path,
+                      title: item.title,
+                      status: item.status,
+                      content: importedSample?.content ?? ""
+                    };
+                  })
+                }
+              : library
+          )
+        };
+        webKnowledgeRecordRef.current = nextRecord;
+
+        return withKnowledgeRecord({
           ...current,
-          knowledge: {
-            importedFiles: nextImported,
-            availableFiles: current.knowledge.availableFiles.filter((item) => item.path !== path)
-          },
           storage: {
             ...current.storage,
             knowledgeCount: nextImported.length
@@ -824,7 +1088,7 @@ export function WebApp() {
               source: "web_knowledge_import"
             }
           }
-        };
+        } as WorkbenchState, nextRecord);
       });
     });
   }
@@ -834,17 +1098,35 @@ export function WebApp() {
 
     startTransition(() => {
       setState((current) => {
+        const browserRecord = webKnowledgeRecordRef.current;
         const nextImported = current.knowledge.importedFiles.filter((item) => item.path !== path);
         const nextAvailable = sample
           ? [...current.knowledge.availableFiles, { path: sample.path, title: sample.title }]
           : current.knowledge.availableFiles;
+        const nextRecord: WebKnowledgeRecord = {
+          ...browserRecord,
+          libraries: browserRecord.libraries.map((library) =>
+            library.id === browserRecord.activeLibraryId
+              ? {
+                  ...library,
+                  importedFiles: nextImported.map((item) => {
+                    const importedSample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
 
-        return {
+                    return {
+                      path: item.path,
+                      title: item.title,
+                      status: item.status,
+                      content: importedSample?.content ?? ""
+                    };
+                  })
+                }
+              : library
+          )
+        };
+        webKnowledgeRecordRef.current = nextRecord;
+
+        return withKnowledgeRecord({
           ...current,
-          knowledge: {
-            importedFiles: nextImported,
-            availableFiles: nextAvailable
-          },
           storage: {
             ...current.storage,
             knowledgeCount: nextImported.length
@@ -862,8 +1144,105 @@ export function WebApp() {
               source: "web_knowledge_remove"
             }
           }
-        };
+        } as WorkbenchState, {
+          ...nextRecord,
+          libraries: nextRecord.libraries.map((library) =>
+            library.id === nextRecord.activeLibraryId
+              ? {
+                  ...library,
+                  importedFiles: nextImported.map((item) => {
+                    const importedSample = WEB_SAMPLE_DOCS.find((doc) => doc.path === item.path);
+
+                    return {
+                      path: item.path,
+                      title: item.title,
+                      status: item.status,
+                      content: importedSample?.content ?? ""
+                    };
+                  })
+                }
+              : library
+          )
+        });
       });
+    });
+  }
+
+  function handleCreateKnowledgeLibrary(name: string) {
+    startTransition(() => {
+      setState((current) => {
+        const currentRecord = webKnowledgeRecordRef.current;
+        const nextLibraryId = createKnowledgeLibraryId(name);
+
+        if (currentRecord.libraries.some((library) => library.id === nextLibraryId || library.label === name)) {
+          const existing = currentRecord.libraries.find((library) => library.id === nextLibraryId || library.label === name);
+          const existingRecord = {
+            ...currentRecord,
+            activeLibraryId: existing?.id ?? currentRecord.activeLibraryId
+          };
+          webKnowledgeRecordRef.current = existingRecord;
+          return withKnowledgeRecord(current, existingRecord);
+        }
+
+        const nextRecord: WebKnowledgeRecord = {
+          activeLibraryId: nextLibraryId,
+          libraries: [
+            ...currentRecord.libraries,
+            {
+              id: nextLibraryId,
+              label: name,
+              importedFiles: []
+            }
+          ]
+        };
+        webKnowledgeRecordRef.current = nextRecord;
+
+        return withKnowledgeRecord({
+          ...current,
+          output: {
+            title: "知识库已更新",
+            summary: `已创建知识库 ${name}，后续导入和检索会优先使用这套上下文。`
+          },
+          audit: {
+            summary: "网页端知识库已创建命名知识库",
+            lastEvent: {
+              module: "knowledge",
+              detail: `created library ${name}`,
+              timestamp: "created",
+              source: "web_knowledge_library_create"
+            }
+          }
+        } as WorkbenchState, nextRecord);
+      });
+    });
+  }
+
+  function handleSelectKnowledgeLibrary(libraryId: string) {
+    setState((current) => {
+      const currentRecord = webKnowledgeRecordRef.current;
+      const nextRecord: WebKnowledgeRecord = {
+        ...currentRecord,
+        activeLibraryId: libraryId
+      };
+      const nextLabel = currentRecord.libraries.find((library) => library.id === libraryId)?.label ?? "默认知识库";
+      webKnowledgeRecordRef.current = nextRecord;
+
+      return withKnowledgeRecord({
+        ...current,
+        output: {
+          title: "知识库已更新",
+          summary: `已切换到知识库 ${nextLabel}。`
+        },
+        audit: {
+          summary: "网页端知识库已切换当前知识库",
+          lastEvent: {
+            module: "knowledge",
+            detail: `selected library ${nextLabel}`,
+            timestamp: "selected",
+            source: "web_knowledge_library_select"
+          }
+        }
+      } as WorkbenchState, nextRecord);
     });
   }
 
@@ -889,26 +1268,48 @@ export function WebApp() {
       onSaveSearchProviderConfig={() => undefined}
       onSelectModel={(modelName) => {
         startTransition(() => {
-          setState((current) => createModelSelectedState(current, modelName));
+          setState((current) => preserveWebKnowledgeState(current, createModelSelectedState(current, modelName)));
         });
       }}
       onNewConversation={() => {
         startTransition(() => {
-          setState((current) => createNewConversationState(current));
+          setState((current) => preserveWebKnowledgeState(current, createNewConversationState(current)));
         });
       }}
       onRestoreRecentConversation={(conversationId) => {
         startTransition(() => {
-          setState((current) => restoreRecentConversationState(current, conversationId));
+          setState((current) => preserveWebKnowledgeState(current, restoreRecentConversationState(current, conversationId)));
         });
       }}
       onDeleteRecentConversation={(conversationId) => {
         startTransition(() => {
-          setState((current) => deleteRecentConversationState(current, conversationId));
+          setState((current) => preserveWebKnowledgeState(current, deleteRecentConversationState(current, conversationId)));
         });
       }}
       onImportKnowledgeFile={handleImportKnowledgeFile}
       onRemoveKnowledgeFile={handleRemoveKnowledgeFile}
+      knowledgeLibraryLabel={
+        (state as WorkbenchState & {
+          webKnowledge?: { activeLibraryLabel: string };
+        }).webKnowledge?.activeLibraryLabel
+      }
+      knowledgeLibraries={
+        ((state as WorkbenchState & {
+          webKnowledge?: {
+            libraries: WebKnowledgeRecord["libraries"];
+            activeLibraryId: string;
+          };
+        }).webKnowledge?.libraries ?? []).map((library) => ({
+          ...library,
+          active:
+            library.id
+            === (state as WorkbenchState & {
+              webKnowledge?: { activeLibraryId: string };
+            }).webKnowledge?.activeLibraryId
+        }))
+      }
+      onCreateKnowledgeLibrary={handleCreateKnowledgeLibrary}
+      onSelectKnowledgeLibrary={handleSelectKnowledgeLibrary}
       onSubmitTask={handleSubmitTask}
     />
   );

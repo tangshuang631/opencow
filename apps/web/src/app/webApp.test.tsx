@@ -188,6 +188,94 @@ describe("WebApp", () => {
     });
   });
 
+  it("creates and persists named knowledge libraries across remounts", async () => {
+    const firstRender = render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "新知识库名称" }), {
+      target: { value: "产品文档库" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建知识库" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("当前知识库：产品文档库")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("知识库列表")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByRole("button", { name: "切换到知识库：默认知识库" })).toBeInTheDocument();
+      expect(within(knowledgePanel).getByRole("button", { name: "当前知识库：产品文档库" })).toBeInTheDocument();
+    });
+
+    firstRender.unmount();
+
+    render(<WebApp />);
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const restoredKnowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(restoredKnowledgePanel).getByText("当前知识库：产品文档库")).toBeInTheDocument();
+      expect(within(restoredKnowledgePanel).getByRole("button", { name: "当前知识库：产品文档库" })).toBeInTheDocument();
+    });
+  });
+
+  it("switches active knowledge libraries and searches only within the current library", async () => {
+    render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "新知识库名称" }), {
+      target: { value: "规则库" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "创建知识库" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("当前知识库：规则库")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "加入知识库：npc-notes.txt" }));
+
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("已索引文件 1")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("npc-notes.txt")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "切换到知识库：默认知识库" }));
+
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("当前知识库：默认知识库")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByText("已索引文件 0")).toBeInTheDocument();
+      expect(within(knowledgePanel).getByRole("button", { name: "加入知识库：npc-notes.txt" })).toBeInTheDocument();
+      expect(within(knowledgePanel).queryByRole("button", { name: "移出知识库：npc-notes.txt" })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search local knowledge for browser history" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 RAG 文档检索")).toBeInTheDocument();
+      expect(within(conversation).getByText(/知识库：默认知识库。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/找到 0 条匹配片段，已索引 0 个文档。/)).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(screen.getByRole("button", { name: "切换到知识库：规则库" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.change(getComposerInput(), {
+      target: { value: "search local knowledge for browser history" }
+    });
+    fireEvent.click(getComposerSendButton());
+    const switchedConversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(within(switchedConversation).getByText(/知识库：规则库。/)).toBeInTheDocument();
+      expect(within(switchedConversation).getByText(/找到 1 条匹配片段，已索引 1 个文档。/)).toBeInTheDocument();
+      expect(within(switchedConversation).getByText(/主要来源：npc-notes\.txt。/)).toBeInTheDocument();
+    });
+  });
+
   it("shows structured readonly capability details for skills, npc, and mcp requests", async () => {
     render(<WebApp />);
 

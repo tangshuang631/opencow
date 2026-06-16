@@ -1,5 +1,5 @@
 import type { LocalKnowledgeSearchResult } from "../../../desktop/src/features/assistant/localAssistantService";
-import { readWebKnowledgeRecord } from "./webKnowledgeStorage";
+import { readWebKnowledgeRecord, type WebKnowledgeRecord } from "./webKnowledgeStorage";
 
 function normalizeText(value: string) {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
@@ -12,10 +12,13 @@ function createQueryTokens(query: string) {
     .filter((token) => !["search", "local", "knowledge", "for", "the", "and"].includes(token));
 }
 
-export function searchWebKnowledge(query: string): LocalKnowledgeSearchResult {
-  const record = readWebKnowledgeRecord();
+export function searchWebKnowledge(query: string, record = readWebKnowledgeRecord()): LocalKnowledgeSearchResult {
+  const activeLibrary =
+    record.libraries.find((library) => library.id === record.activeLibraryId)
+    ?? record.libraries[0]
+    ?? { importedFiles: [] };
   const tokens = createQueryTokens(query);
-  const items = record.importedFiles
+  const items = activeLibrary.importedFiles
     .map((file) => {
       const haystack = normalizeText(`${file.title} ${file.content}`);
       const matchedTokenCount = tokens.filter((token) => haystack.includes(token)).length;
@@ -38,9 +41,9 @@ export function searchWebKnowledge(query: string): LocalKnowledgeSearchResult {
 
   return {
     query,
-    summary: `Web local knowledge search found ${items.length} matching passages across ${record.importedFiles.length} indexed documents.`,
+    summary: `Web local knowledge search found ${items.length} matching passages across ${activeLibrary.importedFiles.length} indexed documents.`,
     match_count: items.length,
-    indexed_document_count: record.importedFiles.length,
+    indexed_document_count: activeLibrary.importedFiles.length,
     items
   };
 }
