@@ -214,4 +214,81 @@ describe("App workbench persistence", () => {
       expect(within(restoredConversation).getByText("这段答复应该在重新进入后继续保留。")).toBeInTheDocument();
     });
   });
+
+  it("restores a recent conversation from the blank conversation history list", async () => {
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "恢复后应该重新看到这段答复。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "请把这段对话放进最近会话" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(screen.getAllByText("请把这段对话放进最近会话").length).toBeGreaterThan(0);
+      expect(screen.getByText("恢复后应该重新看到这段答复。")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("最近会话")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复这段会话" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("请把这段对话放进最近会话").length).toBeGreaterThan(0);
+      expect(screen.getByText("恢复后应该重新看到这段答复。")).toBeInTheDocument();
+    });
+  });
+
+  it("keeps a deleted recent conversation removed after remount", async () => {
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "这段会话删除后不应该再从最近会话里恢复。"
+    });
+
+    const firstRender = render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "删除后不要再看到这段最近会话" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(screen.getAllByText("删除后不要再看到这段最近会话").length).toBeGreaterThan(0);
+      expect(screen.getByText("这段会话删除后不应该再从最近会话里恢复。")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("最近会话")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "删除这段会话" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("删除后不要再看到这段最近会话")).not.toBeInTheDocument();
+    });
+
+    firstRender.unmount();
+
+    render(<App />);
+
+    const restoredConversation = await screen.findByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(restoredConversation).queryByText("最近会话")).not.toBeInTheDocument();
+      expect(within(restoredConversation).queryByText("删除后不要再看到这段最近会话")).not.toBeInTheDocument();
+    });
+  });
 });

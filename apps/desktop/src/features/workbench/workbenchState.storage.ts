@@ -107,7 +107,10 @@ function buildCleanupState(
     history: {
       lastNonEmptyConversationEntries: target === "conversation"
         ? []
-        : nextState.history.lastNonEmptyConversationEntries
+        : nextState.history.lastNonEmptyConversationEntries,
+      recentConversations: target === "conversation"
+        ? []
+        : nextState.history.recentConversations
     },
     storage: nextStorage,
     audit: {

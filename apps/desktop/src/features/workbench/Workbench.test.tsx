@@ -40,6 +40,8 @@ function createWorkbenchProps(
     onSaveSearchProviderConfig: noop,
     onSelectModel: noop,
     onNewConversation: noop,
+    onRestoreRecentConversation: noop,
+    onDeleteRecentConversation: noop,
     onSubmitTask: noop,
     ...overrides
   };

@@ -44,6 +44,127 @@ describe("MainConversation", () => {
     expect(container.querySelector(".message-card")).not.toBeInTheDocument();
   });
 
+  it("shows recent conversation history actions on a blank conversation screen", () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [
+          {
+            id: "history-entry-user",
+            kind: "user" as const,
+            title: "用户",
+            summary: "帮我继续修网页端历史记录"
+          }
+        ],
+        recentConversations: [
+          {
+            id: "recent-conversation-1",
+            title: "帮我继续修网页端历史记录",
+            summary: "最近一次会话保留了网页端历史记录修复上下文。",
+            entries: [
+              {
+                id: "history-entry-user",
+                kind: "user" as const,
+                title: "用户",
+                summary: "帮我继续修网页端历史记录"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    render(
+      <MainConversation
+        state={state}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("最近会话")).toBeInTheDocument();
+    expect(screen.getByText("帮我继续修网页端历史记录")).toBeInTheDocument();
+    expect(screen.getByText("最近一次会话保留了网页端历史记录修复上下文。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "恢复这段会话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除这段会话" })).toBeInTheDocument();
+  });
+
+  it("calls restore when the user restores a recent conversation", () => {
+    const onRestoreRecentConversation = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-conversation-restore",
+            title: "恢复这段会话",
+            summary: "准备恢复最近一次修复历史记录的上下文。",
+            entries: [
+              {
+                id: "restore-entry",
+                kind: "user" as const,
+                title: "用户",
+                summary: "恢复最近一次历史记录修复上下文"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    render(
+      <MainConversation
+        state={state}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onRestoreRecentConversation={onRestoreRecentConversation}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复这段会话" }));
+
+    expect(onRestoreRecentConversation).toHaveBeenCalledWith("recent-conversation-restore");
+  });
+
+  it("calls delete when the user removes a recent conversation", () => {
+    const onDeleteRecentConversation = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-conversation-delete",
+            title: "删除这段会话",
+            summary: "准备删除一段已经不需要的历史记录。",
+            entries: [
+              {
+                id: "delete-entry",
+                kind: "user" as const,
+                title: "用户",
+                summary: "删除这段最近会话"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    render(
+      <MainConversation
+        state={state}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onDeleteRecentConversation={onDeleteRecentConversation}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "删除这段会话" }));
+
+    expect(onDeleteRecentConversation).toHaveBeenCalledWith("recent-conversation-delete");
+  });
+
   it("shows only the current conversation title and overview after messages exist", () => {
     const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "整理这个项目现在最需要修的前端问题",

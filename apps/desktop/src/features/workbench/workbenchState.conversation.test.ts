@@ -4,6 +4,7 @@ import {
   createInitialWorkbenchState,
   createNewConversationState,
   createTaskExecutionCancelledState,
+  createTaskExecutionSucceededState,
   createTaskExecutionStartedState,
   createUserTaskSubmittedState,
   requestRollbackPreviewState,
@@ -103,6 +104,29 @@ describe("createNewConversationState", () => {
     expect(next.conversation.entries).toHaveLength(0);
     expect(next.history.lastNonEmptyConversationEntries.some(
       (entry) => entry.summary === "保留这段历史，供下次恢复"
+    )).toBe(true);
+  });
+
+  it("adds the latest non-empty conversation into recent conversation history when starting a blank new conversation", () => {
+    const completed = createTaskExecutionSucceededState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "请把这段会话放进最近历史"
+        })
+      ),
+      {
+        resultTitle: "最近历史测试答复",
+        resultSummary: "这段答复应该一起进入最近会话历史。"
+      }
+    );
+
+    const next = createNewConversationState(completed);
+
+    expect(next.history.recentConversations).toHaveLength(1);
+    expect(next.history.recentConversations[0]?.title).toContain("请把这段会话放进最近历史");
+    expect(next.history.recentConversations[0]?.summary).toContain("这段答复应该一起进入最近会话历史。");
+    expect(next.history.recentConversations[0]?.entries.some(
+      (entry) => entry.summary === "请把这段会话放进最近历史"
     )).toBe(true);
   });
 });

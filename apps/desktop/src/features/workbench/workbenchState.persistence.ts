@@ -104,6 +104,7 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
   const revivedHistoryEntries =
     state.history?.lastNonEmptyConversationEntries
     ?? (state.conversation.entries.length > 0 ? state.conversation.entries : []);
+  const revivedRecentConversations = state.history?.recentConversations ?? [];
   const revivedConversationEntries =
     state.conversation.entries.length > 0
       ? state.conversation.entries
@@ -115,7 +116,8 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
       entries: revivedConversationEntries
     },
     history: {
-      lastNonEmptyConversationEntries: revivedHistoryEntries
+      lastNonEmptyConversationEntries: revivedHistoryEntries,
+      recentConversations: revivedRecentConversations
     },
     tasks: revivePersistedTasks(state.tasks),
     confirmation: {
@@ -184,7 +186,8 @@ export async function persistWorkbenchState(state: WorkbenchState) {
     history: {
       lastNonEmptyConversationEntries: state.conversation.entries.length > 0
         ? state.conversation.entries
-        : state.history.lastNonEmptyConversationEntries
+        : state.history.lastNonEmptyConversationEntries,
+      recentConversations: state.history.recentConversations
     }
   };
   const normalizedPayload = createPersistedEnvelope(normalizedState);

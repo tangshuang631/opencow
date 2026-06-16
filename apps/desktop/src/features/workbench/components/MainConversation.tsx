@@ -14,6 +14,8 @@ type MainConversationProps = {
   state: WorkbenchState;
   onPreviewRollback: (targetEntryId: string) => void;
   onCancelActiveTask: () => void;
+  onRestoreRecentConversation?: (conversationId: string) => void;
+  onDeleteRecentConversation?: (conversationId: string) => void;
 };
 
 const TEXT = {
@@ -343,7 +345,9 @@ function getRollbackTargetBeforeUserEntry(
 
 export function MainConversation({
   state,
-  onPreviewRollback
+  onPreviewRollback,
+  onRestoreRecentConversation,
+  onDeleteRecentConversation
 }: MainConversationProps) {
   const activeTask = state.tasks.activeTaskId
     ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
@@ -397,6 +401,38 @@ export function MainConversation({
         </header>
       ) : null}
       <div className="conversation-scroll">
+        {!conversationHeader && state.history.recentConversations.length > 0 ? (
+          <section className="conversation-history-panel" aria-label="最近会话">
+            <h2>最近会话</h2>
+            {state.history.recentConversations.map((record) => (
+              <article className="message-row assistant-row" key={record.id}>
+                <div className="message-avatar assistant-avatar">
+                  <Bot aria-hidden="true" size={18} />
+                </div>
+                <div className="message-body">
+                  <p className="message-title">{normalizeWorkbenchText(record.title)}</p>
+                  <p className="message-summary">{normalizeWorkbenchText(record.summary)}</p>
+                  <div className="action-row">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => onRestoreRecentConversation?.(record.id)}
+                    >
+                      恢复这段会话
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={() => onDeleteRecentConversation?.(record.id)}
+                    >
+                      删除这段会话
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : null}
         {visibleEntries.map((entry) => {
           const isUser = entry.kind === "user";
           const visibleDetailLines = getVisibleDetailLines(entry);

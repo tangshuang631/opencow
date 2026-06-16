@@ -5,6 +5,7 @@ export type {
   PendingConfirmation,
   PendingPermissionModeChange,
   PermissionMode,
+  RecentConversationRecord,
   RollbackPreviewState,
   RollbackSnapshot,
   SearchSourceItem,
@@ -13,7 +14,11 @@ export type {
   WorkbenchState
 } from "./workbenchState.types";
 
-export { createNewConversationState } from "./workbenchState.conversation";
+export {
+  createNewConversationState,
+  deleteRecentConversationState,
+  restoreRecentConversationState
+} from "./workbenchState.conversation";
 export { createInitialWorkbenchState } from "./workbenchState.initial";
 export {
   createRemoteApiConfigState,

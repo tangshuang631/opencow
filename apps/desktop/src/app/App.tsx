@@ -26,6 +26,7 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createNewConversationState,
+  deleteRecentConversationState,
   createModelSelectedState,
   createOllamaLoadErrorState,
   createRemoteApiConfigState,
@@ -46,6 +47,7 @@ import {
   createToolExecutionRecoveredState,
   createUserTaskSubmittedState,
   mergeOllamaOverview,
+  restoreRecentConversationState,
   requestPermissionModeChangeState,
   requestRollbackPreviewState
 } from "../features/workbench/workbenchState";
@@ -2786,6 +2788,18 @@ export function App() {
     });
   }
 
+  function handleRestoreRecentConversation(conversationId: string) {
+    startTransition(() => {
+      setState((current) => restoreRecentConversationState(current, conversationId));
+    });
+  }
+
+  function handleDeleteRecentConversation(conversationId: string) {
+    startTransition(() => {
+      setState((current) => deleteRecentConversationState(current, conversationId));
+    });
+  }
+
   function handleSubmitTask(message: string) {
     startTransition(() => {
       setState((current) => {
@@ -2912,6 +2926,8 @@ export function App() {
       onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
       onSelectModel={handleSelectModel}
       onNewConversation={handleNewConversation}
+      onRestoreRecentConversation={handleRestoreRecentConversation}
+      onDeleteRecentConversation={handleDeleteRecentConversation}
       onSubmitTask={handleSubmitTask}
     />
   );

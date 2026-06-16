@@ -60,6 +60,13 @@ export type SearchSourceItem = {
   summary: string;
 };
 
+export type RecentConversationRecord = {
+  id: string;
+  title: string;
+  summary: string;
+  entries: ConversationEntry[];
+};
+
 export type ToolExecutionResult = {
   toolLabel: string;
   summary: string;
@@ -176,6 +183,7 @@ export type WorkbenchState = {
   };
   history: {
     lastNonEmptyConversationEntries: ConversationEntry[];
+    recentConversations: RecentConversationRecord[];
   };
   rollback: {
     defaultLimit: number;

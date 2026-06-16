@@ -36,6 +36,8 @@ type WorkbenchProps = {
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
   onSelectModel: (modelName: string) => void;
   onNewConversation: () => void;
+  onRestoreRecentConversation: (conversationId: string) => void;
+  onDeleteRecentConversation: (conversationId: string) => void;
   onSubmitTask: (message: string) => void;
 };
 
@@ -434,6 +436,8 @@ export function Workbench({
   onSaveSearchProviderConfig,
   onSelectModel,
   onNewConversation,
+  onRestoreRecentConversation,
+  onDeleteRecentConversation,
   onSubmitTask
 }: WorkbenchProps) {
   const [activeView, setActiveView] = useState<WorkbenchViewId>("chat");
@@ -482,6 +486,8 @@ export function Workbench({
             state={state}
             onPreviewRollback={onPreviewRollback}
             onCancelActiveTask={onCancelActiveTask}
+            onRestoreRecentConversation={onRestoreRecentConversation}
+            onDeleteRecentConversation={onDeleteRecentConversation}
           />
         ) : activeView === "audit" ? (
           <AuditPanel state={state} onCleanupStorage={onCleanupStorage} />
