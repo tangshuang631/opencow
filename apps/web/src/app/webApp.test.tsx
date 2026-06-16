@@ -165,6 +165,7 @@ describe("WebApp", () => {
     await waitFor(() => {
       expect(within(knowledgePanel).getByText("已索引文件 1")).toBeInTheDocument();
       expect(within(knowledgePanel).getByText("product-rules.md")).toBeInTheDocument();
+      expect(within(knowledgePanel).getAllByText("本地上传").length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
@@ -178,6 +179,43 @@ describe("WebApp", () => {
       expect(within(conversation).getByText("本地 RAG 文档检索")).toBeInTheDocument();
       expect(within(conversation).getByText(/找到 1 条匹配片段，已索引 1 个文档。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/主要来源：product-rules\.md。/)).toBeInTheDocument();
+    });
+  });
+
+  it("persists uploaded local md/txt files across remounts", async () => {
+    const firstRender = render(<WebApp />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const uploadInput = screen.getByLabelText("导入本地 md/txt 文件");
+    const file = new File(
+      ["# Team Notes\n\nPersist uploaded browser knowledge across remounts."],
+      "team-notes.md",
+      { type: "text/markdown" }
+    );
+
+    fireEvent.change(uploadInput, {
+      target: {
+        files: [file]
+      }
+    });
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(knowledgePanel).getByText("team-notes.md")).toBeInTheDocument();
+      expect(within(knowledgePanel).getAllByText("本地上传").length).toBeGreaterThan(0);
+    });
+
+    firstRender.unmount();
+
+    render(<WebApp />);
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const restoredKnowledgePanel = screen.getByLabelText("知识库");
+    await waitFor(() => {
+      expect(within(restoredKnowledgePanel).getByText("已索引文件 1")).toBeInTheDocument();
+      expect(within(restoredKnowledgePanel).getByText("team-notes.md")).toBeInTheDocument();
+      expect(within(restoredKnowledgePanel).getAllByText("本地上传").length).toBeGreaterThan(0);
     });
   });
 

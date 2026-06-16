@@ -171,6 +171,7 @@ function renderKnowledgeFileCard(
     <div className="workspace-history-card" key={file.path}>
       <p>{file.title}</p>
       <p className="muted">{file.path}</p>
+      <p className="workspace-knowledge-source">{file.path.startsWith("uploads/") ? "本地上传" : "内置示例"}</p>
       {file.status === "missing" ? (
         <p className="workspace-knowledge-warning">文件已失效，检索时会自动跳过。</p>
       ) : null}

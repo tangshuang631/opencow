@@ -8,7 +8,7 @@ on run
   set existingPid to my readPidFile(pidFile)
   set serverReady to my isServerReady(appUrl)
 
-  if existingPid is not "" and my isPidRunning(existingPid) and serverReady then
+  if existingPid is not "" and my isPidRunning(existingPid) then
     my stopServer(pidFile)
     display dialog "OpenCow 网页端已退出" buttons {"确定"} default button "确定"
     return
