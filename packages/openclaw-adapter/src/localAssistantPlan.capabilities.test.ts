@@ -530,4 +530,46 @@ describe("local assistant task planner capability catalogs", () => {
       title: "NPC collaboration preview"
     });
   });
+
+  it("plans more Chinese write and preview requests through the real capability routes", () => {
+    expect(planLocalAssistantTask({
+      message: "安装 gpt-taste skill 到当前工作区",
+      permissionMode: "workspace-write"
+    })).toMatchObject({
+      kind: "skills-local-install",
+      title: "Install local skill"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "启用 coding-agent skill",
+      permissionMode: "workspace-write"
+    })).toMatchObject({
+      kind: "skills-local-enable",
+      title: "Enable local skill"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "禁用 coding-agent skill",
+      permissionMode: "workspace-write"
+    })).toMatchObject({
+      kind: "skills-local-disable",
+      title: "Disable local skill"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "预览启动 browser mcp 插件 locally",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "mcp-local-plugin-start-preview",
+      title: "Local MCP plugin start preview"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "预览一个 npc shell 计划来删除 temp-output",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "npc-local-shell-plan-preview",
+      title: "NPC shell plan preview"
+    });
+  });
 });

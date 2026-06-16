@@ -993,4 +993,107 @@ describe("WebApp", () => {
       expect(within(conversation).getByText(/已启用 Skills：coding-agent。/)).toBeInTheDocument();
     });
   });
+
+  it("supports Chinese skill write requests on web", async () => {
+    render(<WebApp />);
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "安装 gpt-taste skill 到当前工作区" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skill 安装结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已安装 Skill：gpt-taste。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "启用 coding-agent skill" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skill 启用结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已启用 Skill：coding-agent。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "禁用 coding-agent skill" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 Skill 禁用结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已禁用 Skill：coding-agent。/)).toBeInTheDocument();
+    });
+
+  });
+
+  it("supports Chinese preview requests on web", async () => {
+    render(<WebApp />);
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "预览启动 browser mcp 插件" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 MCP 插件启动预览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/匹配项：browser。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "预览一个 npc shell 计划来删除 temp-output" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("NPC shell plan preview")).toBeInTheDocument();
+      expect(within(conversation).getByText(/命令预览：Remove-Item -Recurse -Force temp-output/)).toBeInTheDocument();
+    });
+  });
+
+  it("supports Chinese source-scoped knowledge requests on web", async () => {
+    window.localStorage.setItem("opencow.web.knowledge.v1", JSON.stringify({
+      activeLibraryId: "default-library",
+      customFiles: [],
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          importedFiles: [
+            {
+              path: "docs/web-history-mvp.md",
+              title: "web-history-mvp.md",
+              status: "ready",
+              content: "# Web History MVP\n\nKeep recent conversations until the user deletes them manually."
+            }
+          ]
+        }
+      ]
+    }));
+
+    render(<WebApp />);
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    fireEvent.change(getComposerInput(), {
+      target: { value: "只搜索 web-history-mvp.md 里的 browser history" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地 RAG 文档检索")).toBeInTheDocument();
+      expect(within(conversation).getByText(/知识库：默认知识库。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/找到 1 条匹配片段，已索引 1 个文档。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/主要来源：web-history-mvp\.md。/)).toBeInTheDocument();
+      expect(
+        within(conversation).getByText(/检索问题：search local knowledge in web-history-mvp\.md for browser history。/)
+      ).toBeInTheDocument();
+      expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
+    });
+  });
 });

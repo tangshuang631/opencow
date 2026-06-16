@@ -519,11 +519,57 @@ function isChineseMcpInspectRequest(normalized: string) {
 }
 
 function isChineseKnowledgeSearchRequest(normalized: string) {
-  return normalized.includes("搜索本地知识库") || normalized.includes("检索本地知识库");
+  return normalized.includes("搜索本地知识库")
+    || normalized.includes("检索本地知识库")
+    || /^只搜索\s+.+\s+里[的地]\s+.+/.test(normalized);
 }
 
 function isChineseNpcCollaborationPreviewRequest(normalized: string) {
   return normalized.includes("npc") && normalized.includes("协作") && (normalized.includes("预览") || normalized.includes("方案"));
+}
+
+function isChineseSkillInstallRequest(normalized: string) {
+  return normalized.includes("安装") && normalized.includes("skill");
+}
+
+function isChineseSkillEnableRequest(normalized: string) {
+  return normalized.includes("启用")
+    && normalized.includes("skill")
+    && !normalized.includes("已启用")
+    && !normalized.includes("查看");
+}
+
+function isChineseSkillDisableRequest(normalized: string) {
+  return normalized.includes("禁用") && normalized.includes("skill");
+}
+
+function isChineseMcpStartPreviewRequest(normalized: string) {
+  return normalized.includes("预览启动") && normalized.includes("mcp");
+}
+
+function isChineseNpcShellPlanPreviewRequest(normalized: string) {
+  return normalized.includes("npc") && normalized.includes("shell") && normalized.includes("计划");
+}
+
+function convertChineseScopedKnowledgeQuery(input: string) {
+  const match = input.match(/只搜索\s+(.+?)\s+里[的地]\s+(.+)/);
+
+  if (!match) {
+    return input;
+  }
+
+  const source = (match[1] ?? "").trim();
+  const query = (match[2] ?? "").trim();
+
+  if (!source || !query) {
+    return input;
+  }
+
+  return `search local knowledge in ${source} for ${query}`;
+}
+
+function isChineseScopedKnowledgeRequest(input: string) {
+  return convertChineseScopedKnowledgeQuery(input) !== input;
 }
 
 export function WebApp() {
@@ -592,6 +638,8 @@ export function WebApp() {
 
   function handleSubmitTask(message: string) {
     const trimmed = message.trim();
+    const scopedKnowledgeMessage = convertChineseScopedKnowledgeQuery(trimmed);
+    const isScopedChineseKnowledgeRequest = isChineseScopedKnowledgeRequest(trimmed);
     const intentTokens = tokenizeIntent(trimmed);
 
     if (!trimmed) {
@@ -599,6 +647,7 @@ export function WebApp() {
     }
 
     const normalized = trimmed.toLowerCase();
+    const scopedKnowledgeNormalized = scopedKnowledgeMessage.toLowerCase();
 
     if (
       (normalized.includes("npc collaboration") && normalized.includes("preview the next safe shell step"))
@@ -656,6 +705,7 @@ export function WebApp() {
     if (
       normalized.includes("npc collaboration shell plan")
       || (normalized.includes("npc") && normalized.includes("shell") && normalized.includes("计划预览"))
+      || isChineseNpcShellPlanPreviewRequest(normalized)
     ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
@@ -781,7 +831,7 @@ export function WebApp() {
       return;
     }
 
-    if (intentTokens.includes("install") && intentTokens.includes("skill")) {
+    if ((intentTokens.includes("install") && intentTokens.includes("skill")) || isChineseSkillInstallRequest(normalized)) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "skills-local-install",
@@ -810,7 +860,10 @@ export function WebApp() {
       return;
     }
 
-    if ((intentTokens.includes("enable") || intentTokens.includes("activate")) && intentTokens.includes("skill")) {
+    if (
+      ((intentTokens.includes("enable") || intentTokens.includes("activate")) && intentTokens.includes("skill"))
+      || isChineseSkillEnableRequest(normalized)
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "skills-local-enable",
@@ -838,7 +891,10 @@ export function WebApp() {
       return;
     }
 
-    if ((intentTokens.includes("disable") || intentTokens.includes("deactivate")) && intentTokens.includes("skill")) {
+    if (
+      ((intentTokens.includes("disable") || intentTokens.includes("deactivate")) && intentTokens.includes("skill"))
+      || isChineseSkillDisableRequest(normalized)
+    ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
         executionKind: "skills-local-disable",
@@ -999,6 +1055,7 @@ export function WebApp() {
     if (
       (normalized.includes("preview starting") && normalized.includes("mcp plugin"))
       || (normalized.includes("预览") && normalized.includes("启动") && normalized.includes("mcp"))
+      || isChineseMcpStartPreviewRequest(normalized)
     ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
@@ -1128,7 +1185,7 @@ export function WebApp() {
       return;
     }
 
-    if (normalized.includes("search local knowledge") || isChineseKnowledgeSearchRequest(normalized)) {
+    if (isScopedChineseKnowledgeRequest) {
       startTransition(() => {
         setState((current) => {
           const currentBrowserState = current as WorkbenchState & {
@@ -1142,10 +1199,44 @@ export function WebApp() {
             executionKind: "rag-local-doc-search",
             executionTitle: "本地 RAG 文档检索",
             executionAuditSummary: "网页端触发了一次本地知识检索",
-            executionAuditDetail: `web local rag search: ${trimmed}`
+            executionAuditDetail: `web local rag search: ${scopedKnowledgeMessage}`
           });
           const started = createTaskExecutionStartedState(queued);
-          const result = searchWebKnowledge(trimmed, browserRecord);
+          const result = searchWebKnowledge(scopedKnowledgeMessage, browserRecord);
+
+          const succeeded = createTaskExecutionSucceededState(started, {
+            resultTitle: "本地 RAG 文档检索",
+            resultSummary: createLocalRagSearchResultSummaryWithLibrary(
+              currentBrowserState.webKnowledge?.activeLibraryLabel ?? "默认知识库",
+              result
+            ),
+            auditDetailLines: createKnowledgeHitAuditDetailLines(result)
+          });
+
+          return preserveWebKnowledgeState(current, succeeded);
+        });
+      });
+      return;
+    }
+
+    if (scopedKnowledgeNormalized.includes("search local knowledge") || isChineseKnowledgeSearchRequest(normalized)) {
+      startTransition(() => {
+        setState((current) => {
+          const currentBrowserState = current as WorkbenchState & {
+            webKnowledge?: {
+              activeLibraryLabel: string;
+            };
+          };
+          const browserRecord = webKnowledgeRecordRef.current;
+          const queued = createUserTaskSubmittedState(current, {
+            message: trimmed,
+            executionKind: "rag-local-doc-search",
+            executionTitle: "本地 RAG 文档检索",
+            executionAuditSummary: "网页端触发了一次本地知识检索",
+            executionAuditDetail: `web local rag search: ${scopedKnowledgeMessage}`
+          });
+          const started = createTaskExecutionStartedState(queued);
+          const result = searchWebKnowledge(scopedKnowledgeMessage, browserRecord);
 
           const succeeded = createTaskExecutionSucceededState(started, {
             resultTitle: "本地 RAG 文档检索",
@@ -1218,7 +1309,7 @@ export function WebApp() {
         const activeLibraryLabel =
           browserRecord.libraries.find((library) => library.id === browserRecord.activeLibraryId)?.label
           ?? "默认知识库";
-        const ragResult = searchWebKnowledge(trimmed, browserRecord);
+        const ragResult = searchWebKnowledge(scopedKnowledgeMessage, browserRecord);
         let activeModel = resolveUsableWebChatModel(state);
 
         if (!activeModel) {

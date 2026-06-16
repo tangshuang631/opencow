@@ -103,8 +103,8 @@ const localEnabledSkillsPatterns = [/\benabled\b/i, /\bactive\b/i, /\bactivated\
 const localEnabledSkillMatchPatterns = [/\bmatch\b/i, /\brecommend\b/i, /\bshould\b/i, /\bwhich\b/i, /\bbest\b/i];
 const localSkillInspectPatterns = [/\bshow\b/i, /\bdetail/i, /\bdetails\b/i, /\bread\b/i, /\binspect\b/i, /\bopen\b/i];
 const localSkillInstallPatterns = [/\binstall\b/i, /\badd\b/i, /安装/];
-const localSkillEnablePatterns = [/\benable\b/i, /\bactivate\b/i, /\bturn on\b/i];
-const localSkillDisablePatterns = [/\bdisable\b/i, /\bdeactivate\b/i, /\bturn off\b/i];
+const localSkillEnablePatterns = [/\benable\b/i, /\bactivate\b/i, /\bturn on\b/i, /启用/];
+const localSkillDisablePatterns = [/\bdisable\b/i, /\bdeactivate\b/i, /\bturn off\b/i, /禁用/];
 const npcCapabilityPatterns = [/\bnpc\b/i, /agent team/i, /collaboration/i];
 const npcCollaborationPatterns = [/collaboration/i, /协作/];
 const npcConfigurationIntentPatterns = [
@@ -1379,6 +1379,20 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: message,
       auditSummary: "Local assistant planned a local skill detail lookup.",
       auditDetail: `Readonly local skill detail task: ${message}`
+    };
+  }
+
+  if (
+    npcCapabilityPatterns.some((pattern) => pattern.test(message))
+    && /shell/i.test(message)
+    && (/计划/.test(message) || npcPreviewPatterns.some((pattern) => pattern.test(message)))
+  ) {
+    return {
+      kind: "npc-local-shell-plan-preview",
+      title: "NPC shell plan preview",
+      summary: "Preview a readonly NPC collaboration shell plan by combining NPC readiness, enabled skill routing, and the current shell safety chain.",
+      auditSummary: "Local assistant planned a readonly NPC shell plan preview.",
+      auditDetail: `Readonly NPC shell plan preview task: ${message}`
     };
   }
 
