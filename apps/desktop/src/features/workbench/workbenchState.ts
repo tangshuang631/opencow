@@ -31,7 +31,14 @@ export {
   createSearchProviderConfigState,
   createSearchToggleState
 } from "./workbenchState.network";
-export { createModelSelectedState, mergeOllamaOverview, createOllamaLoadErrorState } from "./workbenchState.ollama";
+export {
+  createModelSelectedState,
+  createNpcLocalModelSelectedState,
+  getChatCapableOllamaModels,
+  mergeOllamaOverview,
+  createOllamaLoadErrorState,
+  resolveUsableWorkbenchChatModel
+} from "./workbenchState.ollama";
 export {
   approvePendingConfirmationState,
   approvePermissionModeChangeState,

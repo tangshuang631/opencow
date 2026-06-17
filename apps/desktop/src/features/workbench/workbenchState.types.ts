@@ -245,6 +245,9 @@ export type WorkbenchState = {
       providerLabel: string;
       apiKey: string;
     };
+    npc: {
+      localModel: string;
+    };
   };
   storage: {
     sessionCount: number;

@@ -105,6 +105,59 @@ describe("WebApp", () => {
     expect(screen.getByRole("menuitemradio", { name: "qwen3.5:9b 6.6 GB" })).toBeInTheDocument();
   });
 
+  it("shows the newly submitted user message immediately in the current conversation window", async () => {
+    let resolveChat: ((value: { model: string; message: string; doneReason: string }) => void) | null = null;
+    chatWithOllamaModelMock.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveChat = resolve;
+    }));
+
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "抽象工厂模式是什么" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(within(conversation).getAllByText("抽象工厂模式是什么").length).toBeGreaterThan(0);
+    });
+
+    resolveChat?.({
+      model: "qwen2.5-coder:7b",
+      message: "抽象工厂模式用于创建一组相关对象。",
+      doneReason: "stop"
+    });
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("抽象工厂模式用于创建一组相关对象。")).toBeInTheDocument();
+    });
+  });
+
+  it("filters embedding-only Ollama models out of the chat model picker and default selection", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "bge-m3:latest",
+      diagnostic: "",
+      models: [
+        { name: "bge-m3:latest", sizeLabel: "1.2 GB" },
+        { name: "gemma4:12b", sizeLabel: "7.2 GB" },
+        { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }
+      ]
+    });
+
+    render(<WebApp />);
+
+    const modelButton = await screen.findByRole("button", { name: "选择模型：gemma4:12b" });
+    fireEvent.click(modelButton);
+
+    expect(screen.queryByRole("menuitemradio", { name: "bge-m3:latest 1.2 GB" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "qwen2.5-coder:7b 4.1 GB" })).toBeInTheDocument();
+  });
+
   it("switches the active web model from the real local Ollama list", async () => {
     render(<WebApp />);
 

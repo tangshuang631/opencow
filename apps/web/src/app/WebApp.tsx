@@ -21,6 +21,7 @@ import {
   createOllamaLoadErrorState,
   createInitialWorkbenchState,
   createModelSelectedState,
+  createNpcLocalModelSelectedState,
   createNewConversationState,
   createStorageCleanupState,
   createTaskExecutionFailedState,
@@ -29,6 +30,7 @@ import {
   createUserTaskSubmittedState,
   deleteRecentConversationState,
   mergeOllamaOverview,
+  resolveUsableWorkbenchChatModel,
   restoreRecentConversationState
 } from "../../../desktop/src/features/workbench/workbenchState";
 import { loadOllamaOverview } from "../../../desktop/src/features/ollama/ollamaService";
@@ -307,13 +309,7 @@ function normalizePrompt(message: string) {
 }
 
 function resolveUsableWebChatModel(state: WorkbenchState) {
-  const activeModel = state.model.activeModel.trim();
-
-  if (activeModel && activeModel !== "未选择模型") {
-    return activeModel;
-  }
-
-  return state.model.availableModels[0]?.name ?? "";
+  return resolveUsableWorkbenchChatModel(state.model.activeModel, state.model.availableModels);
 }
 
 function createWebLocalChatPrompt(message: string, libraryLabel: string, result: ReturnType<typeof searchWebKnowledge>) {
@@ -383,34 +379,74 @@ function applyReadonlyTaskResult(
 ) {
   startTransition(() => {
     setState((current) => {
-      const queued = createUserTaskSubmittedState(current, {
+      const nextState = current.tasks.activeTaskId
+        ? createTaskExecutionSucceededState(current, {
+          resultTitle: payload.resultTitle,
+          resultSummary: payload.resultSummary,
+          auditDetailLines: payload.auditDetailLines
+        })
+        : createTaskExecutionSucceededState(
+          createTaskExecutionStartedState(
+            createUserTaskSubmittedState(current, {
+              message: payload.message,
+              executionKind: payload.executionKind as never,
+              executionTitle: payload.executionTitle,
+              executionAuditSummary: payload.executionAuditSummary,
+              executionAuditDetail: payload.executionAuditDetail
+            })
+          ),
+          {
+            resultTitle: payload.resultTitle,
+            resultSummary: payload.resultSummary,
+            auditDetailLines: payload.auditDetailLines
+          }
+        );
+
+      return preserveWebKnowledgeState(current, nextState);
+    });
+  });
+}
+
+function getReadonlyTaskFailureState(
+  current: WorkbenchState,
+  payload: {
+    message: string;
+    executionKind: string;
+    executionTitle: string;
+    executionAuditSummary: string;
+    executionAuditDetail: string;
+    failureSummary: string;
+    failureDetail: string;
+    failureActionLabel: string;
+    failureSource: string;
+  }
+) {
+  if (current.tasks.activeTaskId) {
+    return createTaskExecutionFailedState(current, {
+      summary: payload.failureSummary,
+      detail: payload.failureDetail,
+      actionLabel: payload.failureActionLabel,
+      source: payload.failureSource
+    });
+  }
+
+  return createTaskExecutionFailedState(
+    createTaskExecutionStartedState(
+      createUserTaskSubmittedState(current, {
         message: payload.message,
         executionKind: payload.executionKind as never,
         executionTitle: payload.executionTitle,
         executionAuditSummary: payload.executionAuditSummary,
         executionAuditDetail: payload.executionAuditDetail
-      });
-      const started = createTaskExecutionStartedState(queued);
-
-      return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
-        resultTitle: payload.resultTitle,
-        resultSummary: payload.resultSummary,
-        auditDetailLines: payload.auditDetailLines
-      }));
-    });
-  });
-}
-
-function getReadableErrorDetail(error: unknown) {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message.trim();
-  }
-
-  if (typeof error === "string" && error.trim()) {
-    return error.trim();
-  }
-
-  return "Unknown browser-preview failure.";
+      })
+    ),
+    {
+      summary: payload.failureSummary,
+      detail: payload.failureDetail,
+      actionLabel: payload.failureActionLabel,
+      source: payload.failureSource
+    }
+  );
 }
 
 function applyReadonlyTaskFailure(
@@ -428,23 +464,7 @@ function applyReadonlyTaskFailure(
   }
 ) {
   startTransition(() => {
-    setState((current) => {
-      const queued = createUserTaskSubmittedState(current, {
-        message: payload.message,
-        executionKind: payload.executionKind as never,
-        executionTitle: payload.executionTitle,
-        executionAuditSummary: payload.executionAuditSummary,
-        executionAuditDetail: payload.executionAuditDetail
-      });
-      const started = createTaskExecutionStartedState(queued);
-
-      return preserveWebKnowledgeState(current, createTaskExecutionFailedState(started, {
-        summary: payload.failureSummary,
-        detail: payload.failureDetail,
-        actionLabel: payload.failureActionLabel,
-        source: payload.failureSource
-      }));
-    });
+    setState((current) => preserveWebKnowledgeState(current, getReadonlyTaskFailureState(current, payload)));
   });
 }
 
@@ -467,6 +487,16 @@ function executeReadonlyAsyncTask<T>(
     };
   }
 ) {
+  startTransition(() => {
+    setState((current) => preserveWebKnowledgeState(current, createTaskExecutionStartedState(createUserTaskSubmittedState(current, {
+      message: payload.message,
+      executionKind: payload.executionKind as never,
+      executionTitle: payload.executionTitle,
+      executionAuditSummary: payload.executionAuditSummary,
+      executionAuditDetail: payload.executionAuditDetail
+    }))));
+  });
+
   void payload.run().then((result) => {
     const success = payload.onSuccess(result);
 
@@ -498,6 +528,17 @@ function executeReadonlyAsyncTask<T>(
       failureSource: payload.failureSource
     });
   });
+}
+function getReadableErrorDetail(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
+  }
+
+  return "Unknown browser-preview failure.";
 }
 
 function tokenizeIntent(input: string) {
@@ -1449,7 +1490,7 @@ export function WebApp() {
 
         if (!activeModel) {
           const overview = await loadOllamaOverview();
-          activeModel = overview.selectedModel.trim() || overview.models[0]?.name || "";
+          activeModel = resolveUsableWorkbenchChatModel(overview.selectedModel, overview.models);
         }
 
         const chatResult = await chatWithOllamaModel({
@@ -1850,6 +1891,11 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
       onSelectModel={(modelName) => {
         startTransition(() => {
           setState((current) => preserveWebKnowledgeState(current, createModelSelectedState(current, modelName)));
+        });
+      }}
+      onSelectNpcModel={(modelName) => {
+        startTransition(() => {
+          setState((current) => preserveWebKnowledgeState(current, createNpcLocalModelSelectedState(current, modelName)));
         });
       }}
       onNewConversation={() => {

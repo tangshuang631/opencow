@@ -76,6 +76,9 @@ export function createInitialWorkbenchState(): WorkbenchState {
         baseUrl: "",
         providerLabel: "",
         apiKey: ""
+      },
+      npc: {
+        localModel: ""
       }
     },
     storage: {

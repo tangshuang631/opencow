@@ -8,6 +8,7 @@ type ComposerProps = {
   onSubmitTask: (message: string) => void;
   onCancelActiveTask: () => void;
   onSelectModel: (modelName: string) => void;
+  onSelectNpcModel?: (modelName: string) => void;
   onOpenModelSettings?: (target: "ollama" | "remote-api") => void;
 };
 
@@ -50,11 +51,16 @@ function getModelSetupPrompt(state: WorkbenchState): string | null {
   return null;
 }
 
+function getNpcModelLabel(state: WorkbenchState) {
+  return state.settings.npc.localModel || state.model.activeModel || "未选择模型";
+}
+
 export function Composer({
   state,
   onSubmitTask,
   onCancelActiveTask,
   onSelectModel,
+  onSelectNpcModel,
   onOpenModelSettings
 }: ComposerProps) {
   const [draft, setDraft] = useState("");
@@ -65,6 +71,7 @@ export function Composer({
   );
   const hasModels = state.model.availableModels.length > 0;
   const modelSetupPrompt = getModelSetupPrompt(state);
+  const [npcModelMenuOpen, setNpcModelMenuOpen] = useState(false);
 
   function submitTask() {
     const message = draft.trim();
@@ -138,6 +145,46 @@ export function Composer({
                       onClick={() => {
                         onSelectModel(model.name);
                         setModelMenuOpen(false);
+                      }}
+                    >
+                      <span>{normalizeWorkbenchText(model.name)}</span>
+                      <span>{normalizeWorkbenchText(model.sizeLabel)}</span>
+                      {selected ? <Check aria-hidden="true" size={17} /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {hasModels ? (
+          <div className="model-picker">
+            <button
+              aria-expanded={npcModelMenuOpen}
+              aria-haspopup="menu"
+              aria-label={`选择 NPC 模型：${getNpcModelLabel(state)}`}
+              className="model-picker-button"
+              type="button"
+              onClick={() => setNpcModelMenuOpen((open) => !open)}
+            >
+              <Cpu aria-hidden="true" size={16} />
+              <ChevronDown aria-hidden="true" size={15} />
+            </button>
+            {npcModelMenuOpen ? (
+              <div aria-label="NPC 模型" className="model-picker-menu" role="menu">
+                {state.model.availableModels.map((model) => {
+                  const selected = model.name === getNpcModelLabel(state);
+
+                  return (
+                    <button
+                      aria-checked={selected}
+                      className={`model-picker-item ${selected ? "model-picker-item-selected" : ""}`}
+                      key={model.name}
+                      role="menuitemradio"
+                      type="button"
+                      onClick={() => {
+                        onSelectNpcModel?.(model.name);
+                        setNpcModelMenuOpen(false);
                       }}
                     >
                       <span>{normalizeWorkbenchText(model.name)}</span>

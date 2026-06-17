@@ -9,6 +9,7 @@ import {
   getLocalizedPermissionReason,
   getLocalizedPermissionRiskSummary
 } from "./workbenchText";
+import { getChatCapableOllamaModels } from "./workbenchState";
 import {
   getShellDialogRecoveryNarrative,
   getShellRecoveryChecklist,
@@ -35,6 +36,7 @@ type WorkbenchProps = {
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
   onSelectModel: (modelName: string) => void;
+  onSelectNpcModel?: (modelName: string) => void;
   onNewConversation: () => void;
   onArchiveConversation: () => void;
   onRestoreRecentConversation: (conversationId: string) => void;
@@ -425,6 +427,7 @@ function SettingsPanel({
   onToggleSearch,
   onSaveRemoteApiConfig,
   onSaveSearchProviderConfig,
+  onSelectNpcModel,
   onUpdateRollbackLimit,
   onCleanupStorage,
   onRestoreRecentConversation,
@@ -437,6 +440,7 @@ function SettingsPanel({
   onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
+  onSelectNpcModel: (modelName: string) => void;
   onUpdateRollbackLimit: (limit: number) => void;
   onCleanupStorage: (target: StorageCleanupTarget) => void;
   onRestoreRecentConversation: (conversationId: string) => void;
@@ -507,6 +511,15 @@ function SettingsPanel({
           <button className="action-button action-button-primary" type="button" onClick={onRetryOllamaCheck}>
             重新检测 Ollama
           </button>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>NPC 本地模型</h2>
+        <p>这里显示 NPC 当前使用的本地大模型。切换入口与主模型一致，统一在底部同款下拉里完成。</p>
+        <div className="settings-line-list">
+          <p>当前 NPC 模型: {state.settings.npc.localModel || state.model.activeModel}</p>
+          <p>不会使用 embedding 模型</p>
         </div>
       </section>
 
@@ -765,6 +778,7 @@ export function Workbench({
   onSaveRemoteApiConfig,
   onSaveSearchProviderConfig,
   onSelectModel,
+  onSelectNpcModel,
   onNewConversation,
   onArchiveConversation,
   onRestoreRecentConversation,
@@ -913,6 +927,7 @@ export function Workbench({
             onToggleSearch={onToggleSearch}
             onSaveRemoteApiConfig={onSaveRemoteApiConfig}
             onSaveSearchProviderConfig={onSaveSearchProviderConfig}
+            onSelectNpcModel={onSelectNpcModel ?? (() => undefined)}
             onUpdateRollbackLimit={onUpdateRollbackLimit}
             onCleanupStorage={onCleanupStorage}
             onRestoreRecentConversation={onRestoreRecentConversation}
@@ -927,6 +942,7 @@ export function Workbench({
             onSubmitTask={handleSubmitTask}
             onCancelActiveTask={onCancelActiveTask}
             onSelectModel={onSelectModel}
+            onSelectNpcModel={onSelectNpcModel}
             onOpenModelSettings={handleOpenModelSettings}
           />
         ) : null}

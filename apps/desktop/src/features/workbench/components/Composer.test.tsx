@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
 import {
@@ -175,6 +175,53 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("menuitemradio", { name: "qwen3.6:35b 20 GB" }));
 
     expect(onSelectModel).toHaveBeenCalledWith("qwen3.6:35b");
+  });
+
+  it("uses the same dropdown style for NPC model selection and filters embedding models out", () => {
+    const onSelectNpcModel = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      model: {
+        ...createInitialWorkbenchState().model,
+        status: "Ollama 已连接",
+        activeModel: "qwen2.5-coder:7b",
+        availableModels: [
+          { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" },
+          { name: "gemma4:12b", sizeLabel: "7.2 GB" }
+        ]
+      },
+      settings: {
+        ...createInitialWorkbenchState().settings,
+        npc: {
+          localModel: "qwen2.5-coder:7b"
+        }
+      }
+    };
+
+    render(
+      <Composer
+        state={state}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onSelectNpcModel={onSelectNpcModel}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "选择模型：qwen2.5-coder:7b" }));
+
+    expect(screen.getByRole("menuitemradio", { name: "qwen2.5-coder:7b 4.1 GB" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "选择 NPC 模型：qwen2.5-coder:7b" }));
+    const npcMenu = screen.getByRole("menu", { name: "NPC 模型" });
+
+    expect(within(npcMenu).getByRole("menuitemradio", { name: "qwen2.5-coder:7b 4.1 GB" })).toHaveAttribute("aria-checked", "true");
+    expect(within(npcMenu).getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" })).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(within(npcMenu).getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" }));
+
+    expect(onSelectNpcModel).toHaveBeenCalledWith("gemma4:12b");
   });
 
   it("shows a lightweight setup prompt near the composer when Ollama cannot be reached", () => {

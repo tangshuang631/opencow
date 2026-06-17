@@ -34,6 +34,7 @@ import {
   createNewConversationState,
   deleteRecentConversationState,
   createModelSelectedState,
+  createNpcLocalModelSelectedState,
   createOllamaLoadErrorState,
   createRemoteApiConfigState,
   createRemoteApiToggleState,
@@ -53,6 +54,7 @@ import {
   createToolExecutionErrorState,
   createToolExecutionRecoveredState,
   createUserTaskSubmittedState,
+  resolveUsableWorkbenchChatModel,
   mergeOllamaOverview,
   restoreRecentConversationState,
   requestPermissionModeChangeState,
@@ -92,7 +94,6 @@ const LOCAL_MODEL_CONTINUATION_TAIL_LIMIT = 1200;
 const LOCAL_MODEL_PROGRESS_INTERVAL_MS = 15_000;
 const MAX_CHAT_SEARCH_CONTEXT_ITEMS = 3;
 const MAX_CHAT_SEARCH_FIELD_LENGTH = 240;
-const PREFERRED_DEFAULT_CHAT_MODELS = ["gemma:26b", "gemma4:26b"];
 const TAURI_INTERNALS_KEY = "__TAURI_INTERNALS__";
 const PERMISSION_MODE_RANK: Record<PermissionMode, number> = {
   readonly: 0,
@@ -551,19 +552,7 @@ export function resolveUsableOllamaChatModel(
   model: string,
   availableModels: WorkbenchState["model"]["availableModels"]
 ): string {
-  const selectedModel = model.trim();
-
-  if (selectedModel && availableModels.some((item) => item.name === selectedModel)) {
-    return selectedModel;
-  }
-
-  if (availableModels.length > 0) {
-    return availableModels.find((item) => PREFERRED_DEFAULT_CHAT_MODELS.includes(item.name))?.name?.trim()
-      || availableModels[0]?.name?.trim()
-      || "";
-  }
-
-  return "";
+  return resolveUsableWorkbenchChatModel(model, availableModels);
 }
 
 function createLocalModelChatFailureDetail(payload: {
@@ -2925,6 +2914,12 @@ export function App() {
     });
   }
 
+  function handleSelectNpcModel(modelName: string) {
+    startTransition(() => {
+      setState((current) => createNpcLocalModelSelectedState(current, modelName));
+    });
+  }
+
   function handleNewConversation() {
     cancelActiveLocalModelRequest();
     startTransition(() => {
@@ -3113,6 +3108,7 @@ export function App() {
       onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
       onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
       onSelectModel={handleSelectModel}
+      onSelectNpcModel={handleSelectNpcModel}
       onNewConversation={handleNewConversation}
       onRestoreRecentConversation={handleRestoreRecentConversation}
       onDeleteRecentConversation={handleDeleteRecentConversation}

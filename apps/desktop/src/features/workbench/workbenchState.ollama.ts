@@ -4,18 +4,63 @@ import type { WorkbenchState } from "./workbenchState.types";
 
 const PREFERRED_DEFAULT_CHAT_MODELS = ["gemma:26b", "gemma4:26b"];
 
+function isEmbeddingOnlyOllamaModel(modelName: string) {
+  const normalized = modelName.trim().toLowerCase();
+
+  return normalized.includes("embedding")
+    || normalized.includes("embed")
+    || normalized.includes("bge")
+    || normalized.includes("mxbai")
+    || normalized.includes("nomic-embed")
+    || normalized.includes("all-minilm");
+}
+
+export function getChatCapableOllamaModels(availableModels: WorkbenchState["model"]["availableModels"]) {
+  return availableModels.filter((model) => {
+    const capabilities = model.capabilities ?? [];
+    const capabilityBasedEmbedding = capabilities.some((capability) => capability.toLowerCase() === "embedding");
+
+    return !(capabilityBasedEmbedding || isEmbeddingOnlyOllamaModel(model.name));
+  });
+}
+
+export function resolveUsableWorkbenchChatModel(
+  selectedModel: string,
+  availableModels: WorkbenchState["model"]["availableModels"]
+) {
+  const normalizedSelectedModel = selectedModel.trim();
+  const chatCapableModels = getChatCapableOllamaModels(availableModels);
+
+  if (
+    normalizedSelectedModel
+    && chatCapableModels.some((model) => model.name === normalizedSelectedModel)
+  ) {
+    return normalizedSelectedModel;
+  }
+
+  if (chatCapableModels.length > 0) {
+    return chatCapableModels.find((model) => PREFERRED_DEFAULT_CHAT_MODELS.includes(model.name))?.name
+      ?? chatCapableModels[0]?.name
+      ?? "";
+  }
+
+  return "";
+}
+
 function getReachableOllamaDiagnostic(overview: OllamaOverview): string {
   if (overview.diagnostic) {
     return overview.diagnostic;
   }
 
-  if (overview.models.length === 0) {
+  const chatCapableModels = getChatCapableOllamaModels(overview.models);
+
+  if (chatCapableModels.length === 0) {
     return "No local Ollama models were found. Pull a model before starting chat.";
   }
 
   if (
     overview.selectedModel
-    && !overview.models.some((model) => model.name === overview.selectedModel)
+    && !chatCapableModels.some((model) => model.name === overview.selectedModel)
   ) {
     return `Selected Ollama model is unavailable: ${overview.selectedModel}. Choose one of the detected local models before retrying.`;
   }
@@ -24,16 +69,10 @@ function getReachableOllamaDiagnostic(overview: OllamaOverview): string {
 }
 
 function getReachableOllamaActiveModel(overview: OllamaOverview): string {
-  const selectedModel = overview.selectedModel.trim();
+  const resolvedModel = resolveUsableWorkbenchChatModel(overview.selectedModel, overview.models);
 
-  if (selectedModel && overview.models.some((model) => model.name === selectedModel)) {
-    return selectedModel;
-  }
-
-  if (overview.models.length > 0) {
-    return overview.models.find((model) => PREFERRED_DEFAULT_CHAT_MODELS.includes(model.name))?.name
-      ?? overview.models[0]?.name
-      ?? "未选择模型";
+  if (resolvedModel) {
+    return resolvedModel;
   }
 
   return "未选择模型";
@@ -78,20 +117,23 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
   }
 
   const diagnostic = getReachableOllamaDiagnostic(overview);
+  const chatCapableModels = getChatCapableOllamaModels(overview.models);
   const selectedModelUnavailable = Boolean(
     overview.selectedModel.trim()
-      && !overview.models.some((model) => model.name === overview.selectedModel.trim())
+      && !chatCapableModels.some((model) => model.name === overview.selectedModel.trim())
   );
   const auditSummary = selectedModelUnavailable
     ? "Ollama 模型需要重新选择"
-    : `已读取 ${overview.models.length} 个本地模型`;
+    : `已读取 ${chatCapableModels.length} 个本地模型`;
   const auditDetail = selectedModelUnavailable
     ? diagnostic
     : `${overview.endpoint} 已返回模型列表。`;
   const rollbackLabel = selectedModelUnavailable ? auditSummary : "Ollama 检查";
   const rollbackSummary = selectedModelUnavailable
     ? diagnostic
-    : `已完成 ${overview.models.length} 个本地模型的读取检查。`;
+    : `已完成 ${chatCapableModels.length} 个本地模型的读取检查。`;
+  const nextActiveModel = getReachableOllamaActiveModel(overview);
+  const nextNpcModel = resolveUsableWorkbenchChatModel(state.settings.npc.localModel, overview.models) || nextActiveModel;
 
   return recordRollbackEntry(
     {
@@ -100,9 +142,15 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
         ...state.model,
         status: "Ollama 已连接",
         endpoint: overview.endpoint,
-        activeModel: getReachableOllamaActiveModel(overview),
+        activeModel: nextActiveModel,
         diagnostic,
-        availableModels: overview.models
+        availableModels: chatCapableModels
+      },
+      settings: {
+        ...state.settings,
+        npc: {
+          localModel: nextNpcModel
+        }
       },
       audit: {
         summary: auditSummary,
@@ -170,6 +218,12 @@ export function createModelSelectedState(state: WorkbenchState, modelName: strin
         ...state.model,
         activeModel: selectedModel.name
       },
+      settings: {
+        ...state.settings,
+        npc: {
+          localModel: state.settings.npc.localModel || selectedModel.name
+        }
+      },
       output: {
         title: "本地模型已切换",
         summary: `当前使用 ${selectedModel.name}。`
@@ -188,6 +242,44 @@ export function createModelSelectedState(state: WorkbenchState, modelName: strin
     "ollama-model-selected",
     "模型选择",
     `已选择本地模型 ${selectedModel.name}。`,
+    "session"
+  );
+}
+
+export function createNpcLocalModelSelectedState(state: WorkbenchState, modelName: string): WorkbenchState {
+  const selectedModel = state.model.availableModels.find((model) => model.name === modelName);
+
+  if (!selectedModel) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      settings: {
+        ...state.settings,
+        npc: {
+          localModel: selectedModel.name
+        }
+      },
+      output: {
+        title: "NPC 模型已切换",
+        summary: `NPC 当前使用 ${selectedModel.name}。`
+      },
+      audit: {
+        summary: `已选择 NPC 本地模型 ${selectedModel.name}`,
+        lastEvent: {
+          module: "ollama",
+          detail: `Selected local NPC model: ${selectedModel.name}. Size: ${selectedModel.sizeLabel}.`,
+          timestamp: "本地最近一次选择",
+          source: "npc_local_model_selected"
+        }
+      },
+      error: state.error?.module === "ollama" ? null : state.error
+    },
+    "npc-local-model-selected",
+    "NPC 模型选择",
+    `已选择 NPC 本地模型 ${selectedModel.name}。`,
     "session"
   );
 }

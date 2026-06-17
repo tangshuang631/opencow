@@ -165,6 +165,40 @@ describe("Workbench", () => {
     expect(onImportKnowledgeFile).toHaveBeenCalledWith("notes/faq.txt");
   });
 
+  it("renders NPC local model information in settings and keeps embedding models out of the visible configuration", () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      model: {
+        ...createInitialWorkbenchState().model,
+        status: "Ollama 已连接",
+        activeModel: "qwen2.5-coder:7b",
+        availableModels: [
+          { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" },
+          { name: "gemma4:12b", sizeLabel: "7.2 GB" }
+        ]
+      },
+      settings: {
+        ...createInitialWorkbenchState().settings,
+        npc: {
+          localModel: "qwen2.5-coder:7b"
+        }
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const settingsPanel = screen.getByLabelText("设置");
+    const npcSection = within(settingsPanel).getByText("NPC 本地模型").closest("section");
+
+    expect(npcSection).not.toBeNull();
+    expect(within(npcSection as HTMLElement).getByText("当前 NPC 模型: qwen2.5-coder:7b")).toBeInTheDocument();
+    expect(within(npcSection as HTMLElement).getByText("不会使用 embedding 模型")).toBeInTheDocument();
+    expect(within(npcSection as HTMLElement).queryByRole("button", { name: "qwen2.5-coder:7b" })).not.toBeInTheDocument();
+    expect(within(npcSection as HTMLElement).queryByRole("button", { name: "gemma4:12b" })).not.toBeInTheDocument();
+  });
+
   it("hides the conversation composer outside the conversation workspace", () => {
     render(<Workbench {...createWorkbenchProps()} />);
 

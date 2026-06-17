@@ -63,7 +63,10 @@ describe("ollamaService", () => {
           models: [
             {
               name: "qwen2.5-coder:7b",
-              size: 4_402_345_123
+              size: 4_402_345_123,
+              details: {
+                capabilities: ["completion", "chat"]
+              }
             }
           ]
         })
@@ -75,6 +78,38 @@ describe("ollamaService", () => {
     expect(fetch).toHaveBeenCalledWith("http://127.0.0.1:11434/api/tags");
     expect(overview.reachable).toBe(true);
     expect(overview.models[0]).toMatchObject({ name: "qwen2.5-coder:7b" });
+  });
+
+  it("prefers Ollama metadata capabilities over model-name heuristics when filtering chat models", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              name: "custom-general-model",
+              size: 4_402_345_123,
+              details: {
+                capabilities: ["completion", "chat"]
+              }
+            },
+            {
+              name: "general-embeddings",
+              size: 1_200_000_000,
+              details: {
+                capabilities: ["embedding"]
+              }
+            }
+          ]
+        })
+      })
+    );
+
+    const overview = await loadOllamaOverview();
+
+    expect(overview.selectedModel).toBe("custom-general-model");
+    expect(overview.models.map((model) => model.name)).toEqual(["custom-general-model", "general-embeddings"]);
   });
 
   it("prefers gemma 26b over other detected models by default", async () => {

@@ -18,7 +18,7 @@ describe("mergeOllamaOverview", () => {
 
     expect(updated.model.status).toBe("Ollama 已连接");
     expect(updated.model.activeModel).toBe("qwen2.5-coder:7b");
-    expect(updated.model.availableModels).toHaveLength(2);
+    expect(updated.model.availableModels).toHaveLength(1);
     expect(updated.model.diagnostic).toBe("");
   });
 
@@ -116,5 +116,24 @@ describe("mergeOllamaOverview", () => {
     });
 
     expect(updated.model.activeModel).toBe("qwen3.6:35b");
+  });
+
+  it("skips embedding-only models when choosing the default chat model", () => {
+    const state = createInitialWorkbenchState();
+
+    const updated = mergeOllamaOverview(state, {
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "bge-m3:latest",
+      diagnostic: "",
+      models: [
+        { name: "bge-m3:latest", sizeLabel: "1.2 GB" },
+        { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }
+      ]
+    });
+
+    expect(updated.model.activeModel).toBe("qwen2.5-coder:7b");
+    expect(updated.model.availableModels.map((model) => model.name)).toEqual(["qwen2.5-coder:7b"]);
+    expect(updated.settings.npc.localModel).toBe("qwen2.5-coder:7b");
   });
 });

@@ -18,6 +18,7 @@ const PREFERRED_DEFAULT_CHAT_MODELS = ["gemma:26b", "gemma4:26b"];
 export type OllamaModelSummary = {
   name: string;
   sizeLabel: string;
+  capabilities?: string[];
 };
 
 export type OllamaOverview = {
@@ -46,6 +47,9 @@ type OllamaTagsResponse = {
   models?: Array<{
     name?: string;
     size?: number;
+    details?: {
+      capabilities?: string[];
+    };
   }>;
 };
 
@@ -955,14 +959,31 @@ function normalizeModels(payload: OllamaTagsResponse): OllamaModelSummary[] {
     .filter((model): model is { name: string; size?: number } => typeof model.name === "string" && model.name.length > 0)
     .map((model) => ({
       name: model.name,
-      sizeLabel: formatModelSize(model.size ?? 0)
+      sizeLabel: formatModelSize(model.size ?? 0),
+      capabilities: model.details?.capabilities
     }));
 }
 
 function selectDefaultChatModel(models: OllamaModelSummary[]): string {
-  return models.find((model) => PREFERRED_DEFAULT_CHAT_MODELS.includes(model.name))?.name
-    ?? models[0]?.name
+  const chatModels = models.filter((model) => !isEmbeddingOnlyModel(model));
+
+  return chatModels.find((model) => PREFERRED_DEFAULT_CHAT_MODELS.includes(model.name))?.name
+    ?? chatModels[0]?.name
     ?? "";
+}
+
+function isEmbeddingOnlyModel(model: OllamaModelSummary): boolean {
+  const capabilities = model.capabilities ?? [];
+  const normalizedName = model.name.trim().toLowerCase();
+  const capabilityBasedEmbedding = capabilities.some((capability) => capability.toLowerCase() === "embedding");
+  const nameBasedEmbedding = normalizedName.includes("embedding")
+    || normalizedName.includes("embed")
+    || normalizedName.includes("bge")
+    || normalizedName.includes("mxbai")
+    || normalizedName.includes("nomic-embed")
+    || normalizedName.includes("all-minilm");
+
+  return capabilityBasedEmbedding || nameBasedEmbedding;
 }
 
 function formatModelSize(size: number): string {
