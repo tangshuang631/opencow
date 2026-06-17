@@ -25,11 +25,14 @@ export function createInitialWorkbenchState(): WorkbenchState {
       pending: null
     },
     conversation: {
-      entries: []
+      entries: [],
+      mode: "blank",
+      restoredFromConversationId: null
     },
     history: {
       lastNonEmptyConversationEntries: [],
-      recentConversations: []
+      draftConversations: [],
+      archivedConversations: []
     },
     rollback: {
       ...createRollbackJournal({

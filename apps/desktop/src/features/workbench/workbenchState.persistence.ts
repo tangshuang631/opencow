@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createInitialWorkbenchState } from "./workbenchState.initial";
-import type { LocalTaskItem, WorkbenchState } from "./workbenchState.types";
+import type { ConversationMode, LocalTaskItem, WorkbenchState } from "./workbenchState.types";
 
 const WORKBENCH_STATE_STORAGE_KEY = "opencow.desktop.workbench-state.v1";
 const tauriInternals = "__TAURI_INTERNALS__" as const;
@@ -100,29 +100,64 @@ function revivePersistedTask(task: LocalTaskItem): LocalTaskItem {
   };
 }
 
+function inferLegacyConversationMode(
+  state: WorkbenchState,
+  revivedConversationEntries: WorkbenchState["conversation"]["entries"]
+): ConversationMode {
+  const persistedMode = state.conversation.mode;
+
+  if (persistedMode === "blank" || persistedMode === "history" || persistedMode === "restored") {
+    return persistedMode;
+  }
+
+  if (state.audit?.lastEvent?.source === "conversation_new") {
+    return "blank";
+  }
+
+  if (state.audit?.lastEvent?.source === "conversation_recent_restored") {
+    return "restored";
+  }
+
+  if (revivedConversationEntries.length > 0) {
+    return "history";
+  }
+
+  return "blank";
+}
+
 function revivePersistedState(state: WorkbenchState): WorkbenchState {
   const revivedHistoryEntries =
     state.history?.lastNonEmptyConversationEntries
     ?? (state.conversation.entries.length > 0 ? state.conversation.entries : []);
-  const revivedRecentConversations = state.history?.recentConversations ?? [];
-  const isIntentionallyBlankConversation = state.audit?.lastEvent?.source === "conversation_new";
+  const revivedDraftConversations =
+    state.history?.draftConversations
+    ?? state.history?.recentConversations
+    ?? [];
+  const revivedArchivedConversations = state.history?.archivedConversations ?? [];
   const revivedKnowledge = state.knowledge ?? {
     importedFiles: [],
     availableFiles: []
   };
   const revivedConversationEntries =
-    state.conversation.entries.length > 0 || isIntentionallyBlankConversation
+    state.conversation.entries.length > 0 || state.conversation.mode === "blank"
       ? state.conversation.entries
       : revivedHistoryEntries;
+  const revivedConversationMode = inferLegacyConversationMode(state, revivedConversationEntries);
+  const revivedRestoredFromConversationId = revivedConversationMode === "restored"
+    ? (state.conversation.restoredFromConversationId ?? null)
+    : null;
 
   return {
     ...state,
     conversation: {
-      entries: revivedConversationEntries
+      entries: revivedConversationEntries,
+      mode: revivedConversationMode,
+      restoredFromConversationId: revivedRestoredFromConversationId
     },
     history: {
       lastNonEmptyConversationEntries: revivedHistoryEntries,
-      recentConversations: revivedRecentConversations
+      draftConversations: revivedDraftConversations,
+      archivedConversations: revivedArchivedConversations
     },
     knowledge: revivedKnowledge,
     tasks: revivePersistedTasks(state.tasks),
@@ -194,11 +229,19 @@ export function loadPersistedWorkbenchStateFromBrowserStorage(
 export async function persistWorkbenchState(state: WorkbenchState) {
   const normalizedState: WorkbenchState = {
     ...state,
+    conversation: {
+      ...state.conversation,
+      mode: state.conversation.mode ?? (state.conversation.entries.length > 0 ? "history" : "blank"),
+      restoredFromConversationId: state.conversation.mode === "restored"
+        ? (state.conversation.restoredFromConversationId ?? null)
+        : null
+    },
     history: {
       lastNonEmptyConversationEntries: state.conversation.entries.length > 0
         ? state.conversation.entries
         : state.history.lastNonEmptyConversationEntries,
-      recentConversations: state.history.recentConversations
+      draftConversations: state.history.draftConversations,
+      archivedConversations: state.history.archivedConversations
     }
   };
   const normalizedPayload = createPersistedEnvelope(normalizedState);

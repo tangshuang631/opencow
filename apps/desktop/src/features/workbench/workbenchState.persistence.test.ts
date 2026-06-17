@@ -139,8 +139,48 @@ describe("workbenchState.persistence", () => {
     const restored = await loadPersistedWorkbenchState();
 
     expect(restored.conversation.entries).toHaveLength(0);
+    expect(restored.conversation.mode).toBe("blank");
     expect(restored.history.lastNonEmptyConversationEntries.some(
       (entry) => entry.summary === "keep this history after a blank new conversation"
     )).toBe(true);
+  });
+
+  it("keeps a restored recent conversation in restored mode after reload", async () => {
+    const currentEntries = [
+      {
+        id: "recent-entry-user",
+        kind: "user" as const,
+        title: "用户",
+        summary: "恢复这段历史会话"
+      }
+    ];
+    const persistedState = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        entries: currentEntries,
+        mode: "restored" as const,
+        restoredFromConversationId: "recent-conversation-1"
+      },
+      history: {
+        lastNonEmptyConversationEntries: currentEntries,
+        draftConversations: [
+          {
+            id: "recent-conversation-1",
+            title: "恢复这段历史会话",
+            summary: "恢复后刷新也应保持恢复态。",
+            entries: currentEntries
+          }
+        ],
+        archivedConversations: []
+      }
+    };
+
+    await persistWorkbenchState(persistedState);
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.conversation.entries[0]?.summary).toBe("恢复这段历史会话");
+    expect(restored.conversation.mode).toBe("restored");
+    expect(restored.conversation.restoredFromConversationId).toBe("recent-conversation-1");
   });
 });

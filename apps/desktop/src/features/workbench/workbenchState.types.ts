@@ -52,6 +52,8 @@ export type ConversationEntry = {
   rollbackTargetId?: string;
 };
 
+export type ConversationMode = "blank" | "history" | "restored";
+
 export type SearchSourceItem = {
   title: string;
   url: string;
@@ -78,6 +80,7 @@ export type RecentConversationRecord = {
   title: string;
   summary: string;
   entries: ConversationEntry[];
+  archivedAt?: string | null;
 };
 
 export type ToolExecutionResult = {
@@ -194,10 +197,13 @@ export type WorkbenchState = {
   };
   conversation: {
     entries: ConversationEntry[];
+    mode?: ConversationMode;
+    restoredFromConversationId?: string | null;
   };
   history: {
     lastNonEmptyConversationEntries: ConversationEntry[];
-    recentConversations: RecentConversationRecord[];
+    draftConversations: RecentConversationRecord[];
+    archivedConversations: RecentConversationRecord[];
   };
   rollback: {
     defaultLimit: number;

@@ -36,6 +36,7 @@ type WorkbenchProps = {
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
   onSelectModel: (modelName: string) => void;
   onNewConversation: () => void;
+  onArchiveConversation: () => void;
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
   onImportKnowledgeFile: (path: string) => void;
@@ -100,6 +101,26 @@ function WorkbenchContentPanel({ viewId }: { viewId: StaticWorkbenchViewId }) {
       </div>
     </section>
   );
+}
+
+function formatArchivedConversationTime(archivedAt?: string | null) {
+  if (!archivedAt) {
+    return "归档时间未记录";
+  }
+
+  const date = new Date(archivedAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return "归档时间未记录";
+  }
+
+  return `归档于 ${date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  })}`;
 }
 
 function renderKnowledgeFileCard(
@@ -405,7 +426,9 @@ function SettingsPanel({
   onSaveRemoteApiConfig,
   onSaveSearchProviderConfig,
   onUpdateRollbackLimit,
-  onCleanupStorage
+  onCleanupStorage,
+  onRestoreRecentConversation,
+  onDeleteRecentConversation
 }: {
   state: WorkbenchState;
   focusTarget: ModelSettingsTarget | null;
@@ -416,12 +439,38 @@ function SettingsPanel({
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
   onUpdateRollbackLimit: (limit: number) => void;
   onCleanupStorage: (target: StorageCleanupTarget) => void;
+  onRestoreRecentConversation: (conversationId: string) => void;
+  onDeleteRecentConversation: (conversationId: string) => void;
 }) {
   const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
   const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
   const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
   const [searchProviderLabel, setSearchProviderLabel] = useState(state.search.providerLabel);
+  const [archivedConversationQuery, setArchivedConversationQuery] = useState("");
   const activeFocusLabel = focusTarget === "remote-api" ? "大模型 API 设置" : "Ollama 设置";
+  const archivedConversations = state.history.archivedConversations ?? [];
+  const normalizedArchivedConversationQuery = archivedConversationQuery.trim().toLowerCase();
+  const filteredArchivedConversations = normalizedArchivedConversationQuery
+    ? archivedConversations.filter((conversation) =>
+      `${conversation.title} ${conversation.summary}`.toLowerCase().includes(normalizedArchivedConversationQuery)
+    )
+    : archivedConversations;
+  const groupedArchivedConversations = {
+    today: filteredArchivedConversations.filter((conversation) => {
+      if (!conversation.archivedAt) {
+        return false;
+      }
+
+      return new Date(conversation.archivedAt).toDateString() === new Date().toDateString();
+    }),
+    earlier: filteredArchivedConversations.filter((conversation) => {
+      if (!conversation.archivedAt) {
+        return true;
+      }
+
+      return new Date(conversation.archivedAt).toDateString() !== new Date().toDateString();
+    })
+  };
 
   useEffect(() => {
     setRemoteApiBaseUrl(state.settings.remoteApi.baseUrl);
@@ -574,6 +623,85 @@ function SettingsPanel({
       </section>
 
       <section className="settings-section">
+        <h2>恢复会话</h2>
+        <p>这里只显示已归档会话。恢复后会重新回到左侧会话区，删除则为永久删除。</p>
+        <div className="workspace-history-card">
+          <p>搜索恢复会话</p>
+          <input
+            aria-label="搜索恢复会话"
+            className="settings-textarea"
+            type="text"
+            value={archivedConversationQuery}
+            onChange={(event) => setArchivedConversationQuery(event.target.value)}
+          />
+        </div>
+        <div className="settings-line-list">
+          {filteredArchivedConversations.length === 0 ? (
+            <p>还没有已归档会话。</p>
+          ) : (
+            <>
+              {groupedArchivedConversations.today.length > 0 ? (
+                <>
+                  <p className="settings-group-label">今天</p>
+                  {groupedArchivedConversations.today.map((conversation) => (
+                    <div className="workspace-history-card" key={conversation.id}>
+                      <p>{conversation.title}</p>
+                      <p className="muted">{conversation.summary}</p>
+                      <p className="workspace-history-card-meta">{formatArchivedConversationTime(conversation.archivedAt)}</p>
+                      <div className="action-row">
+                        <button
+                          className="action-button action-button-primary"
+                          type="button"
+                          onClick={() => onRestoreRecentConversation(conversation.id)}
+                        >
+                          恢复会话
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => onDeleteRecentConversation(conversation.id)}
+                        >
+                          永久删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+              {groupedArchivedConversations.earlier.length > 0 ? (
+                <>
+                  <p className="settings-group-label">更早</p>
+                  {groupedArchivedConversations.earlier.map((conversation) => (
+                    <div className="workspace-history-card" key={conversation.id}>
+                      <p>{conversation.title}</p>
+                      <p className="muted">{conversation.summary}</p>
+                      <p className="workspace-history-card-meta">{formatArchivedConversationTime(conversation.archivedAt)}</p>
+                      <div className="action-row">
+                        <button
+                          className="action-button action-button-primary"
+                          type="button"
+                          onClick={() => onRestoreRecentConversation(conversation.id)}
+                        >
+                          恢复会话
+                        </button>
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => onDeleteRecentConversation(conversation.id)}
+                        >
+                          永久删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : null}
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="settings-section">
         <h2>回退与本地清理</h2>
         <p>回退点、会话记录、日志、缓存、快照和知识库索引统一在设置中管理。</p>
         <p className="muted">回退点上限 {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
@@ -638,6 +766,7 @@ export function Workbench({
   onSaveSearchProviderConfig,
   onSelectModel,
   onNewConversation,
+  onArchiveConversation,
   onRestoreRecentConversation,
   onDeleteRecentConversation,
   onImportKnowledgeFile,
@@ -657,6 +786,7 @@ export function Workbench({
   const [isConversationClusterExpanded, setIsConversationClusterExpanded] = useState(false);
   const isChatView = activeView === "chat";
   const isSettingsView = activeView === "settings";
+  const archiveConversationDisabled = state.conversation.entries.length === 0;
 
   function handleSelectView(viewId: WorkbenchViewId) {
     setActiveView(viewId);
@@ -690,6 +820,14 @@ export function Workbench({
     onRetryLocalTask(taskId);
   }
 
+  function handleDeleteConversationClick(conversationId: string) {
+    if (!window.confirm("确定永久删除此对话吗？")) {
+      return;
+    }
+
+    onDeleteRecentConversation(conversationId);
+  }
+
   return (
     <main className="workbench" aria-label="opencow 工作台">
       <Sidebar
@@ -697,7 +835,9 @@ export function Workbench({
         onSelectView={handleSelectView}
         onNewConversation={handleNewConversationClick}
         hasActiveConversationEntries={state.conversation.entries.some((entry) => entry.kind !== "system")}
-        recentConversations={state.history.recentConversations}
+        recentConversations={state.history.draftConversations}
+        onArchiveConversation={onArchiveConversation}
+        archiveConversationDisabled={archiveConversationDisabled}
         isConversationSearchOpen={isConversationSearchOpen}
         conversationSearchQuery={conversationSearchQuery}
         onConversationSearchQueryChange={setConversationSearchQuery}
@@ -729,7 +869,7 @@ export function Workbench({
           setConversationSearchQuery("");
         }}
         onRestoreRecentConversation={onRestoreRecentConversation}
-        onDeleteRecentConversation={onDeleteRecentConversation}
+        onDeleteRecentConversation={handleDeleteConversationClick}
         isConversationClusterExpanded={isConversationClusterExpanded}
         onToggleConversationCluster={() => setIsConversationClusterExpanded((current) => !current)}
       />
@@ -775,6 +915,8 @@ export function Workbench({
             onSaveSearchProviderConfig={onSaveSearchProviderConfig}
             onUpdateRollbackLimit={onUpdateRollbackLimit}
             onCleanupStorage={onCleanupStorage}
+            onRestoreRecentConversation={onRestoreRecentConversation}
+            onDeleteRecentConversation={handleDeleteConversationClick}
           />
         ) : (
           <WorkbenchContentPanel viewId={activeView} />

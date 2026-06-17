@@ -40,6 +40,7 @@ function createWorkbenchProps(
     onSaveSearchProviderConfig: noop,
     onSelectModel: noop,
     onNewConversation: noop,
+    onArchiveConversation: noop,
     onRestoreRecentConversation: noop,
     onDeleteRecentConversation: noop,
     onImportKnowledgeFile: noop,
@@ -73,7 +74,7 @@ describe("Workbench", () => {
       },
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-conversation-entry",
             title: "网页端历史修复上下文",
@@ -87,7 +88,8 @@ describe("Workbench", () => {
               }
             ]
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -211,7 +213,7 @@ describe("Workbench", () => {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: Array.from({ length: 7 }, (_, index) => ({
+        draftConversations: Array.from({ length: 7 }, (_, index) => ({
           id: `recent-${index + 1}`,
           title: `最近会话 ${index + 1}`,
           summary: `摘要 ${index + 1}`,
@@ -223,7 +225,8 @@ describe("Workbench", () => {
               summary: `最近会话 ${index + 1}`
             }
           ]
-        }))
+        })),
+        archivedConversations: []
       }
     };
 
@@ -233,6 +236,7 @@ describe("Workbench", () => {
     expect(screen.queryByRole("button", { name: "最近会话" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "搜索历史会话" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建新会话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "归档当前会话" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /打开会话：最近会话 [1-7]/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
@@ -250,7 +254,7 @@ describe("Workbench", () => {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-restore",
             title: "恢复目标会话",
@@ -264,7 +268,8 @@ describe("Workbench", () => {
               }
             ]
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -281,14 +286,15 @@ describe("Workbench", () => {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-toggle",
             title: "可收起的历史会话",
             summary: "再次点击会话应收起",
             entries: []
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -305,20 +311,31 @@ describe("Workbench", () => {
     expect(screen.queryByRole("button", { name: "打开会话：可收起的历史会话" })).not.toBeInTheDocument();
   });
 
-  it("keeps a newly created blank conversation out of the history dropdown", () => {
+  it("shows the temporary blank conversation inside the draft conversation dropdown", () => {
     const onNewConversation = vi.fn();
     const state = {
       ...createInitialWorkbenchState(),
+      conversation: {
+        ...createInitialWorkbenchState().conversation,
+        restoredFromConversationId: "draft-conversation-1"
+      },
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [
+          {
+            id: "draft-conversation-1",
+            title: "新会话",
+            summary: "等待第一条消息",
+            entries: []
+          },
           {
             id: "previous-history",
             title: "之前的旧会话",
             summary: "旧会话仍可恢复",
             entries: []
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -328,24 +345,26 @@ describe("Workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
     expect(onNewConversation).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("button", { name: "打开会话：当前空白新会话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开会话：新会话" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开会话：之前的旧会话" })).toBeInTheDocument();
   });
 
-  it("deletes a recent conversation from the conversation cluster", () => {
+  it("asks for confirmation before permanently deleting a conversation from the cluster", () => {
     const onDeleteRecentConversation = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const state = {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-delete",
             title: "删除目标会话",
             summary: "点击减号应删除",
             entries: []
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -354,6 +373,7 @@ describe("Workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
     fireEvent.click(screen.getByRole("button", { name: "删除会话：删除目标会话" }));
 
+    expect(confirmSpy).toHaveBeenCalledWith("确定永久删除此对话吗？");
     expect(onDeleteRecentConversation).toHaveBeenCalledWith("recent-delete");
   });
 
@@ -378,12 +398,20 @@ describe("Workbench", () => {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: Array.from({ length: 7 }, (_, index) => ({
+        draftConversations: Array.from({ length: 7 }, (_, index) => ({
           id: `recent-${index + 1}`,
           title: index === 6 ? "更早的目标会话" : `最近会话 ${index + 1}`,
           summary: index === 6 ? "需要通过搜索命中" : `摘要 ${index + 1}`,
           entries: []
-        }))
+        })),
+        archivedConversations: [
+          {
+            id: "archived-hidden",
+            title: "归档旧会话",
+            summary: "不应出现在左侧搜索里",
+            entries: []
+          }
+        ]
       }
     };
 
@@ -396,6 +424,7 @@ describe("Workbench", () => {
 
     expect(screen.getByRole("button", { name: "打开会话：更早的目标会话" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打开会话：最近会话 1" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开会话：归档旧会话" })).not.toBeInTheDocument();
   });
 
   it("keeps conversation card text compact instead of rendering the full long prompt", () => {
@@ -405,14 +434,15 @@ describe("Workbench", () => {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-long",
             title: longTitle,
             summary: longSummary,
             entries: []
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -458,6 +488,7 @@ describe("Workbench", () => {
 
     expect(within(settingsPanel).getByRole("heading", { name: "Ollama 设置" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("heading", { name: "大模型 API 设置" })).toBeInTheDocument();
+    expect(within(settingsPanel).getByRole("heading", { name: "恢复会话" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("heading", { name: "联网搜索设置" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("heading", { name: "Shell 能力与恢复路径" })).toBeInTheDocument();
     expect(within(settingsPanel).getByText("只读 Shell · readonly")).toBeInTheDocument();
@@ -471,6 +502,55 @@ describe("Workbench", () => {
     expect(within(settingsPanel).getByRole("button", { name: "20 段" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("button", { name: "清空会话" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("button", { name: "清空知识库索引" })).toBeInTheDocument();
+  });
+
+  it("disables the archive action while the current conversation is still a blank draft", () => {
+    render(<Workbench {...createWorkbenchProps(createInitialWorkbenchState())} />);
+
+    expect(screen.getByRole("button", { name: "归档当前会话" })).toBeDisabled();
+  });
+
+  it("groups archived conversations by time and filters them inside settings restore", () => {
+    const today = new Date().toISOString();
+    const earlier = "2026-06-15T08:00:00.000Z";
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        ...createInitialWorkbenchState().history,
+        archivedConversations: [
+          {
+            id: "archived-today",
+            title: "今天归档的会话",
+            summary: "今天的摘要",
+            entries: [],
+            archivedAt: today
+          },
+          {
+            id: "archived-earlier",
+            title: "更早归档的会话",
+            summary: "更早的摘要",
+            entries: [],
+            archivedAt: earlier
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    const settingsPanel = screen.getByLabelText("设置");
+    expect(within(settingsPanel).getByText("今天")).toBeInTheDocument();
+    expect(within(settingsPanel).getByText("更早")).toBeInTheDocument();
+    expect(within(settingsPanel).getAllByText(/归档于/).length).toBeGreaterThan(0);
+
+    fireEvent.change(within(settingsPanel).getByRole("textbox", { name: "搜索恢复会话" }), {
+      target: { value: "今天归档" }
+    });
+
+    expect(within(settingsPanel).getByText("今天归档的会话")).toBeInTheDocument();
+    expect(within(settingsPanel).queryByText("更早归档的会话")).not.toBeInTheDocument();
   });
 
   it("shows recent audit details and log cleanup from the audit workspace", () => {

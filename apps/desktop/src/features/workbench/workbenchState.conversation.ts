@@ -8,6 +8,49 @@ const EMPTY_OUTPUT = {
   summary: "等待工具执行结果或本地产物摘要。"
 } as const;
 
+function createDraftConversationRecord(
+  state: WorkbenchState,
+  entries: WorkbenchState["conversation"]["entries"]
+): WorkbenchState["history"]["draftConversations"][number] {
+  const normalizedEntries = entries.filter((entry) => entry.id !== COMPRESSED_CONVERSATION_ENTRY_ID);
+  const latestFirstEntries = normalizedEntries.slice().reverse();
+  const latestUserEntry = latestFirstEntries.find((entry) => entry.kind === "user");
+  const latestResultEntry = latestFirstEntries.find((entry) => entry.kind !== "user");
+  const title = latestUserEntry?.summary.trim() || latestResultEntry?.title.trim() || "新会话";
+  const summary = latestResultEntry?.summary.trim() || latestUserEntry?.summary.trim() || "等待第一条消息";
+
+  return {
+    id: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount}`,
+    title,
+    summary,
+    entries,
+    archivedAt: null
+  };
+}
+
+function deduplicateConversationRecords(
+  records: WorkbenchState["history"]["draftConversations"]
+) {
+  const seen = new Set<string>();
+
+  return records.filter((record) => {
+    if (seen.has(record.id)) {
+      return false;
+    }
+
+    seen.add(record.id);
+    return true;
+  });
+}
+
+function getDraftConversations(state: WorkbenchState) {
+  return state.history.draftConversations ?? [];
+}
+
+function getArchivedConversations(state: WorkbenchState) {
+  return state.history.archivedConversations ?? [];
+}
+
 function createNewConversationAuditDetail(preservedTasks: WorkbenchState["tasks"]["items"]): string {
   const queuedCount = preservedTasks.filter((item) => item.status === "queued").length;
   const runningCount = preservedTasks.filter((item) => item.status === "running").length;
@@ -31,20 +74,39 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
   const preservedActiveTaskId = activeTask?.status === "running" ? state.tasks.activeTaskId : null;
   const preservedConversationEntries = state.conversation.entries.filter((entry) => entry.id !== COMPRESSED_CONVERSATION_ENTRY_ID);
   const shouldPreserveConversationHistory = preservedConversationEntries.length > 0;
-  const nextRecentConversations = shouldPreserveConversationHistory
-    ? createNextRecentConversations(state, state.conversation.entries)
-    : state.history.recentConversations;
+  const draftRecord = createDraftConversationRecord(state, state.conversation.entries);
+  const nextArchivedConversations = shouldPreserveConversationHistory
+    ? [
+        {
+          ...draftRecord,
+          archivedAt: new Date().toISOString()
+        },
+        ...getArchivedConversations(state).filter((record) => record.id !== draftRecord.id)
+      ].slice(0, MAX_RECENT_CONVERSATIONS)
+    : getArchivedConversations(state);
+  const nextDraftConversations = [
+    {
+      id: `draft-conversation-${state.storage.sessionCount + 1}`,
+      title: "新会话",
+      summary: "等待第一条消息",
+      entries: [],
+      archivedAt: null
+    }
+  ];
 
   return {
     ...state,
     conversation: {
-      entries: []
+      entries: [],
+      mode: "blank",
+      restoredFromConversationId: nextDraftConversations[0]?.id ?? null
     },
     history: {
       lastNonEmptyConversationEntries: shouldPreserveConversationHistory
         ? state.conversation.entries
         : state.history.lastNonEmptyConversationEntries,
-      recentConversations: nextRecentConversations
+      draftConversations: nextDraftConversations,
+      archivedConversations: nextArchivedConversations
     },
     permission: {
       ...state.permission,
@@ -86,7 +148,9 @@ export function restoreRecentConversationState(
   state: WorkbenchState,
   conversationId: string
 ): WorkbenchState {
-  const record = state.history.recentConversations.find((item) => item.id === conversationId);
+  const record =
+    getDraftConversations(state).find((item) => item.id === conversationId)
+    ?? getArchivedConversations(state).find((item) => item.id === conversationId);
 
   if (!record) {
     return state;
@@ -95,11 +159,20 @@ export function restoreRecentConversationState(
   return {
     ...state,
     conversation: {
-      entries: record.entries
+      entries: record.entries,
+      mode: record.entries.length === 0 ? "blank" : "restored",
+      restoredFromConversationId: record.id
     },
     history: {
       ...state.history,
-      lastNonEmptyConversationEntries: record.entries
+      lastNonEmptyConversationEntries: record.entries,
+      draftConversations: deduplicateConversationRecords([
+        {
+          ...record,
+          archivedAt: null
+        },
+        ...getDraftConversations(state).filter((item) => item.id !== record.id)
+      ]).slice(0, MAX_RECENT_CONVERSATIONS)
     },
     audit: {
       summary: "已恢复最近会话",
@@ -118,17 +191,28 @@ export function deleteRecentConversationState(
   state: WorkbenchState,
   conversationId: string
 ): WorkbenchState {
-  const record = state.history.recentConversations.find((item) => item.id === conversationId);
+  const record =
+    getDraftConversations(state).find((item) => item.id === conversationId)
+    ?? getArchivedConversations(state).find((item) => item.id === conversationId);
 
   if (!record) {
     return state;
   }
 
-  const nextRecentConversations = state.history.recentConversations.filter((item) => item.id !== conversationId);
+  const nextDraftConversations = getDraftConversations(state).filter((item) => item.id !== conversationId);
+  const nextArchivedConversations = getArchivedConversations(state).filter((item) => item.id !== conversationId);
   const deletedCurrentConversation = state.conversation.entries === record.entries;
   const nextConversationEntries = deletedCurrentConversation
-    ? nextRecentConversations[0]?.entries ?? []
+    ? nextDraftConversations[0]?.entries ?? []
     : state.conversation.entries;
+  const nextConversationMode = deletedCurrentConversation
+    ? nextDraftConversations[0]
+      ? (nextDraftConversations[0]?.entries.length ? "restored" : "blank")
+      : "blank"
+    : state.conversation.mode ?? (state.conversation.entries.length > 0 ? "history" : "blank");
+  const nextRestoredFromConversationId = deletedCurrentConversation
+    ? nextDraftConversations[0]?.id ?? null
+    : state.conversation.restoredFromConversationId ?? null;
   const nextLastNonEmptyConversationEntries =
     state.history.lastNonEmptyConversationEntries === record.entries
       ? nextConversationEntries
@@ -137,11 +221,14 @@ export function deleteRecentConversationState(
   return {
     ...state,
     conversation: {
-      entries: nextConversationEntries
+      entries: nextConversationEntries,
+      mode: nextConversationMode,
+      restoredFromConversationId: nextRestoredFromConversationId
     },
     history: {
       ...state.history,
-      recentConversations: nextRecentConversations,
+      draftConversations: nextDraftConversations,
+      archivedConversations: nextArchivedConversations,
       lastNonEmptyConversationEntries: nextLastNonEmptyConversationEntries
     },
     audit: {
@@ -157,25 +244,58 @@ export function deleteRecentConversationState(
   };
 }
 
-function createNextRecentConversations(
-  state: WorkbenchState,
-  entries: WorkbenchState["conversation"]["entries"]
-) {
-  const normalizedEntries = entries.filter((entry) => entry.id !== COMPRESSED_CONVERSATION_ENTRY_ID);
-  const latestFirstEntries = normalizedEntries.slice().reverse();
-  const latestUserEntry = latestFirstEntries.find((entry) => entry.kind === "user");
-  const latestResultEntry = latestFirstEntries.find((entry) => entry.kind !== "user");
-  const title = latestUserEntry?.summary.trim() || latestResultEntry?.title.trim() || "未命名会话";
-  const summary = latestResultEntry?.summary.trim() || latestUserEntry?.summary.trim() || "未命名会话";
-  const nextRecord = {
-    id: `recent-conversation-${state.storage.sessionCount}`,
-    title,
-    summary,
-    entries
-  };
+export function createArchivedConversationState(state: WorkbenchState): WorkbenchState {
+  const preservedConversationEntries = state.conversation.entries.filter((entry) => entry.id !== COMPRESSED_CONVERSATION_ENTRY_ID);
 
-  return [
-    nextRecord,
-    ...state.history.recentConversations.filter((record) => record.title !== nextRecord.title || record.summary !== nextRecord.summary)
-  ].slice(0, MAX_RECENT_CONVERSATIONS);
+  if (preservedConversationEntries.length === 0) {
+    return createNewConversationState(state);
+  }
+
+  const currentRecord = createDraftConversationRecord(state, state.conversation.entries);
+  const nextDraftConversationId = `draft-conversation-${state.storage.sessionCount + 1}`;
+
+  return {
+    ...state,
+    conversation: {
+      entries: [],
+      mode: "blank",
+      restoredFromConversationId: nextDraftConversationId
+    },
+    history: {
+      lastNonEmptyConversationEntries: state.conversation.entries,
+      draftConversations: [
+        {
+          id: nextDraftConversationId,
+          title: "新会话",
+          summary: "等待第一条消息",
+          entries: [],
+          archivedAt: null
+        }
+      ],
+      archivedConversations: [
+        {
+          ...currentRecord,
+          archivedAt: new Date().toISOString()
+        },
+        ...getArchivedConversations(state).filter((item) => item.id !== currentRecord.id)
+      ].slice(0, MAX_RECENT_CONVERSATIONS)
+    },
+    sources: {
+      items: []
+    },
+    tools: {
+      lastResult: null
+    },
+    output: EMPTY_OUTPUT,
+    audit: {
+      summary: "已归档当前会话",
+      lastEvent: {
+        module: "conversation",
+        detail: `已归档当前会话：${currentRecord.title}`,
+        timestamp: "archived",
+        source: "conversation_archived"
+      }
+    },
+    error: state.error?.module === "ollama" ? state.error : null
+  };
 }

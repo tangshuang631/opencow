@@ -141,7 +141,7 @@ describe("WebApp", () => {
     });
   });
 
-  it("keeps recent conversations available after starting a blank conversation", async () => {
+  it("moves the previous conversation into settings restore after starting a blank conversation", async () => {
     render(<WebApp />);
 
     fireEvent.change(getComposerInput(), {
@@ -158,21 +158,53 @@ describe("WebApp", () => {
     const blankConversation = screen.getByRole("region", { name: "会话" });
     expect(within(blankConversation).queryByText("把这段网页端对话放进最近会话")).not.toBeInTheDocument();
     expect(within(blankConversation).queryByText(/工厂模式是一种创建型设计模式/)).not.toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem("opencow.desktop.workbench-state.v1") ?? "{}").state.conversation.mode).toBe("blank");
 
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "打开会话：把这段网页端对话放进最近会话" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "打开会话：把这段网页端对话放进最近会话" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "打开会话：新会话" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "打开会话：把这段网页端对话放进最近会话" }));
-
-    const conversation = screen.getByRole("region", { name: "会话" });
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
 
     await waitFor(() => {
-      expect(within(conversation).getAllByText("把这段网页端对话放进最近会话").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "恢复会话" })).toBeInTheDocument();
+      expect(screen.getByText("把这段网页端对话放进最近会话")).toBeInTheDocument();
     });
+  });
+
+  it("moves a conversation into settings restore after archiving it", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "把这段会话归档到设置" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(screen.getAllByText("把这段会话归档到设置").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "归档当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "恢复会话" })).toBeInTheDocument();
+      expect(screen.getByText("把这段会话归档到设置")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索恢复会话" }), {
+      target: { value: "归档到设置" }
+    });
+
+    expect(screen.getByText("把这段会话归档到设置")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "搜索历史会话" }));
+
+    expect(screen.queryByRole("button", { name: "打开会话：把这段会话归档到设置" })).not.toBeInTheDocument();
   });
 
   it("uses Ollama for ordinary web chat instead of the local MVP placeholder", async () => {
@@ -215,6 +247,7 @@ describe("WebApp", () => {
   });
 
   it("removes recent conversations permanently after manual deletion", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<WebApp />);
 
     fireEvent.change(getComposerInput(), {
@@ -226,12 +259,14 @@ describe("WebApp", () => {
       expect(screen.getAllByText("这段最近会话稍后会被删除").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
-    fireEvent.click(screen.getByRole("button", { name: "会话" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除会话：这段最近会话稍后会被删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "归档当前会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "打开会话：这段最近会话稍后会被删除" })).not.toBeInTheDocument();
+      expect(confirmSpy).toHaveBeenCalledWith("确定永久删除此对话吗？");
+      expect(screen.queryByText("这段最近会话稍后会被删除")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "恢复会话" })).not.toBeInTheDocument();
       expect(screen.queryByText("这段最近会话稍后会被删除")).not.toBeInTheDocument();
     });
   });

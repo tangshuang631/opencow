@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createArchivedConversationState,
   deleteRecentConversationState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
@@ -40,6 +41,8 @@ describe("createNewConversationState", () => {
     const next = createNewConversationState(pendingDangerousConfirmation);
 
     expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.mode).toBe("blank");
+    expect(next.conversation.restoredFromConversationId).toContain("draft-conversation-");
     expect(next.permission.pendingModeChange).toBeNull();
     expect(next.confirmation.pending).toBeNull();
     expect(next.permission.mode).toBe("readonly");
@@ -103,12 +106,13 @@ describe("createNewConversationState", () => {
     const next = createNewConversationState(submitted);
 
     expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.mode).toBe("blank");
     expect(next.history.lastNonEmptyConversationEntries.some(
       (entry) => entry.summary === "保留这段历史，供下次恢复"
     )).toBe(true);
   });
 
-  it("adds the latest non-empty conversation into recent conversation history when starting a blank new conversation", () => {
+  it("adds the latest non-empty conversation into archived conversation history when starting a blank new conversation", () => {
     const completed = createTaskExecutionSucceededState(
       createTaskExecutionStartedState(
         createUserTaskSubmittedState(createInitialWorkbenchState(), {
@@ -123,20 +127,21 @@ describe("createNewConversationState", () => {
 
     const next = createNewConversationState(completed);
 
-    expect(next.history.recentConversations).toHaveLength(1);
-    expect(next.history.recentConversations[0]?.title).toContain("请把这段会话放进最近历史");
-    expect(next.history.recentConversations[0]?.summary).toContain("这段答复应该一起进入最近会话历史。");
-    expect(next.history.recentConversations[0]?.entries.some(
+    expect(next.history.archivedConversations).toHaveLength(1);
+    expect(next.history.archivedConversations[0]?.title).toContain("请把这段会话放进最近历史");
+    expect(next.history.archivedConversations[0]?.summary).toContain("这段答复应该一起进入最近会话历史。");
+    expect(next.history.archivedConversations[0]?.entries.some(
       (entry) => entry.summary === "请把这段会话放进最近历史"
     )).toBe(true);
   });
 
-  it("keeps the newest recent conversation at the top of the history list", () => {
+  it("keeps the newest archived conversation at the top of the history list", () => {
     const initial = {
       ...createInitialWorkbenchState(),
       history: {
         lastNonEmptyConversationEntries: [],
-        recentConversations: [
+        draftConversations: [],
+        archivedConversations: [
           {
             id: "recent-conversation-old",
             title: "更早的最近会话",
@@ -168,8 +173,8 @@ describe("createNewConversationState", () => {
 
     const next = createNewConversationState(completed);
 
-    expect(next.history.recentConversations[0]?.title).toContain("新的最近会话应该排在最前面");
-    expect(next.history.recentConversations[1]?.title).toBe("更早的最近会话");
+    expect(next.history.archivedConversations[0]?.title).toContain("新的最近会话应该排在最前面");
+    expect(next.history.archivedConversations[1]?.title).toBe("更早的最近会话");
   });
 
   it("switches away from the current restored conversation when that recent conversation is deleted", () => {
@@ -192,11 +197,13 @@ describe("createNewConversationState", () => {
     const state = {
       ...createInitialWorkbenchState(),
       conversation: {
-        entries: currentEntries
+        entries: currentEntries,
+        mode: "restored" as const,
+        restoredFromConversationId: "recent-a"
       },
       history: {
         lastNonEmptyConversationEntries: currentEntries,
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-a",
             title: "会话 A",
@@ -209,13 +216,37 @@ describe("createNewConversationState", () => {
             summary: "删除 A 后应该切到这里",
             entries: fallbackEntries
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
     const next = deleteRecentConversationState(state, "recent-a");
 
     expect(next.conversation.entries[0]?.summary).toBe("删除 A 后应该切到这里");
-    expect(next.history.recentConversations.map((item) => item.id)).toEqual(["recent-b"]);
+    expect(next.conversation.mode).toBe("restored");
+    expect(next.conversation.restoredFromConversationId).toBe("recent-b");
+    expect(next.history.draftConversations.map((item) => item.id)).toEqual(["recent-b"]);
+  });
+
+  it("archives the current draft conversation and leaves a fresh blank draft behind", () => {
+    const completed = createTaskExecutionSucceededState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "把当前草稿归档"
+        })
+      ),
+      {
+        resultTitle: "归档结果",
+        resultSummary: "当前会话已可归档。"
+      }
+    );
+
+    const next = createArchivedConversationState(completed);
+
+    expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.mode).toBe("blank");
+    expect(next.history.archivedConversations[0]?.title).toContain("把当前草稿归档");
+    expect(next.history.draftConversations[0]?.title).toBe("新会话");
   });
 });

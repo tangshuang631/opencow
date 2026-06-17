@@ -32,6 +32,19 @@ function isLocalModelGenerationTaskKind(executionKind: string | undefined): bool
     || executionKind === "skills-local-ollama-description";
 }
 
+function createDraftConversationSummaryFromEntries(
+  entries: WorkbenchState["conversation"]["entries"]
+) {
+  const latestFirstEntries = entries.slice().reverse();
+  const latestUserEntry = latestFirstEntries.find((entry) => entry.kind === "user");
+  const latestResultEntry = latestFirstEntries.find((entry) => entry.kind !== "user");
+
+  return {
+    title: latestUserEntry?.summary.trim() || latestResultEntry?.title.trim() || "新会话",
+    summary: latestResultEntry?.summary.trim() || latestUserEntry?.summary.trim() || "等待第一条消息"
+  };
+}
+
 export function createUserTaskSubmittedState(
   state: WorkbenchState,
   payload: {
@@ -199,6 +212,9 @@ export function createUserTaskSubmittedState(
         summary: `当前有 ${state.tasks.pendingCount + 1} 条待处理任务`
       },
       conversation: {
+        ...state.conversation,
+        mode: "history",
+        restoredFromConversationId: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`,
         entries: payload.preserveExistingUserMessage
           ? state.conversation.entries
           : prependConversationEntry(state.conversation.entries, {
@@ -207,6 +223,34 @@ export function createUserTaskSubmittedState(
               title: "用户",
               summary: normalizedMessage
             })
+      },
+      history: {
+        ...state.history,
+        draftConversations: [
+          {
+            id: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`,
+            ...createDraftConversationSummaryFromEntries(
+              payload.preserveExistingUserMessage
+                ? state.conversation.entries
+                : prependConversationEntry(state.conversation.entries, {
+                    id: `${rollbackEntryId}-user`,
+                    kind: "user",
+                    title: "用户",
+                    summary: normalizedMessage
+                  })
+            ),
+            entries: payload.preserveExistingUserMessage
+              ? state.conversation.entries
+              : prependConversationEntry(state.conversation.entries, {
+                  id: `${rollbackEntryId}-user`,
+                  kind: "user",
+                  title: "用户",
+                  summary: normalizedMessage
+                }),
+            archivedAt: null
+          },
+          ...state.history.draftConversations.filter((item) => item.id !== (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`))
+        ].slice(0, 8)
       },
       audit: {
         summary: "已提交本地任务",

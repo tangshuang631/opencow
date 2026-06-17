@@ -106,7 +106,14 @@ function buildCleanupState(
   return {
     ...nextState,
     conversation: {
-      entries: nextConversationEntries
+      ...nextState.conversation,
+      entries: nextConversationEntries,
+      mode: target === "conversation"
+        ? "blank"
+        : (nextState.conversation.mode ?? (nextConversationEntries.length > 0 ? "history" : "blank")),
+      restoredFromConversationId: target === "conversation"
+        ? null
+        : (nextState.conversation.restoredFromConversationId ?? null)
     },
     history: {
       lastNonEmptyConversationEntries: target === "conversation"

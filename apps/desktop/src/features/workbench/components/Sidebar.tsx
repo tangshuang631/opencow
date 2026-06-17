@@ -1,4 +1,5 @@
 import {
+  Archive,
   Bot,
   ChevronDown,
   ChevronUp,
@@ -56,6 +57,8 @@ type SidebarProps = {
   onNewConversation: () => void;
   hasActiveConversationEntries: boolean;
   recentConversations: RecentConversationRecord[];
+  onArchiveConversation: () => void;
+  archiveConversationDisabled?: boolean;
   isConversationSearchOpen: boolean;
   conversationSearchQuery: string;
   onConversationSearchQueryChange: (query: string) => void;
@@ -75,6 +78,8 @@ export function Sidebar({
   onNewConversation,
   hasActiveConversationEntries,
   recentConversations,
+  onArchiveConversation,
+  archiveConversationDisabled = false,
   isConversationSearchOpen,
   conversationSearchQuery,
   onConversationSearchQueryChange,
@@ -87,17 +92,18 @@ export function Sidebar({
   isConversationClusterExpanded,
   onToggleConversationCluster
 }: SidebarProps) {
+  const safeRecentConversations = recentConversations ?? [];
   const normalizedSearchQuery = conversationSearchQuery.trim().toLowerCase();
   const shouldShowConversationDropdown = activeView === "chat" && (isConversationSearchOpen || isConversationDropdownOpen);
   const filteredRecentConversations = normalizedSearchQuery
-    ? recentConversations.filter((item) =>
+    ? safeRecentConversations.filter((item) =>
       `${item.title} ${item.summary}`.toLowerCase().includes(normalizedSearchQuery)
     )
-    : recentConversations;
+    : safeRecentConversations;
   const visibleRecentConversations = normalizedSearchQuery
     ? filteredRecentConversations
     : filteredRecentConversations.slice(0, isConversationClusterExpanded ? 6 : 3);
-  const shouldShowToggle = !normalizedSearchQuery && recentConversations.length > 3;
+  const shouldShowToggle = !normalizedSearchQuery && safeRecentConversations.length > 3;
   const ToggleIcon = isConversationClusterExpanded ? ChevronUp : ChevronDown;
   void hasActiveConversationEntries;
 
@@ -143,6 +149,19 @@ export function Sidebar({
                 }}
               >
                 <Plus aria-hidden="true" size={16} />
+              </button>
+              <button
+                aria-label="归档当前会话"
+                className="sidebar-icon-button"
+                disabled={archiveConversationDisabled}
+                type="button"
+                onClick={() => {
+                  onSelectView("chat");
+                  onCloseConversationDropdown();
+                  onArchiveConversation();
+                }}
+              >
+                <Archive aria-hidden="true" size={16} />
               </button>
             </div>
           </div>

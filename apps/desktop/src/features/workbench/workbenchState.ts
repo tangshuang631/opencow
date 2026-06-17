@@ -1,5 +1,6 @@
 export type {
   AvailableKnowledgeFile,
+  ConversationMode,
   ConversationEntry,
   ImportedKnowledgeFile,
   KnowledgeFileStatus,
@@ -18,6 +19,7 @@ export type {
 } from "./workbenchState.types";
 
 export {
+  createArchivedConversationState,
   createNewConversationState,
   deleteRecentConversationState,
   restoreRecentConversationState

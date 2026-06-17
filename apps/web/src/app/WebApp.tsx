@@ -17,6 +17,7 @@ import {
 } from "../../../desktop/src/features/assistant/localAssistantService";
 import { Workbench } from "../../../desktop/src/features/workbench/Workbench";
 import {
+  createArchivedConversationState,
   createOllamaLoadErrorState,
   createInitialWorkbenchState,
   createModelSelectedState,
@@ -1854,6 +1855,11 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
       onNewConversation={() => {
         startTransition(() => {
           setState((current) => preserveWebKnowledgeState(current, createNewConversationState(current)));
+        });
+      }}
+      onArchiveConversation={() => {
+        startTransition(() => {
+          setState((current) => preserveWebKnowledgeState(current, createArchivedConversationState(current)));
         });
       }}
       onRestoreRecentConversation={(conversationId) => {

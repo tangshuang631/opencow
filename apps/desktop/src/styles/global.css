@@ -177,6 +177,12 @@ input {
   color: #314049;
 }
 
+.sidebar-icon-button:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+  color: #94a0a8;
+}
+
 .sidebar-conversation-search-shell {
   display: flex;
   align-items: center;
@@ -202,6 +208,13 @@ input {
 
 .sidebar-conversation-search::placeholder {
   color: #5c6871;
+}
+
+.settings-group-label {
+  margin: 2px 0 4px;
+  color: #6a7680;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .sidebar-conversation-dropdown {
