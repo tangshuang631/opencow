@@ -10,7 +10,7 @@ import type { OllamaOverview } from "../features/ollama/ollamaService";
 import { resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { Workbench } from "../features/workbench/Workbench";
 import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapability";
-import { writeNpcConfig } from "../features/assistant/localAssistantService";
+import { inspectLocalSkill, writeNpcConfig } from "../features/assistant/localAssistantService";
 import {
   clearKnowledgeImports,
   importKnowledgeFile,
@@ -112,6 +112,7 @@ const SUPPORTED_ASSISTANT_PLAN_KINDS = new Set<string>([
   "capability-skills-overview",
   "skills-local-scan",
   "skills-local-inspect",
+  "skills-local-ollama-description",
   "skills-local-install",
   "skills-local-enable",
   "skills-local-disable",
@@ -905,6 +906,74 @@ async function executeNpcConfigWriteTask(payload: {
       `NPC config parse status: ${configResult.status}`
     ]
   };
+}
+
+async function executeSkillOllamaDescriptionTask(payload: {
+  model: string;
+  availableModels: WorkbenchState["model"]["availableModels"];
+  message: string;
+  requestId?: string;
+  signal?: AbortSignal;
+  onChunk?: (chunk: string) => void;
+}): Promise<AssistantTaskExecutionResult> {
+  const selectedModel = resolveUsableOllamaChatModel(payload.model, payload.availableModels);
+
+  if (!selectedModel) {
+    throw new Error(
+      "No usable local Ollama model is selected. Start Ollama, pull a local model, and select it before retrying."
+    );
+  }
+
+  const skillResult = await inspectLocalSkill(payload.message);
+  const topSkill = skillResult.items[0];
+
+  if (!topSkill) {
+    throw new Error(
+      `No matching local skill was found for Ollama description generation. Query: ${skillResult.query}. ` +
+        "Next step: scan local skills, narrow the skill name, then retry the readonly description request."
+    );
+  }
+
+  const result = await chatWithOllamaModel({
+    model: selectedModel,
+    message: createSkillChineseDescriptionPrompt(payload.message, topSkill),
+    requestId: payload.requestId,
+    signal: payload.signal,
+    onChunk: payload.onChunk
+  });
+
+  return {
+    resultTitle: "Skill 中文说明",
+    resultSummary: result.message,
+    auditDetailLines: [
+      `Ollama model: ${result.model || selectedModel}`,
+      `Ollama done reason: ${result.doneReason || "complete"}`,
+      `Skill name: ${topSkill.name}`,
+      `Skill path: ${topSkill.path}`,
+      "Readonly guard: did not install, enable, disable, or execute the skill."
+    ]
+  };
+}
+
+function createSkillChineseDescriptionPrompt(
+  requestMessage: string,
+  skill: Awaited<ReturnType<typeof inspectLocalSkill>>["items"][number]
+): string {
+  return [
+    "你是 opencow 的本地 Skills 产品说明助手。",
+    "只生成中文说明，面向普通用户解释这个 Skill 适合什么场景、会参考哪些上下文、使用前需要注意什么。",
+    "不要安装、启用、禁用或执行 Skill；不要生成 shell 命令；不要声称已经修改任何文件。",
+    "",
+    `用户请求：${requestMessage}`,
+    `Skill 名称：${skill.name}`,
+    `Skill 路径：${skill.path}`,
+    `Skill 来源：${skill.source}`,
+    `启用状态：${skill.enabled ? "已启用" : "未启用"}`,
+    `原始描述：${skill.description}`,
+    `内容预览：${skill.content_preview}`,
+    "",
+    "输出格式：先一句话总结，再用三条短句列出适用场景、输入要求和安全边界。"
+  ].join("\n");
 }
 
 type ExplainableReadonlyResultKind =
@@ -1977,6 +2046,7 @@ export function App() {
       if (
         activeTask.executionKind === "local-model-chat"
         || activeTask.executionKind === "npc-config-write"
+        || activeTask.executionKind === "skills-local-ollama-description"
       ) {
         const localModelMessage = getTaskExecutionMessage(activeTask);
         const localModelChatTimeoutMs = getLocalModelChatTimeoutMs(localModelMessage);
@@ -2078,6 +2148,10 @@ export function App() {
 
           if (activeTask.executionKind === "npc-config-write") {
             return executeNpcConfigWriteTask(commonPayload);
+          }
+
+          if (activeTask.executionKind === "skills-local-ollama-description") {
+            return executeSkillOllamaDescriptionTask(commonPayload);
           }
 
           return executeLocalModelChatTask(commonPayload);

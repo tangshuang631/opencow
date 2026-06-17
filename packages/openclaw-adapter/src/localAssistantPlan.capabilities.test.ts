@@ -50,6 +50,18 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
+  it("plans a readonly Ollama-generated Chinese skill description request", () => {
+    const plan = planLocalAssistantTask({
+      message: "用 Ollama 给 docs-helper skill 生成中文说明",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "skills-local-ollama-description",
+      title: "Generate local Skill Chinese description"
+    });
+  });
+
   it("requests workspace-write permission before enabling a local skill", () => {
     const plan = planLocalAssistantTask({
       message: "enable the coding-agent skill for this workspace",
@@ -215,6 +227,24 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
+  it("plans Chinese enabled-skill recommendation and skill-assisted RAG lookup requests through the real capability routes", () => {
+    expect(planLocalAssistantTask({
+      message: "推荐一个已启用 skill 来处理 shell 自动化",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-enabled-match",
+      title: "Match enabled local skills"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "用已启用 docs skill 搜索本地规则里的 shell permission guidance",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-enabled-rag-doc-search",
+      title: "Skill-assisted local RAG document search"
+    });
+  });
+
   it("requests workspace-write permission before a skill-assisted RAG handoff temp-output creation task", () => {
     const plan = planLocalAssistantTask({
       message: "use the enabled docs skill to review local shell permission rules and continue to create a temp-output folder with shell automation",
@@ -301,6 +331,18 @@ describe("local assistant task planner capability catalogs", () => {
     expect(plan).toMatchObject({
       kind: "npc-local-collaboration-preview",
       title: "NPC collaboration preview"
+    });
+  });
+
+  it("plans a readonly NPC template preview for Chinese default template requests", () => {
+    const plan = planLocalAssistantTask({
+      message: "先给我课程助手 NPC 的默认模板",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-template-preview",
+      title: "NPC default template preview"
     });
   });
 

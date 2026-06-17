@@ -30,8 +30,8 @@ describe("conversation auto compression", () => {
 
     expect(compressedEntry).toBeDefined();
     expect(compressedEntry?.kind).toBe("system");
-    expect(compressedEntry?.title).toBe("已保留较早会话上下文");
-    expect(compressedEntry?.summary).toContain("已压缩");
+    expect(compressedEntry?.title).toBe("较早消息摘要");
+    expect(compressedEntry?.summary).toContain("已整理");
     expect(compressedEntry?.summary).toContain("条较早消息");
     expect(compressedEntry?.detailLines?.[0]).toContain("较早用户消息");
     expect(compressedEntry?.detailLines?.[1]).toContain("较早助手或系统消息");
@@ -63,7 +63,7 @@ describe("conversation auto compression", () => {
     const compressedEntry = state.conversation.entries.find((entry) => entry.id === "conversation-auto-summary");
 
     expect(compressedEntry).toBeDefined();
-    expect(compressedEntry?.summary).toContain("已压缩");
+    expect(compressedEntry?.summary).toContain("已整理");
     expect(compressedEntry?.detailLines?.[0]).toContain("较早用户消息");
   });
 
@@ -82,7 +82,7 @@ describe("conversation auto compression", () => {
     const detail = compressedEntry?.detailLines?.join("\n") ?? "";
 
     expect(detail).toContain("preserve workspace root repair context in the compressed summary");
-    expect(detail).toContain("保留片段");
+    expect(detail).toContain("较早片段");
   });
 
   it("migrates previously persisted English compression metadata into the Chinese summary", () => {
@@ -119,8 +119,8 @@ describe("conversation auto compression", () => {
     const compressedEntry = next.conversation.entries.find((entry) => entry.id === "conversation-auto-summary");
     const detail = compressedEntry?.detailLines?.join("\n") ?? "";
 
-    expect(compressedEntry?.title).toBe("已保留较早会话上下文");
-    expect(compressedEntry?.summary).toContain("已压缩 5 条较早消息");
+    expect(compressedEntry?.title).toBe("较早消息摘要");
+    expect(compressedEntry?.summary).toContain("已整理 5 条较早消息");
     expect(detail).toContain("较早用户消息：4");
     expect(detail).toContain("较早助手或系统消息：1");
     expect(detail).toContain("old persisted workspace context");

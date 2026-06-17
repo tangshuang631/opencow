@@ -2,7 +2,7 @@ import type { ConversationEntry, PermissionMode, WorkbenchState } from "./workbe
 
 const MAX_CONVERSATION_ENTRIES = 60;
 const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
-const COMPRESSED_CONVERSATION_TITLE = "已保留较早会话上下文";
+const COMPRESSED_CONVERSATION_TITLE = "较早消息摘要";
 const MAX_COMPRESSED_SNIPPETS = 5;
 const MAX_COMPRESSED_SNIPPET_LENGTH = 140;
 
@@ -134,14 +134,14 @@ function compactConversationEntries(entries: ConversationEntry[]): ConversationE
       id: COMPRESSED_CONVERSATION_ENTRY_ID,
       kind: "system",
       title: COMPRESSED_CONVERSATION_TITLE,
-      summary: `已压缩 ${compressedEntryCount} 条较早消息，以保持当前会话轻量且保留上下文。`,
+      summary: `已整理 ${compressedEntryCount} 条较早消息，当前会话继续保持轻量。`,
       detailLines: [
         `较早用户消息：${compressedUserCount}`,
         `较早助手或系统消息：${compressedSystemCount}`,
-        sampleTitles.length > 0 ? `保留主题：${sampleTitles}` : "保留主题：无",
+        sampleTitles.length > 0 ? `较早主题：${sampleTitles}` : "较早主题：无",
         sampleSnippets.length > 0
-          ? `保留片段：${sampleSnippets.join(" | ")}`
-          : "保留片段：无"
+          ? `较早片段：${sampleSnippets.join(" | ")}`
+          : "较早片段：无"
       ]
     }
   ];
@@ -163,7 +163,8 @@ function parseCompressedConversationEntry(entry: ConversationEntry | undefined):
   }
 
   const totalCount = Number.parseInt(
-    entry.summary.match(/已压缩\s*(\d+)\s*条较早消息/)?.[1]
+    entry.summary.match(/已整理\s*(\d+)\s*条较早消息/)?.[1]
+      ?? entry.summary.match(/已压缩\s*(\d+)\s*条较早消息/)?.[1]
       ?? entry.summary.match(/Compressed (\d+) older messages/i)?.[1]
       ?? "0",
     10
@@ -218,7 +219,8 @@ function formatCompressedConversationSnippet(entry: ConversationEntry): string {
 }
 
 function parseCompressedConversationSnippets(detailLines: string[] | undefined): string[] {
-  const snippetsLine = detailLines?.find((line) => line.startsWith("保留片段："))
+  const snippetsLine = detailLines?.find((line) => line.startsWith("较早片段："))
+    ?? detailLines?.find((line) => line.startsWith("保留片段："))
     ?? detailLines?.find((line) => line.startsWith("Compressed snippets: "));
 
   if (!snippetsLine) {
@@ -226,6 +228,7 @@ function parseCompressedConversationSnippets(detailLines: string[] | undefined):
   }
 
   const snippets = snippetsLine
+    .replace("较早片段：", "")
     .replace("保留片段：", "")
     .replace("Compressed snippets: ", "")
     .trim();

@@ -44,7 +44,7 @@ describe("MainConversation", () => {
     expect(container.querySelector(".message-card")).not.toBeInTheDocument();
   });
 
-  it("shows recent conversation history actions on a blank conversation screen", () => {
+  it("keeps a blank conversation screen empty even when recent conversations exist", () => {
     const state = {
       ...createInitialWorkbenchState(),
       history: {
@@ -82,87 +82,11 @@ describe("MainConversation", () => {
       />
     );
 
-    expect(screen.getByText("最近会话")).toBeInTheDocument();
-    expect(screen.getByText("帮我继续修网页端历史记录")).toBeInTheDocument();
-    expect(screen.getByText("最近一次会话保留了网页端历史记录修复上下文。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "恢复这段会话" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "删除这段会话" })).toBeInTheDocument();
-  });
-
-  it("calls restore when the user restores a recent conversation", () => {
-    const onRestoreRecentConversation = vi.fn();
-    const state = {
-      ...createInitialWorkbenchState(),
-      history: {
-        lastNonEmptyConversationEntries: [],
-        recentConversations: [
-          {
-            id: "recent-conversation-restore",
-            title: "恢复这段会话",
-            summary: "准备恢复最近一次修复历史记录的上下文。",
-            entries: [
-              {
-                id: "restore-entry",
-                kind: "user" as const,
-                title: "用户",
-                summary: "恢复最近一次历史记录修复上下文"
-              }
-            ]
-          }
-        ]
-      }
-    };
-
-    render(
-      <MainConversation
-        state={state}
-        onPreviewRollback={vi.fn()}
-        onCancelActiveTask={vi.fn()}
-        onRestoreRecentConversation={onRestoreRecentConversation}
-      />
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "恢复这段会话" }));
-
-    expect(onRestoreRecentConversation).toHaveBeenCalledWith("recent-conversation-restore");
-  });
-
-  it("calls delete when the user removes a recent conversation", () => {
-    const onDeleteRecentConversation = vi.fn();
-    const state = {
-      ...createInitialWorkbenchState(),
-      history: {
-        lastNonEmptyConversationEntries: [],
-        recentConversations: [
-          {
-            id: "recent-conversation-delete",
-            title: "删除这段会话",
-            summary: "准备删除一段已经不需要的历史记录。",
-            entries: [
-              {
-                id: "delete-entry",
-                kind: "user" as const,
-                title: "用户",
-                summary: "删除这段最近会话"
-              }
-            ]
-          }
-        ]
-      }
-    };
-
-    render(
-      <MainConversation
-        state={state}
-        onPreviewRollback={vi.fn()}
-        onCancelActiveTask={vi.fn()}
-        onDeleteRecentConversation={onDeleteRecentConversation}
-      />
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "删除这段会话" }));
-
-    expect(onDeleteRecentConversation).toHaveBeenCalledWith("recent-conversation-delete");
+    expect(screen.queryByText("最近会话")).not.toBeInTheDocument();
+    expect(screen.queryByText("帮我继续修网页端历史记录")).not.toBeInTheDocument();
+    expect(screen.queryByText("最近一次会话保留了网页端历史记录修复上下文。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "恢复这段会话" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除这段会话" })).not.toBeInTheDocument();
   });
 
   it("shows only the current conversation title and overview after messages exist", () => {
@@ -894,21 +818,22 @@ describe("MainConversation", () => {
     expect(screen.getByRole("button", { name: "收起输入" })).toBeInTheDocument();
   });
 
-  it("keeps auto-compressed conversation context visible until the user clears history", () => {
+  it("shows auto-compressed older messages without exposing retention copy", () => {
     let state = createInitialWorkbenchState();
 
     for (let index = 0; index < 64; index += 1) {
       state = createUserTaskSubmittedState(state, {
         message: index === 0
-          ? "保留工作区根目录修复上下文"
+          ? "工作区根目录修复上下文"
           : `持续对话消息 ${index}`
       });
     }
 
     render(<MainConversation state={state} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
 
-    expect(screen.getByText("已保留较早会话上下文")).toBeInTheDocument();
-    expect(screen.getByText(/保留工作区根目录修复上下文/)).toBeInTheDocument();
+    expect(screen.getByText("较早消息摘要")).toBeInTheDocument();
+    expect(screen.getByText(/工作区根目录修复上下文/)).toBeInTheDocument();
+    expect(screen.queryByText(/保留/)).not.toBeInTheDocument();
   });
 
   it("aligns user messages to the right while assistant replies stay on the left", () => {
@@ -933,6 +858,24 @@ describe("MainConversation", () => {
     expect(assistantRow).not.toBeNull();
     expect(assistantRow).not.toHaveClass("message-row-user-bubble");
     expect(assistantRow?.querySelector(".message-avatar")).toBeInTheDocument();
+  });
+
+  it("keeps long user bubbles in the compact bubble layout instead of stretching the whole row", () => {
+    const longInput = "averylongtokenwithoutspaces".repeat(40);
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: longInput
+    });
+    const { container } = render(
+      <MainConversation state={submitted} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />
+    );
+
+    const userBubble = container.querySelector(".user-message-bubble");
+    const collapsedSummary = container.querySelector(".message-summary-collapsed");
+
+    expect(userBubble).not.toBeNull();
+    expect(userBubble).toBeInTheDocument();
+    expect(collapsedSummary).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开完整输入" })).toBeInTheDocument();
   });
 
   it("keeps local model audit diagnostics out of the default main conversation", () => {

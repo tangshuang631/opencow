@@ -52,7 +52,7 @@ type WorkbenchProps = {
   onSubmitTask: (message: string) => void;
 };
 
-type StaticWorkbenchViewId = Exclude<WorkbenchViewId, "chat" | "history" | "audit" | "safety" | "knowledge">;
+type StaticWorkbenchViewId = Exclude<WorkbenchViewId, "chat" | "audit" | "safety" | "knowledge">;
 
 const viewContent: Record<StaticWorkbenchViewId, { title: string; summary: string; details: string[] }> = {
   search: {
@@ -63,7 +63,7 @@ const viewContent: Record<StaticWorkbenchViewId, { title: string; summary: strin
   skills: {
     title: "Skills",
     summary: "管理本地 Skills 的安装、启用、匹配和检查。",
-    details: ["启用或安装会走权限确认。", "对话中匹配到的 Skill 会保留审计和可回退记录。"]
+    details: ["启用或安装会走权限确认。", "对话中匹配到的 Skill 会写入审计和可回退记录。"]
   },
   npc: {
     title: "NPC",
@@ -96,67 +96,6 @@ function WorkbenchContentPanel({ viewId }: { viewId: StaticWorkbenchViewId }) {
       <div className="workspace-panel-list">
         {content.details.map((detail) => (
           <p key={detail}>{detail}</p>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function RecentConversationsPanel({
-  state,
-  onRestoreRecentConversation,
-  onDeleteRecentConversation
-}: {
-  state: WorkbenchState;
-  onRestoreRecentConversation: (conversationId: string) => void;
-  onDeleteRecentConversation: (conversationId: string) => void;
-}) {
-  const currentConversationEntries = state.conversation.entries.filter((entry) => entry.kind !== "system");
-  const currentConversationNewestFirst = currentConversationEntries.slice().reverse();
-  const currentConversationLatestUserEntry = currentConversationNewestFirst.find((entry) => entry.kind === "user");
-  const currentConversationLatestAssistantEntry = currentConversationNewestFirst.find((entry) => entry.kind === "assistant");
-  const currentConversationTitle = currentConversationLatestUserEntry?.summary.trim()
-    || currentConversationLatestAssistantEntry?.title.trim()
-    || "当前会话";
-  const currentConversationSummary = currentConversationLatestAssistantEntry?.summary.trim()
-    || currentConversationLatestUserEntry?.summary.trim()
-    || "你当前正在进行的会话会在这里保留，直到你手动删除。";
-  const hasCurrentConversation = currentConversationEntries.length > 0;
-
-  return (
-    <section className="workspace-panel" aria-label="最近会话">
-      <header className="workspace-panel-header">
-        <h1>最近会话</h1>
-        <p>在这里恢复、查看和删除本地保留的最近对话，不需要先切回空白会话页。</p>
-      </header>
-      <div className="workspace-panel-list">
-        {hasCurrentConversation ? (
-          <div className="workspace-history-card workspace-history-card-current">
-            <div className="workspace-history-card-meta">
-              <span className="workspace-history-badge">当前会话</span>
-              <span className="workspace-history-meta-text">
-                {currentConversationEntries.length} 条消息
-              </span>
-            </div>
-            <p>{currentConversationTitle}</p>
-            <p className="muted">{currentConversationSummary}</p>
-          </div>
-        ) : null}
-        {state.history.recentConversations.length === 0 ? (
-          <p>还没有可恢复的最近会话。继续使用 opencow 后，新的非空会话会自动出现在这里。</p>
-        ) : state.history.recentConversations.map((record) => (
-          <div className="workspace-history-card" key={record.id}>
-            <p>{record.title}</p>
-            <p className="muted">{record.summary}</p>
-            <div className="action-row">
-              <button className="action-button" type="button" onClick={() => onRestoreRecentConversation(record.id)}>
-                恢复这段会话
-              </button>
-              <button className="action-button" type="button" onClick={() => onDeleteRecentConversation(record.id)}>
-                删除这段会话
-              </button>
-            </div>
-          </div>
         ))}
       </div>
     </section>
@@ -712,6 +651,10 @@ export function Workbench({
 }: WorkbenchProps) {
   const [activeView, setActiveView] = useState<WorkbenchViewId>("chat");
   const [settingsFocus, setSettingsFocus] = useState<ModelSettingsTarget | null>(null);
+  const [isConversationSearchOpen, setIsConversationSearchOpen] = useState(false);
+  const [isConversationDropdownOpen, setIsConversationDropdownOpen] = useState(false);
+  const [conversationSearchQuery, setConversationSearchQuery] = useState("");
+  const [isConversationClusterExpanded, setIsConversationClusterExpanded] = useState(false);
   const isChatView = activeView === "chat";
   const isSettingsView = activeView === "settings";
 
@@ -723,6 +666,10 @@ export function Workbench({
   function handleNewConversationClick() {
     setActiveView("chat");
     setSettingsFocus(null);
+    setIsConversationDropdownOpen(false);
+    setIsConversationSearchOpen(false);
+    setConversationSearchQuery("");
+    setIsConversationClusterExpanded(false);
     onNewConversation();
   }
 
@@ -749,6 +696,42 @@ export function Workbench({
         activeView={activeView}
         onSelectView={handleSelectView}
         onNewConversation={handleNewConversationClick}
+        hasActiveConversationEntries={state.conversation.entries.some((entry) => entry.kind !== "system")}
+        recentConversations={state.history.recentConversations}
+        isConversationSearchOpen={isConversationSearchOpen}
+        conversationSearchQuery={conversationSearchQuery}
+        onConversationSearchQueryChange={setConversationSearchQuery}
+        onToggleConversationSearch={() => {
+          setIsConversationSearchOpen((current) => {
+            const next = !current;
+
+            if (!next) {
+              setConversationSearchQuery("");
+            }
+
+            return next;
+          });
+        }}
+        isConversationDropdownOpen={isConversationDropdownOpen}
+        onToggleConversationDropdown={() => {
+          if (isConversationDropdownOpen || isConversationSearchOpen) {
+            setIsConversationDropdownOpen(false);
+            setIsConversationSearchOpen(false);
+            setConversationSearchQuery("");
+            return;
+          }
+
+          setIsConversationDropdownOpen(true);
+        }}
+        onCloseConversationDropdown={() => {
+          setIsConversationDropdownOpen(false);
+          setIsConversationSearchOpen(false);
+          setConversationSearchQuery("");
+        }}
+        onRestoreRecentConversation={onRestoreRecentConversation}
+        onDeleteRecentConversation={onDeleteRecentConversation}
+        isConversationClusterExpanded={isConversationClusterExpanded}
+        onToggleConversationCluster={() => setIsConversationClusterExpanded((current) => !current)}
       />
       <section className="workbench-main">
         {isChatView ? (
@@ -759,12 +742,6 @@ export function Workbench({
             onRestoreRecentConversation={onRestoreRecentConversation}
             onDeleteRecentConversation={onDeleteRecentConversation}
             onSubmitTask={onSubmitTask}
-          />
-        ) : activeView === "history" ? (
-          <RecentConversationsPanel
-            state={state}
-            onRestoreRecentConversation={onRestoreRecentConversation}
-            onDeleteRecentConversation={onDeleteRecentConversation}
           />
         ) : activeView === "knowledge" ? (
           <KnowledgePanel
@@ -802,13 +779,15 @@ export function Workbench({
         ) : (
           <WorkbenchContentPanel viewId={activeView} />
         )}
-        <Composer
-          state={state}
-          onSubmitTask={handleSubmitTask}
-          onCancelActiveTask={onCancelActiveTask}
-          onSelectModel={onSelectModel}
-          onOpenModelSettings={handleOpenModelSettings}
-        />
+        {isChatView ? (
+          <Composer
+            state={state}
+            onSubmitTask={handleSubmitTask}
+            onCancelActiveTask={onCancelActiveTask}
+            onSelectModel={onSelectModel}
+            onOpenModelSettings={handleOpenModelSettings}
+          />
+        ) : null}
       </section>
       <Inspector
         state={state}

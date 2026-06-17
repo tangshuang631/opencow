@@ -200,9 +200,18 @@ function createLocalRagSearchResultSummaryWithLibrary(
   return [
     `知识库：${libraryLabel}。`,
     `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `检索方式：${formatLocalRagProvider(result)}。`,
     `主要来源：${topPaths}。`,
     `检索问题：${result.query}。`
   ].join(" ");
+}
+
+function formatLocalRagProvider(result: Pick<ReturnType<typeof searchWebKnowledge>, "provider">) {
+  if (result.provider === "ollama-embedding") {
+    return "Ollama Embedding";
+  }
+
+  return "关键词 fallback";
 }
 
 function createKnowledgeHitAuditDetailLines(result: ReturnType<typeof searchWebKnowledge>) {
@@ -282,6 +291,7 @@ function createLocalRagSearchResultSummary(result: ReturnType<typeof searchWebKn
 
   return [
     `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `检索方式：${formatLocalRagProvider(result)}。`,
     `主要来源：${topPaths}。`,
     `检索问题：${result.query}。`
   ].join(" ");
@@ -528,6 +538,45 @@ function isChineseNpcCollaborationPreviewRequest(normalized: string) {
   return normalized.includes("npc") && normalized.includes("协作") && (normalized.includes("预览") || normalized.includes("方案"));
 }
 
+function isNpcTemplatePreviewRequest(normalized: string) {
+  return normalized.includes("npc")
+    && (normalized.includes("模板") || normalized.includes("template") || normalized.includes("配置建议") || normalized.includes("默认配置"))
+    && !normalized.includes("保存")
+    && !normalized.includes("写入")
+    && !normalized.includes("落盘");
+}
+
+function inferWebNpcTemplateName(input: string) {
+  if (/课程|学习|作业|课堂/.test(input)) {
+    return "课程助手";
+  }
+
+  if (/文档|资料|报告|知识库|rag/i.test(input)) {
+    return "文档处理助手";
+  }
+
+  if (/代码|开发|工程|repo|仓库/i.test(input)) {
+    return "开发协作助手";
+  }
+
+  return "通用工作助手";
+}
+
+function createWebNpcTemplatePreviewSummary(input: string) {
+  const templateName = inferWebNpcTemplateName(input);
+
+  return [
+    `名称：${templateName}。`,
+    "系统提示词：你是 opencow 的本地协作 NPC，先检索项目规则和知识库，再给出简洁、可执行、可审计的建议。",
+    "默认模型：跟随当前已选 Ollama 模型。",
+    "默认工具：本地 RAG 检索、已启用 Skills 匹配、只读工作区检查。",
+    "默认知识库：当前工作区知识库。",
+    "风险策略：默认只读；写文件、启动服务、Shell 执行前必须进入权限确认链路。",
+    "输出风格：中文优先，先给结论，再列关键依据和下一步。",
+    "这是只读模板预览，保存前仍需 workspace-write 权限。"
+  ].join(" ");
+}
+
 function isChineseSkillInstallRequest(normalized: string) {
   return normalized.includes("安装") && normalized.includes("skill");
 }
@@ -549,6 +598,42 @@ function isChineseMcpStartPreviewRequest(normalized: string) {
 
 function isChineseNpcShellPlanPreviewRequest(normalized: string) {
   return normalized.includes("npc") && normalized.includes("shell") && normalized.includes("计划");
+}
+
+function isChineseEnabledSkillMatchRequest(normalized: string) {
+  return normalized.includes("已启用")
+    && normalized.includes("skill")
+    && (normalized.includes("推荐") || normalized.includes("匹配") || normalized.includes("哪个") || normalized.includes("处理"));
+}
+
+function isChineseSkillAssistedRagRequest(normalized: string) {
+  return normalized.includes("已启用")
+    && normalized.includes("skill")
+    && (normalized.includes("搜索") || normalized.includes("检索"))
+    && (normalized.includes("规则") || normalized.includes("文档") || normalized.includes("知识库") || normalized.includes("说明"));
+}
+
+function extractExplicitSkillHint(input: string) {
+  const normalized = input.toLowerCase();
+  const match = normalized.match(/([a-z0-9-]+)\s+skill/);
+
+  if (!match) {
+    return "";
+  }
+
+  return (match[1] ?? "").trim();
+}
+
+function pickMatchedSkillByHint<
+  T extends {
+    name: string;
+  }
+>(items: T[], hint: string) {
+  if (!hint) {
+    return items[0];
+  }
+
+  return items.find((item) => item.name.toLowerCase().includes(hint)) ?? items[0];
 }
 
 function convertChineseScopedKnowledgeQuery(input: string) {
@@ -683,6 +768,7 @@ export function WebApp() {
               `状态：${npcOverview.status}。`,
               `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
               `注册表：${skillMatch.registry_path}。`,
+              `检索方式：${formatLocalRagProvider(ragResult)}。`,
               `主要来源：${topPaths}。`,
               "命令预览：Remove-Item -Recurse -Force temp-output。",
               `工作区根目录：${workspaceOverview.root_path}。`,
@@ -753,6 +839,31 @@ export function WebApp() {
       return;
     }
 
+    if (isNpcTemplatePreviewRequest(normalized)) {
+      startTransition(() => {
+        setState((current) => {
+          const queued = createUserTaskSubmittedState(current, {
+            message: trimmed,
+            executionKind: "npc-template-preview",
+            executionTitle: "NPC default template preview",
+            executionAuditSummary: "网页端查看 NPC 默认模板预览",
+            executionAuditDetail: `web npc template preview: ${trimmed}`
+          });
+          const started = createTaskExecutionStartedState(queued);
+
+          return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
+            resultTitle: "NPC 默认模板预览",
+            resultSummary: createWebNpcTemplatePreviewSummary(trimmed),
+            auditDetailLines: [
+              "NPC template preview is readonly.",
+              "Saving still requires workspace-write permission."
+            ]
+          }));
+        });
+      });
+      return;
+    }
+
     if (normalized.includes("npc collaboration plan") || isChineseNpcCollaborationPreviewRequest(normalized)) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
@@ -784,6 +895,7 @@ export function WebApp() {
               `已启用 Skills：${skillNames}。`,
               `注册表：${enabledSkills.registry_path}。`,
               `本地上下文：${topPaths}。`,
+              `检索方式：${formatLocalRagProvider(ragResult)}。`,
               `已索引文档：${ragResult.indexed_document_count}。`
             ].join(" "),
             auditDetailLines: [
@@ -927,6 +1039,7 @@ export function WebApp() {
       || normalized.includes("recommend an enabled skill")
       || normalized.includes("match this task against enabled skills")
       || (normalized.includes("推荐") && normalized.includes("已启用") && normalized.includes("skill"))
+      || isChineseEnabledSkillMatchRequest(normalized)
     ) {
       executeReadonlyAsyncTask(setState, {
         message: trimmed,
@@ -961,6 +1074,49 @@ export function WebApp() {
               `Recommended skill: ${topMatch.name}`,
               `Registry path: ${result.registry_path}`,
               `Enabled skill count: ${result.enabled_skill_count}`
+            ]
+          };
+        }
+      });
+      return;
+    }
+
+    if (isChineseSkillAssistedRagRequest(normalized)) {
+      executeReadonlyAsyncTask(setState, {
+        message: trimmed,
+        executionKind: "skills-local-enabled-rag-doc-search",
+        executionTitle: "Skill 辅助本地 RAG 检索",
+        executionAuditSummary: "网页端查看 Skill 辅助本地 RAG 检索",
+        executionAuditDetail: `web enabled skill rag search: ${trimmed}`,
+        failureSummary: "Skill 辅助本地 RAG 检索失败",
+        failureActionLabel: "请先检查 enabled skills 注册表、本地规则索引和 skill 到 RAG 的桥接链路，再重试。",
+        failureSource: "web_enabled_skill_rag_search",
+        run: async () => {
+          const requestedSkillHint = extractExplicitSkillHint(trimmed);
+          const [skillMatch, ragResult] = await Promise.all([
+            matchEnabledLocalSkills(trimmed),
+            searchLocalKnowledge(trimmed)
+          ]);
+
+          return { skillMatch, ragResult, requestedSkillHint };
+        },
+        onSuccess: ({ skillMatch, ragResult, requestedSkillHint }) => {
+          const topMatch = pickMatchedSkillByHint(skillMatch.items, requestedSkillHint);
+          const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+          return {
+            resultTitle: "Skill 辅助本地 RAG 检索",
+            resultSummary: [
+              `推荐 Skill：${topMatch?.name ?? "暂无"}。`,
+              `注册表：${skillMatch.registry_path}。`,
+              `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
+              `检索方式：${formatLocalRagProvider(ragResult)}。`,
+              `主要来源：${topPaths}。`
+            ].join(" "),
+            auditDetailLines: [
+              `Recommended skill: ${topMatch?.name ?? "(none)"}`,
+              `Registry path: ${skillMatch.registry_path}`,
+              ...createKnowledgeHitAuditDetailLines(ragResult)
             ]
           };
         }
@@ -1273,35 +1429,13 @@ export function WebApp() {
       return;
     }
 
-    if (!isLongWebPrompt(trimmed)) {
-      startTransition(() => {
-        setState((current) => {
-          const queued = createUserTaskSubmittedState(current, {
-            message: trimmed,
-            executionKind: "local-model-chat",
-            executionTitle: "网页端本地会话",
-            executionAuditSummary: "网页端提交了一条本地优先会话任务",
-            executionAuditDetail: `web local-first chat: ${trimmed}`
-          });
-          const started = createTaskExecutionStartedState(queued);
-
-          return preserveWebKnowledgeState(current, createTaskExecutionSucceededState(started, {
-            resultTitle: "网页端本地会话答复",
-            resultSummary: `已为网页端保留这段上下文：${trimmed}`,
-            auditDetailLines: ["Web MVP keeps browser history, recent sessions, and local knowledge context."]
-          }));
-        });
-      });
-      return;
-    }
-
     executeReadonlyAsyncTask(setState, {
       message: trimmed,
       executionKind: "local-model-chat",
-      executionTitle: "网页端本地会话",
+      executionTitle: "本地模型问答",
       executionAuditSummary: "网页端提交了一条本地优先会话任务",
       executionAuditDetail: `web local-first chat: ${trimmed}`,
-      failureSummary: "网页端本地会话失败",
+      failureSummary: "本地模型回复失败",
       failureActionLabel: "请先检查本机 Ollama 服务、当前已选模型和本地网络回环访问，再重试这条长文本请求。",
       failureSource: "web_local_model_chat",
       run: async () => {
@@ -1424,7 +1558,7 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
           },
           output: {
             title: "知识库已更新",
-            summary: `已导入 ${sample.title}，网页端会保留这份 md/txt 上下文。`
+            summary: `已导入 ${sample.title}，后续检索会使用这份 md/txt 内容。`
           },
           audit: {
             summary: "网页端知识库已导入文档",

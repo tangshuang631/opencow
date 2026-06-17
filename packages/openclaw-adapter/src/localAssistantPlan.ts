@@ -220,6 +220,18 @@ function hasInspectIntent(message: string) {
     || /查看/.test(message);
 }
 
+function hasSkillOllamaDescriptionIntent(message: string) {
+  return hasSkillKeyword(message)
+    && (/ollama/i.test(message) || /本地模型/.test(message))
+    && (
+      /中文说明/.test(message)
+      || /生成.*说明/.test(message)
+      || /说明.*生成/.test(message)
+      || /\bdescribe\b/i.test(message)
+      || /\bdescription\b/i.test(message)
+    );
+}
+
 function hasScanIntent(message: string) {
   return localSkillsScanPatterns.some((pattern) => pattern.test(message))
     || mcpLocalPluginScanPatterns.some((pattern) => pattern.test(message))
@@ -233,6 +245,28 @@ function hasSearchIntent(message: string) {
     || /搜索本地知识库/.test(message)
     || /检索本地知识库/.test(message)
     || /知识库里的/.test(message);
+}
+
+function isChineseEnabledSkillMatchRequest(message: string) {
+  return /已启用/.test(message)
+    && /skill/i.test(message)
+    && /推荐|匹配|应该|哪个|处理/.test(message)
+    && !/创建|删除|清理|运行|执行/.test(message);
+}
+
+function isChineseSkillAssistedRagDocSearchRequest(message: string) {
+  return /已启用/.test(message)
+    && /skill/i.test(message)
+    && /搜索|检索/.test(message)
+    && /规则|文档|知识库|说明/.test(message)
+    && !/继续/.test(message)
+    && !/创建|删除|清理|运行|执行/.test(message);
+}
+
+function isNpcTemplatePreviewRequest(message: string) {
+  return npcCapabilityPatterns.some((pattern) => pattern.test(message))
+    && /模板|template|配置建议|默认配置/i.test(message)
+    && !/保存|写入|生成并保存|落盘|创建文件/.test(message);
 }
 
 export function planLocalAssistantTask(request: LocalAssistantTaskRequest): LocalAssistantTaskPlan {
@@ -1012,10 +1046,12 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    enabledSkillPatterns.some((pattern) => pattern.test(message))
-    && skillMediationPatterns.some((pattern) => pattern.test(message))
-    && localRagSearchPatterns.some((pattern) => pattern.test(message))
-    && (/knowledge/i.test(message) || /docs?/i.test(message) || /rules?/i.test(message))
+    (
+      enabledSkillPatterns.some((pattern) => pattern.test(message))
+      && skillMediationPatterns.some((pattern) => pattern.test(message))
+      && localRagSearchPatterns.some((pattern) => pattern.test(message))
+      && (/knowledge/i.test(message) || /docs?/i.test(message) || /rules?/i.test(message))
+    ) || isChineseSkillAssistedRagDocSearchRequest(message)
   ) {
     return {
       kind: "skills-local-enabled-rag-doc-search",
@@ -1023,6 +1059,16 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Match an enabled local skill first, then search local documentation and rule files through the readonly RAG fallback chain.",
       auditSummary: "Local assistant planned a skill-assisted readonly local RAG document search.",
       auditDetail: `Skill-assisted readonly local RAG search task: ${message}`
+    };
+  }
+
+  if (hasSkillOllamaDescriptionIntent(message)) {
+    return {
+      kind: "skills-local-ollama-description",
+      title: "Generate local Skill Chinese description",
+      summary: message,
+      auditSummary: "Local assistant planned a readonly Ollama-generated local Skill Chinese description.",
+      auditDetail: `Readonly Ollama local Skill description task: ${message}`
     };
   }
 
@@ -1228,9 +1274,11 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
   }
 
   if (
-    hasSkillKeyword(message)
-    && (localEnabledSkillsPatterns.some((pattern) => pattern.test(message)) || /已启用/.test(message))
-    && localEnabledSkillMatchPatterns.some((pattern) => pattern.test(message))
+    (
+      hasSkillKeyword(message)
+      && (localEnabledSkillsPatterns.some((pattern) => pattern.test(message)) || /已启用/.test(message))
+      && localEnabledSkillMatchPatterns.some((pattern) => pattern.test(message))
+    || isChineseEnabledSkillMatchRequest(message))
     && !troubleshootingQuestionPatterns.some((pattern) => pattern.test(message))
   ) {
     return {
@@ -1393,6 +1441,16 @@ export function planLocalAssistantTask(request: LocalAssistantTaskRequest): Loca
       summary: "Preview a readonly NPC collaboration shell plan by combining NPC readiness, enabled skill routing, and the current shell safety chain.",
       auditSummary: "Local assistant planned a readonly NPC shell plan preview.",
       auditDetail: `Readonly NPC shell plan preview task: ${message}`
+    };
+  }
+
+  if (isNpcTemplatePreviewRequest(message)) {
+    return {
+      kind: "npc-template-preview",
+      title: "NPC default template preview",
+      summary: message,
+      auditSummary: "Local assistant planned a readonly NPC default template preview.",
+      auditDetail: `Readonly NPC template preview task: ${message}`
     };
   }
 

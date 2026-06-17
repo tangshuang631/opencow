@@ -105,12 +105,13 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
     state.history?.lastNonEmptyConversationEntries
     ?? (state.conversation.entries.length > 0 ? state.conversation.entries : []);
   const revivedRecentConversations = state.history?.recentConversations ?? [];
+  const isIntentionallyBlankConversation = state.audit?.lastEvent?.source === "conversation_new";
   const revivedKnowledge = state.knowledge ?? {
     importedFiles: [],
     availableFiles: []
   };
   const revivedConversationEntries =
-    state.conversation.entries.length > 0
+    state.conversation.entries.length > 0 || isIntentionallyBlankConversation
       ? state.conversation.entries
       : revivedHistoryEntries;
 

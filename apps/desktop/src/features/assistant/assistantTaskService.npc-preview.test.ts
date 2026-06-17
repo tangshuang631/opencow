@@ -47,6 +47,35 @@ describe("assistantTaskService npc collaboration preview", () => {
     });
   });
 
+  it("plans a readonly NPC default template preview without requesting config write permission", () => {
+    const plan = planAssistantTask("先给我课程助手 NPC 的默认模板", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "npc-template-preview",
+      title: "NPC default template preview"
+    });
+  });
+
+  it("executes a readonly NPC default template preview with all product fields", async () => {
+    const result = await executeAssistantTask({
+      kind: "npc-template-preview",
+      title: "NPC default template preview",
+      summary: "先给我课程助手 NPC 的默认模板",
+      auditSummary: "Local assistant planned a readonly NPC default template preview.",
+      auditDetail: "Readonly NPC template preview task"
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC 默认模板预览");
+    expect(result.resultSummary).toContain("名称：课程助手");
+    expect(result.resultSummary).toContain("系统提示词：");
+    expect(result.resultSummary).toContain("默认模型：");
+    expect(result.resultSummary).toContain("默认工具：");
+    expect(result.resultSummary).toContain("默认知识库：");
+    expect(result.resultSummary).toContain("风险策略：");
+    expect(result.resultSummary).toContain("输出风格：");
+    expect(result.resultSummary).toContain("保存前仍需 workspace-write 权限");
+  });
+
   it("plans a document processing NPC config write once workspace-write is available", () => {
     const plan = planAssistantTask("你能帮我配置一个文档处理npc吗", "workspace-write");
 

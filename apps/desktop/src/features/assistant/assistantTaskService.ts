@@ -122,6 +122,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "skills-local-ollama-description";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "skills-local-install";
       title: string;
       summary: string;
@@ -256,6 +263,13 @@ type ReadonlyAssistantTaskPlan =
     }
   | {
       kind: "npc-local-collaboration-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "npc-template-preview";
       title: string;
       summary: string;
       auditSummary: string;
@@ -677,6 +691,10 @@ export async function executeAssistantTask(
     return executeNpcCollaborationPreviewPlan(plan.title, plan.summary, context);
   }
 
+  if (plan.kind === "npc-template-preview") {
+    return executeNpcTemplatePreviewPlan(plan.summary, context);
+  }
+
   if (plan.kind === "npc-local-project-showcase-preview") {
     return executeNpcProjectShowcasePreviewPlan(plan.title, plan.summary, context);
   }
@@ -1003,13 +1021,26 @@ async function executeLocalRagSearchPlan(
 }
 
 function createLocalRagSearchResultSummary(result: Awaited<ReturnType<typeof searchLocalKnowledge>>) {
+  return createLocalRagSummaryLines(result).join(" ");
+}
+
+function createLocalRagSummaryLines(result: LocalRagSearchDiagnostics) {
   const topPaths = result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
 
   return [
     `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `检索方式：${formatLocalRagProvider(result)}。`,
     `主要来源：${topPaths}。`,
     `检索问题：${result.query}。`
-  ].join(" ");
+  ];
+}
+
+function formatLocalRagProvider(result: Pick<LocalRagSearchDiagnostics, "provider">) {
+  if (result.provider === "ollama-embedding") {
+    return "Ollama Embedding";
+  }
+
+  return "关键词 fallback";
 }
 
 async function executeLocalSkillsScanPlan(
@@ -1107,7 +1138,8 @@ async function executeLocalMcpPluginStartPreviewPlan(
       `工作目录：${topMatch.working_directory}。`,
       `命令预览：${localizeMcpPluginStartPreviewText(topMatch.command_preview)}。`,
       `配置提示：${localizeMcpPluginStartPreviewText(topMatch.config_hint)}。`,
-      `风险说明：${localizeMcpPluginStartPreviewText(topMatch.risk_summary)}。`
+      `风险说明：${localizeMcpPluginStartPreviewText(topMatch.risk_summary)}。`,
+      ...createLocalMcpSafetyBoundaryLines("preview")
     ].join(" ")
   };
 }
@@ -1127,9 +1159,24 @@ async function executeLocalMcpPluginStartPlan(
       `工作目录：${result.working_directory}。`,
       `状态：${createLocalMcpPluginStartStatus(result)}。`,
       `输出行数：${result.line_count}。`,
-      `执行预览：${localizeMcpPluginStartOutputPreview(result.stdout_preview)}。`
+      `执行预览：${localizeMcpPluginStartOutputPreview(result.stdout_preview)}。`,
+      ...createLocalMcpSafetyBoundaryLines("start")
     ].join(" ")
   };
+}
+
+function createLocalMcpSafetyBoundaryLines(stage: "preview" | "start"): string[] {
+  const stageLine = stage === "preview"
+    ? "启动预览保持只读，不会启动真实 MCP 进程。"
+    : "启动必须由用户手动确认。";
+
+  return [
+    "MCP 默认关闭。",
+    stageLine,
+    "所需权限：controlled-full。",
+    "工具调用仍需经过 permission-engine。",
+    "启动、失败和工具列表变化都会写入日志。"
+  ];
 }
 
 function localizeMcpPluginStartPreviewText(text: string): string {
@@ -1496,16 +1543,13 @@ async function executeSkillAssistedLocalRagSearchPlan(
   }
 
   const ragResult = await searchSkillAssistedLocalKnowledgeWithDiagnostics(query, skillMatch, topMatch.name, context);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
 
   return {
     resultTitle: "Skill 辅助本地 RAG 检索",
     resultSummary: [
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
-      `检索问题：${ragResult.query}。`
+      ...createLocalRagSummaryLines(ragResult)
     ].join(" ")
   };
 }
@@ -1539,13 +1583,10 @@ async function executeLocalRagShellHandoffPreviewPlan(
     loadWorkspaceOverview()
   ]), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令预览：${shellPreview.command}。`,
       `工作区根目录：${shellPreview.workspaceRoot}。`,
       `下一步：${shellPreview.nextStep}。`,
@@ -1572,20 +1613,56 @@ async function executeSkillAssistedRagShellHandoffPreviewPlan(
 
   const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle: "Skill 辅助 RAG Shell 交接预览",
     resultSummary: [
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令预览：${shellPreview.command}。`,
       `工作区根目录：${shellPreview.workspaceRoot}。`,
       `下一步：${shellPreview.nextStep}。`,
       `所需权限：${shellPreview.requiredPermission}。`,
       `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
+  };
+}
+
+function inferNpcTemplateName(query: string) {
+  if (/课程|学习|作业|课堂/.test(query)) {
+    return "课程助手";
+  }
+
+  if (/文档|资料|报告|知识库|rag/i.test(query)) {
+    return "文档处理助手";
+  }
+
+  if (/代码|开发|工程|repo|仓库/i.test(query)) {
+    return "开发协作助手";
+  }
+
+  return "通用工作助手";
+}
+
+async function executeNpcTemplatePreviewPlan(
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  throwIfExecutionAborted(context);
+
+  const templateName = inferNpcTemplateName(query);
+
+  return {
+    resultTitle: "NPC 默认模板预览",
+    resultSummary: [
+      `名称：${templateName}。`,
+      "系统提示词：你是 opencow 的本地协作 NPC，先检索项目规则和知识库，再给出简洁、可执行、可审计的建议。",
+      "默认模型：跟随当前已选 Ollama 模型。",
+      "默认工具：本地 RAG 检索、已启用 Skills 匹配、只读工作区检查。",
+      "默认知识库：当前工作区知识库。",
+      "风险策略：默认只读；写文件、启动服务、Shell 执行前必须进入权限确认链路。",
+      "输出风格：中文优先，先给结论，再列关键依据和下一步。",
+      "这是只读模板预览，保存前仍需 workspace-write 权限。"
     ].join(" ")
   };
 }
@@ -1608,8 +1685,6 @@ async function executeNpcAssistedRagShellHandoffPreviewPlan(
 
   const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
   const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
@@ -1617,8 +1692,7 @@ async function executeNpcAssistedRagShellHandoffPreviewPlan(
       `状态：${npcOverview.status}。`,
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令预览：${shellPreview.command}。`,
       `工作区根目录：${shellPreview.workspaceRoot}。`,
       `下一步：${shellPreview.nextStep}。`,
@@ -1635,13 +1709,10 @@ async function executeLocalRagShellCreatePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const ragResult = await searchLocalKnowledgeWithDiagnostics(query, context);
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
       `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
@@ -1656,13 +1727,10 @@ async function executeLocalRagShellRemovePlan(
 ): Promise<AssistantTaskExecutionResult> {
   const ragResult = await searchLocalKnowledgeWithDiagnostics(query, context);
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
       `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
@@ -1686,15 +1754,12 @@ async function executeSkillAssistedRagShellCreatePlan(
   }
 
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
       `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
@@ -1718,15 +1783,12 @@ async function executeSkillAssistedRagShellRemovePlan(
   }
 
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
       `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
@@ -1750,15 +1812,12 @@ async function executeNpcAssistedRagShellCreatePlan(
   }
 
   const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
       `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
@@ -1782,15 +1841,12 @@ async function executeNpcAssistedRagShellRemovePlan(
   }
 
   const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
-  const topPaths = formatTopLocalRagSources(ragResult);
-
   return {
     resultTitle,
     resultSummary: [
       `推荐 Skill：${topMatch.name}。`,
       `注册表：${skillMatch.registry_path}。`,
-      `找到 ${ragResult.match_count} 条匹配片段，已索引 ${ragResult.indexed_document_count} 个文档。`,
-      `主要来源：${topPaths}。`,
+      ...createLocalRagSummaryLines(ragResult),
       `命令：${shellResult.command_label}。`,
       `输出预览：${shellResult.stdout_preview}。`,
       `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
@@ -1820,6 +1876,7 @@ async function executeNpcCollaborationPreviewPlan(
       `已启用 Skills：${skillNames}。`,
       `注册表：${enabledSkills.registry_path}。`,
       `本地上下文：${topPaths}。`,
+      `检索方式：${formatLocalRagProvider(ragResult)}。`,
       `已索引文档：${ragResult.indexed_document_count}。`
     ].join(" ")
   };

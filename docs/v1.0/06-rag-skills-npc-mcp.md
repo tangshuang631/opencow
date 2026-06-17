@@ -65,6 +65,12 @@ v1.0 字段：
 - 提供默认模板。
 - 不要求用户手写复杂配置。
 
+当前落地：
+
+- `npc-template-preview` 提供只读默认模板预览，不写文件、不请求模型、不绕过权限。
+- 模板预览返回名称、系统提示词、默认模型、默认工具、默认知识库、风险策略、输出风格。
+- 保存或生成真实 NPC 配置仍必须走 `npc-config-write` 的 `workspace-write` 权限链路。
+
 ## 5. MCP
 
 MCP 作为高级能力保留。
@@ -136,11 +142,13 @@ Current behavior:
 - desktop execution stays local-first and readonly
 - Tauri scans the current local rule and v1.0 documentation files
 - results are ranked by simple deterministic query matching
+- every RAG result explicitly reports the active retrieval provider; the current stable path reports `keyword-fallback`
 - top passages are returned through the assistant task result surface
 
 Current scope is intentionally limited:
 
 - no embedding dependency yet
+- Ollama Embedding remains the preferred target path, but until it is wired into the local index the product must show keyword fallback instead of silently pretending embedding ran
 - no remote retrieval
 - no write path
 - no arbitrary filesystem crawl
@@ -921,6 +929,7 @@ This is the first real execution slice for MCP in the desktop-first chain:
 - planner routes them through `controlled-full` permission and explicit dangerous confirmation
 - desktop assistant execution calls a tightly scoped Tauri command
 - current real execution scope remains intentionally narrow to a fixed browser plugin candidate path
+- start preview and start result both surface the product safety boundary: MCP is default-off, start is manual, `controlled-full` is required, tool calls still go through `permission-engine`, and start/failure/tool-list changes are logged
 
 Safety boundary remains intentionally narrow:
 

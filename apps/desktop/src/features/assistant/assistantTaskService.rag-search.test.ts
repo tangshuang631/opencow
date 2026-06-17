@@ -54,6 +54,8 @@ describe("assistantTaskService local rag search", () => {
     searchLocalKnowledgeMock.mockResolvedValueOnce({
       query: "shell permission rules",
       summary: "Local knowledge search found 2 matching passages across 7 indexed documents.",
+      provider: "keyword-fallback",
+      fallback_reason: "Ollama embedding is unavailable in this readonly search path.",
       match_count: 2,
       indexed_document_count: 7,
       items: [
@@ -83,6 +85,7 @@ describe("assistantTaskService local rag search", () => {
     expect(result.resultTitle).toBe("本地 RAG 文档检索");
     expect(result.resultSummary).toContain("找到 2 条匹配片段");
     expect(result.resultSummary).toContain("已索引 7 个文档");
+    expect(result.resultSummary).toContain("检索方式：关键词 fallback。");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
   });

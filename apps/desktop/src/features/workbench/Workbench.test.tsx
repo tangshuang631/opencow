@@ -58,6 +58,7 @@ describe("Workbench", () => {
   });
 
   it("switches the main workspace content when a sidebar item is selected", () => {
+    const onRestoreRecentConversation = vi.fn();
     const state = {
       ...createInitialWorkbenchState(),
       conversation: {
@@ -90,7 +91,7 @@ describe("Workbench", () => {
       }
     };
 
-    render(<Workbench {...createWorkbenchProps(state)} />);
+    render(<Workbench {...createWorkbenchProps(state, { onRestoreRecentConversation })} />);
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
@@ -101,12 +102,9 @@ describe("Workbench", () => {
     expect(screen.getByText("导入、索引和检索本地知识文件，优先保持工作区内可追踪、可恢复。")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "最近会话" }));
-
-    expect(screen.getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
-    expect(screen.getByText("网页端历史修复上下文")).toBeInTheDocument();
-    expect(screen.getByText("这里应该显示最近会话摘要。")).toBeInTheDocument();
-    expect(screen.getByText("当前会话")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开会话：网页端历史修复上下文" }));
+    expect(onRestoreRecentConversation).toHaveBeenCalledWith("recent-conversation-entry");
 
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
@@ -165,10 +163,24 @@ describe("Workbench", () => {
     expect(onImportKnowledgeFile).toHaveBeenCalledWith("notes/faq.txt");
   });
 
+  it("hides the conversation composer outside the conversation workspace", () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    expect(screen.getByRole("textbox", { name: "输入任务" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+
+    expect(screen.getByRole("heading", { name: "Skills" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "输入任务" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    expect(screen.getByRole("textbox", { name: "输入任务" })).toBeInTheDocument();
+  });
+
   it("switches every left sidebar destination into the main workspace", () => {
     const destinations = [
       "搜索",
-      "最近会话",
       "知识库",
       "Skills",
       "NPC",
@@ -192,6 +204,227 @@ describe("Workbench", () => {
 
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("replaces separate new-conversation and recent-history buttons with a collapsible conversation cluster", () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: Array.from({ length: 7 }, (_, index) => ({
+          id: `recent-${index + 1}`,
+          title: `最近会话 ${index + 1}`,
+          summary: `摘要 ${index + 1}`,
+          entries: [
+            {
+              id: `entry-${index + 1}`,
+              kind: "user" as const,
+              title: "用户",
+              summary: `最近会话 ${index + 1}`
+            }
+          ]
+        }))
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    expect(screen.queryByRole("button", { name: "新对话" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "最近会话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "搜索历史会话" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建新会话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /打开会话：最近会话 [1-7]/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    expect(screen.getAllByRole("button", { name: /打开会话：最近会话 [1-7]/ }).length).toBe(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开最近会话" }));
+
+    expect(screen.getAllByRole("button", { name: /打开会话：最近会话 [1-7]/ }).length).toBe(6);
+  });
+
+  it("restores a recent conversation when its conversation card is clicked", () => {
+    const onRestoreRecentConversation = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-restore",
+            title: "恢复目标会话",
+            summary: "点击卡片主体应恢复",
+            entries: [
+              {
+                id: "restore-entry",
+                kind: "user" as const,
+                title: "用户",
+                summary: "恢复目标会话"
+              }
+            ]
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state, { onRestoreRecentConversation })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开会话：恢复目标会话" }));
+
+    expect(onRestoreRecentConversation).toHaveBeenCalledWith("recent-restore");
+  });
+
+  it("toggles the recent conversation dropdown from the conversation row", () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-toggle",
+            title: "可收起的历史会话",
+            summary: "再次点击会话应收起",
+            entries: []
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    expect(screen.queryByRole("button", { name: "打开会话：可收起的历史会话" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    expect(screen.getByRole("button", { name: "打开会话：可收起的历史会话" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    expect(screen.queryByRole("button", { name: "打开会话：可收起的历史会话" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a newly created blank conversation out of the history dropdown", () => {
+    const onNewConversation = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "previous-history",
+            title: "之前的旧会话",
+            summary: "旧会话仍可恢复",
+            entries: []
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state, { onNewConversation })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "打开会话：当前空白新会话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开会话：之前的旧会话" })).toBeInTheDocument();
+  });
+
+  it("deletes a recent conversation from the conversation cluster", () => {
+    const onDeleteRecentConversation = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-delete",
+            title: "删除目标会话",
+            summary: "点击减号应删除",
+            entries: []
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state, { onDeleteRecentConversation })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除会话：删除目标会话" }));
+
+    expect(onDeleteRecentConversation).toHaveBeenCalledWith("recent-delete");
+  });
+
+  it("opens conversation search and creates a new conversation from the conversation cluster header", () => {
+    const onNewConversation = vi.fn();
+
+    render(<Workbench {...createWorkbenchProps(createInitialWorkbenchState(), { onNewConversation })} />);
+
+    expect(screen.queryByRole("textbox", { name: "搜索历史记录" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "搜索历史会话" }));
+
+    expect(screen.getByRole("textbox", { name: "搜索历史记录" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+
+    expect(onNewConversation).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters across all saved recent conversations from the cluster search box", () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: Array.from({ length: 7 }, (_, index) => ({
+          id: `recent-${index + 1}`,
+          title: index === 6 ? "更早的目标会话" : `最近会话 ${index + 1}`,
+          summary: index === 6 ? "需要通过搜索命中" : `摘要 ${index + 1}`,
+          entries: []
+        }))
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "搜索历史会话" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索历史记录" }), {
+      target: { value: "目标会话" }
+    });
+
+    expect(screen.getByRole("button", { name: "打开会话：更早的目标会话" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开会话：最近会话 1" })).not.toBeInTheDocument();
+  });
+
+  it("keeps conversation card text compact instead of rendering the full long prompt", () => {
+    const longTitle = "你能回答以下问题并给出简要解析吗 1. 对以下两个源代码进行符号解析时 以下描述错误的是";
+    const longSummary = "这是一段很长的最近会话摘要，侧边栏里应该只显示成一小行预览，而不是完整铺开。";
+    const state = {
+      ...createInitialWorkbenchState(),
+      history: {
+        lastNonEmptyConversationEntries: [],
+        recentConversations: [
+          {
+            id: "recent-long",
+            title: longTitle,
+            summary: longSummary,
+            entries: []
+          }
+        ]
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
+    const cluster = screen.getByLabelText("会话分组");
+
+    expect(within(cluster).queryByText(longTitle)).not.toBeInTheDocument();
+    expect(within(cluster).queryByText(longSummary)).not.toBeInTheDocument();
+    expect(within(cluster).getByText(/…$/)).toBeInTheDocument();
   });
 
   it("routes missing model setup actions into the matching settings section", () => {
@@ -337,13 +570,16 @@ describe("Workbench", () => {
     expect(onCancelPermissionRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("returns to the conversation view when a task is submitted from settings", () => {
+  it("keeps task submission in the conversation view after leaving settings", () => {
     const onSubmitTask = vi.fn();
 
     render(<Workbench {...createWorkbenchProps(createInitialWorkbenchState(), { onSubmitTask })} />);
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "输入任务" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
 
     fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
       target: { value: "联网搜索一下最新资料" }
@@ -363,7 +599,7 @@ describe("Workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "知识库" }));
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
     expect(onNewConversation).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
@@ -389,7 +625,7 @@ describe("Workbench", () => {
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(onNewConversation).toHaveBeenCalledTimes(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
     expect(onNewConversation).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
   });

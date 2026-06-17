@@ -1,20 +1,35 @@
 import {
   Bot,
+  ChevronDown,
+  ChevronUp,
   Database,
   FileClock,
   Folder,
-  History,
+  Minus,
   MessageSquare,
-  MessageSquarePlus,
+  Plus,
   Search,
   Settings,
   ShieldCheck,
   Wrench
 } from "lucide-react";
+import type { RecentConversationRecord } from "../workbenchState";
+
+const SIDEBAR_CARD_TITLE_LIMIT = 20;
+const SIDEBAR_CARD_SUMMARY_LIMIT = 28;
+
+function createCompactSidebarText(text: string, limit: number) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, limit).trimEnd()}…`;
+}
 
 const navItems = [
   { id: "search", label: "搜索", icon: Search },
-  { id: "history", label: "最近会话", icon: History },
   { id: "knowledge", label: "知识库", icon: Database },
   { id: "skills", label: "Skills", icon: Wrench },
   { id: "npc", label: "NPC", icon: Bot },
@@ -39,29 +54,164 @@ type SidebarProps = {
   activeView: WorkbenchViewId;
   onSelectView: (viewId: WorkbenchViewId) => void;
   onNewConversation: () => void;
+  hasActiveConversationEntries: boolean;
+  recentConversations: RecentConversationRecord[];
+  isConversationSearchOpen: boolean;
+  conversationSearchQuery: string;
+  onConversationSearchQueryChange: (query: string) => void;
+  onToggleConversationSearch: () => void;
+  isConversationDropdownOpen: boolean;
+  onToggleConversationDropdown: () => void;
+  onCloseConversationDropdown: () => void;
+  onRestoreRecentConversation: (conversationId: string) => void;
+  onDeleteRecentConversation: (conversationId: string) => void;
+  isConversationClusterExpanded: boolean;
+  onToggleConversationCluster: () => void;
 };
 
-export function Sidebar({ activeView, onSelectView, onNewConversation }: SidebarProps) {
+export function Sidebar({
+  activeView,
+  onSelectView,
+  onNewConversation,
+  hasActiveConversationEntries,
+  recentConversations,
+  isConversationSearchOpen,
+  conversationSearchQuery,
+  onConversationSearchQueryChange,
+  onToggleConversationSearch,
+  isConversationDropdownOpen,
+  onToggleConversationDropdown,
+  onCloseConversationDropdown,
+  onRestoreRecentConversation,
+  onDeleteRecentConversation,
+  isConversationClusterExpanded,
+  onToggleConversationCluster
+}: SidebarProps) {
+  const normalizedSearchQuery = conversationSearchQuery.trim().toLowerCase();
+  const shouldShowConversationDropdown = activeView === "chat" && (isConversationSearchOpen || isConversationDropdownOpen);
+  const filteredRecentConversations = normalizedSearchQuery
+    ? recentConversations.filter((item) =>
+      `${item.title} ${item.summary}`.toLowerCase().includes(normalizedSearchQuery)
+    )
+    : recentConversations;
+  const visibleRecentConversations = normalizedSearchQuery
+    ? filteredRecentConversations
+    : filteredRecentConversations.slice(0, isConversationClusterExpanded ? 6 : 3);
+  const shouldShowToggle = !normalizedSearchQuery && recentConversations.length > 3;
+  const ToggleIcon = isConversationClusterExpanded ? ChevronUp : ChevronDown;
+  void hasActiveConversationEntries;
+
   return (
     <aside className="sidebar glass-gradient-sidebar-left" aria-label="主导航">
-      <button
-        aria-pressed={activeView === "chat"}
-        className={`sidebar-primary ${activeView === "chat" ? "sidebar-item-active" : ""}`}
-        type="button"
-        onClick={() => onSelectView("chat")}
-      >
-        <MessageSquare aria-hidden="true" size={18} />
-        会话
-      </button>
-      <button
-        aria-pressed="false"
-        className="sidebar-primary"
-        type="button"
-        onClick={onNewConversation}
-      >
-        <MessageSquarePlus aria-hidden="true" size={18} />
-        新对话
-      </button>
+      <section className="sidebar-conversation-cluster" aria-label="会话分组">
+        <div className="sidebar-conversation-cluster-header">
+          <div
+            className={`sidebar-conversation-header-shell ${activeView === "chat" ? "sidebar-item-active" : ""}`}
+          >
+            <button
+              aria-pressed={activeView === "chat"}
+              className="sidebar-primary sidebar-conversation-home"
+              type="button"
+              onClick={() => {
+                onSelectView("chat");
+                onToggleConversationDropdown();
+              }}
+            >
+              <MessageSquare aria-hidden="true" size={18} />
+              会话
+            </button>
+            <div className="sidebar-conversation-actions">
+              <button
+                aria-label="搜索历史会话"
+                className="sidebar-icon-button"
+                type="button"
+                onClick={() => {
+                onSelectView("chat");
+                onToggleConversationSearch();
+              }}
+              >
+                <Search aria-hidden="true" size={16} />
+              </button>
+              <button
+                aria-label="创建新会话"
+                className="sidebar-icon-button"
+                type="button"
+                onClick={() => {
+                  onSelectView("chat");
+                  onCloseConversationDropdown();
+                  onNewConversation();
+                }}
+              >
+                <Plus aria-hidden="true" size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+        {shouldShowConversationDropdown ? (
+          <div className="sidebar-conversation-dropdown">
+            {isConversationSearchOpen ? (
+              <label className="sidebar-conversation-search-shell">
+                <Search aria-hidden="true" size={18} />
+                <input
+                  aria-label="搜索历史记录"
+                  className="sidebar-conversation-search"
+                  placeholder="搜索历史记录"
+                  type="text"
+                  value={conversationSearchQuery}
+                  onChange={(event) => onConversationSearchQueryChange(event.target.value)}
+                />
+              </label>
+            ) : null}
+            <div className="sidebar-conversation-list">
+              {visibleRecentConversations.map((item) => (
+                <article className="sidebar-conversation-card" key={item.id}>
+                  <button
+                    aria-label={`打开会话：${item.title}`}
+                    className="sidebar-conversation-card-main"
+                    type="button"
+                    onClick={() => {
+                      onSelectView("chat");
+                      onCloseConversationDropdown();
+                      onRestoreRecentConversation(item.id);
+                    }}
+                  >
+                    <span className="sidebar-conversation-card-text">
+                      {createCompactSidebarText(item.title, SIDEBAR_CARD_TITLE_LIMIT)}
+                      {" · "}
+                      {createCompactSidebarText(item.summary, SIDEBAR_CARD_SUMMARY_LIMIT)}
+                    </span>
+                  </button>
+                  <button
+                    aria-label={`删除会话：${item.title}`}
+                    className="sidebar-conversation-card-delete"
+                    type="button"
+                    onClick={() => onDeleteRecentConversation(item.id)}
+                  >
+                    <Minus aria-hidden="true" size={14} />
+                  </button>
+                </article>
+              ))}
+              {visibleRecentConversations.length === 0 ? (
+                <p className="sidebar-conversation-empty">
+                  {isConversationSearchOpen ? "没有匹配的历史会话。" : "还没有可显示的历史会话。"}
+                </p>
+              ) : null}
+            </div>
+            {shouldShowToggle ? (
+              <button
+                aria-expanded={isConversationClusterExpanded}
+                aria-label={isConversationClusterExpanded ? "收起最近会话" : "展开最近会话"}
+                className="sidebar-conversation-toggle"
+                type="button"
+                onClick={onToggleConversationCluster}
+              >
+                <ToggleIcon aria-hidden="true" size={14} />
+                {isConversationClusterExpanded ? "收起" : "展开"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
       <nav className="sidebar-nav" aria-label="功能导航">
         {navItems.map((item) => {
           const Icon = item.icon;

@@ -67,6 +67,8 @@ export function searchWebKnowledge(query: string, record = readWebKnowledgeRecor
   return {
     query,
     summary: `Web local knowledge search found ${items.length} matching passages across ${activeLibrary.importedFiles.length} indexed documents.`,
+    provider: "keyword-fallback",
+    fallback_reason: "Web MVP local knowledge search uses deterministic keyword retrieval until Ollama embedding is connected.",
     match_count: items.length,
     indexed_document_count: activeLibrary.importedFiles.length,
     items

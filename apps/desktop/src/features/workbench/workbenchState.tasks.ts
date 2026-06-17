@@ -27,7 +27,9 @@ function createDefaultTaskPreview(message: string): string {
 }
 
 function isLocalModelGenerationTaskKind(executionKind: string | undefined): boolean {
-  return executionKind === "local-model-chat" || executionKind === "npc-config-write";
+  return executionKind === "local-model-chat"
+    || executionKind === "npc-config-write"
+    || executionKind === "skills-local-ollama-description";
 }
 
 export function createUserTaskSubmittedState(

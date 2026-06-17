@@ -15,7 +15,7 @@ const CAPABILITY_ENHANCEMENTS: Record<OpenClawCapabilityOverview["capability_id"
   rag: {
     sampleItems: ["web-history-mvp.md", "npc-notes.txt"],
     nextStep: "下一步优先补结果筛选、片段展开和更长文档解析。",
-    contextLine: "本地上下文：网页端已支持 md/txt 导入、保留和检索。"
+    contextLine: "本地知识库：网页端已支持 md/txt 导入和检索。"
   },
   skills: {
     sampleItems: ["coding-agent", "docs-helper"],

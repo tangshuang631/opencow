@@ -12,6 +12,8 @@
     "build": "npm --workspaces --if-present run build",
     "test": "npm --workspaces --if-present run test",
     "test:unit": "npm --workspaces --if-present run test:unit",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "graphify": "node scripts/graphify-run.mjs",
     "verify:all": "powershell -ExecutionPolicy Bypass -File scripts/verify-all.ps1",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:health": "node scripts/check-health.mjs"

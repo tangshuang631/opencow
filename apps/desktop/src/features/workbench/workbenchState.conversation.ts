@@ -124,15 +124,25 @@ export function deleteRecentConversationState(
     return state;
   }
 
+  const nextRecentConversations = state.history.recentConversations.filter((item) => item.id !== conversationId);
+  const deletedCurrentConversation = state.conversation.entries === record.entries;
+  const nextConversationEntries = deletedCurrentConversation
+    ? nextRecentConversations[0]?.entries ?? []
+    : state.conversation.entries;
+  const nextLastNonEmptyConversationEntries =
+    state.history.lastNonEmptyConversationEntries === record.entries
+      ? nextConversationEntries
+      : state.history.lastNonEmptyConversationEntries;
+
   return {
     ...state,
+    conversation: {
+      entries: nextConversationEntries
+    },
     history: {
       ...state.history,
-      recentConversations: state.history.recentConversations.filter((item) => item.id !== conversationId),
-      lastNonEmptyConversationEntries:
-        state.history.lastNonEmptyConversationEntries === record.entries
-          ? []
-          : state.history.lastNonEmptyConversationEntries
+      recentConversations: nextRecentConversations,
+      lastNonEmptyConversationEntries: nextLastNonEmptyConversationEntries
     },
     audit: {
       summary: "已删除最近会话",
@@ -156,7 +166,7 @@ function createNextRecentConversations(
   const latestUserEntry = latestFirstEntries.find((entry) => entry.kind === "user");
   const latestResultEntry = latestFirstEntries.find((entry) => entry.kind !== "user");
   const title = latestUserEntry?.summary.trim() || latestResultEntry?.title.trim() || "未命名会话";
-  const summary = latestResultEntry?.summary.trim() || latestUserEntry?.summary.trim() || "保留的最近会话";
+  const summary = latestResultEntry?.summary.trim() || latestUserEntry?.summary.trim() || "未命名会话";
   const nextRecord = {
     id: `recent-conversation-${state.storage.sessionCount}`,
     title,

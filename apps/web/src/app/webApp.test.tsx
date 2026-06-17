@@ -2,8 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebApp } from "./WebApp";
 
-const { loadOllamaOverviewMock } = vi.hoisted(() => ({
-  loadOllamaOverviewMock: vi.fn()
+const { loadOllamaOverviewMock, chatWithOllamaModelMock } = vi.hoisted(() => ({
+  loadOllamaOverviewMock: vi.fn(),
+  chatWithOllamaModelMock: vi.fn()
 }));
 const { loadOpenClawCapabilityOverviewMock } = vi.hoisted(() => ({
   loadOpenClawCapabilityOverviewMock: vi.fn()
@@ -28,7 +29,8 @@ vi.mock("../../../desktop/src/features/ollama/ollamaService", async () => {
 
   return {
     ...actual,
-    loadOllamaOverview: loadOllamaOverviewMock
+    loadOllamaOverview: loadOllamaOverviewMock,
+    chatWithOllamaModel: chatWithOllamaModelMock
   };
 });
 
@@ -47,6 +49,12 @@ describe("WebApp", () => {
     fetchMock.mockReset();
     loadOpenClawCapabilityOverviewMock.mockReset();
     loadOllamaOverviewMock.mockReset();
+    chatWithOllamaModelMock.mockReset();
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen2.5-coder:7b",
+      message: "工厂模式是一种创建型设计模式，用工厂方法封装对象创建逻辑，让调用方不直接依赖具体类。",
+      doneReason: "stop"
+    });
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -118,7 +126,8 @@ describe("WebApp", () => {
     const firstConversation = screen.getByRole("region", { name: "会话" });
     await waitFor(() => {
       expect(within(firstConversation).getAllByText("请在网页端保留这段历史").length).toBeGreaterThan(0);
-      expect(within(firstConversation).getByText("已为网页端保留这段上下文：请在网页端保留这段历史")).toBeInTheDocument();
+      expect(within(firstConversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
+      expect(within(firstConversation).queryByText(/Web MVP keeps browser history/)).not.toBeInTheDocument();
     });
 
     firstRender.unmount();
@@ -128,7 +137,7 @@ describe("WebApp", () => {
     const restoredConversation = await screen.findByRole("region", { name: "会话" });
     await waitFor(() => {
       expect(within(restoredConversation).getAllByText("请在网页端保留这段历史").length).toBeGreaterThan(0);
-      expect(within(restoredConversation).getByText("已为网页端保留这段上下文：请在网页端保留这段历史")).toBeInTheDocument();
+      expect(within(restoredConversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
     });
   });
 
@@ -144,20 +153,65 @@ describe("WebApp", () => {
       expect(screen.getAllByText("把这段网页端对话放进最近会话").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
 
-    const conversation = screen.getByRole("region", { name: "会话" });
+    const blankConversation = screen.getByRole("region", { name: "会话" });
+    expect(within(blankConversation).queryByText("把这段网页端对话放进最近会话")).not.toBeInTheDocument();
+    expect(within(blankConversation).queryByText(/工厂模式是一种创建型设计模式/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+
     await waitFor(() => {
-      expect(within(conversation).getByText("最近会话")).toBeInTheDocument();
-      expect(within(conversation).getByText("把这段网页端对话放进最近会话")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "打开会话：把这段网页端对话放进最近会话" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "恢复这段会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开会话：把这段网页端对话放进最近会话" }));
+
+    const conversation = screen.getByRole("region", { name: "会话" });
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("把这段网页端对话放进最近会话").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("已为网页端保留这段上下文：把这段网页端对话放进最近会话")).toBeInTheDocument();
+      expect(within(conversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
     });
+  });
+
+  it("uses Ollama for ordinary web chat instead of the local MVP placeholder", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "工厂模式是什么" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+      expect(within(conversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
+    });
+
+    expect(within(conversation).queryByText(/已为网页端保留这段上下文/)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(/Web MVP keeps browser history/)).not.toBeInTheDocument();
+  });
+
+  it("does not render fallback copy as a fake model answer when Ollama chat fails", async () => {
+    chatWithOllamaModelMock.mockRejectedValueOnce(new Error("ollama unavailable"));
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "工厂模式是什么" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地模型回复失败")).toBeInTheDocument();
+    });
+
+    expect(within(conversation).queryByText("本地模型答复")).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(/本地模型暂时没有返回完整结果/)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(/已为网页端保留这段上下文/)).not.toBeInTheDocument();
   });
 
   it("removes recent conversations permanently after manual deletion", async () => {
@@ -172,12 +226,12 @@ describe("WebApp", () => {
       expect(screen.getAllByText("这段最近会话稍后会被删除").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
-    fireEvent.click(screen.getByRole("button", { name: "最近会话" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除这段会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除会话：这段最近会话稍后会被删除" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "恢复这段会话" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "打开会话：这段最近会话稍后会被删除" })).not.toBeInTheDocument();
       expect(screen.queryByText("这段最近会话稍后会被删除")).not.toBeInTheDocument();
     });
   });
@@ -324,8 +378,7 @@ describe("WebApp", () => {
 
     await waitFor(() => {
       expect(within(conversation).getByText("本地模型答复")).toBeInTheDocument();
-      expect(within(conversation).getByText(/结论：错误项是 A。/)).toBeInTheDocument();
-      expect(within(conversation).getByText(/理由：m2 中对 x 的一次引用会绑定到 m2 自己定义的 x。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
       expect(within(conversation).getByText("检索命中")).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：npc-notes.txt")).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
@@ -333,8 +386,34 @@ describe("WebApp", () => {
     });
 
     expect(within(inspector).queryByText("输出")).not.toBeInTheDocument();
-    expect(within(inspector).queryByText(/结论：错误项是 A。/)).not.toBeInTheDocument();
+    expect(within(inspector).queryByText(/工厂模式是一种创建型设计模式/)).not.toBeInTheDocument();
     expect(within(inspector).queryByText(longInput)).not.toBeInTheDocument();
+    expect(within(conversation).queryByText(longInput)).not.toBeInTheDocument();
+    expect(within(conversation).getByRole("button", { name: "展开完整输入" })).toBeInTheDocument();
+  });
+
+  it("uses Ollama for long local-history prompts instead of a canned fallback", async () => {
+    render(<WebApp />);
+
+    const longInput = Array.from(
+      { length: 16 },
+      (_, index) => `第${index + 1}段：请继续保留网页端最近会话，直到用户手动删除，不要自动清空。`
+    ).join(" ");
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: longInput }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("本地模型答复")).toBeInTheDocument();
+      expect(within(conversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
+    });
+
+    expect(chatWithOllamaModelMock).toHaveBeenCalled();
+    expect(within(conversation).queryByText(/结论：网页端最近会话应该持续保留/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(longInput)).not.toBeInTheDocument();
     expect(within(conversation).getByRole("button", { name: "展开完整输入" })).toBeInTheDocument();
   });
@@ -836,6 +915,26 @@ describe("WebApp", () => {
     });
   });
 
+  it("shows readonly NPC default template preview on web without using ordinary chat", async () => {
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "先给我课程助手 NPC 的默认模板" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(conversation).getByText("NPC 默认模板预览")).toBeInTheDocument();
+      expect(within(conversation).getByText(/名称：课程助手。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/系统提示词：/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/默认模型：跟随当前已选 Ollama 模型。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/保存前仍需 workspace-write 权限。/)).toBeInTheDocument();
+    });
+
+    expect(chatWithOllamaModelMock).not.toHaveBeenCalled();
+  });
+
   it("shows readonly npc shell plan preview on web", async () => {
     render(<WebApp />);
 
@@ -866,7 +965,7 @@ describe("WebApp", () => {
 
     const conversation = screen.getByRole("region", { name: "会话" });
     await waitFor(() => {
-      expect(within(conversation).getByText(/推荐 Skill：shell-automation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/推荐 Skill：docs-helper。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/主要来源：04-permission-safety-shell\.md、OPENCOW_CORE_RULES\.md。/)).toBeInTheDocument();
       expect(within(conversation).getByText(/命令预览：Remove-Item -Recurse -Force temp-output/)).toBeInTheDocument();
       expect(within(conversation).getByText(/工作区根目录：E:\\2026\\opencow。/)).toBeInTheDocument();
@@ -1094,6 +1193,35 @@ describe("WebApp", () => {
         within(conversation).getByText(/检索问题：search local knowledge in web-history-mvp\.md for browser history。/)
       ).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
+    });
+  });
+
+  it("supports Chinese enabled-skill recommendation and skill-assisted RAG lookup on web", async () => {
+    render(<WebApp />);
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "推荐一个已启用 skill 来处理 shell 自动化" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("已启用 Skill 推荐")).toBeInTheDocument();
+      expect(within(conversation).getByText(/推荐 Skill：shell-automation。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/注册表：\.opencow\/skills\/enabled-skills\.json。/)).toBeInTheDocument();
+    });
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "用已启用 docs skill 搜索本地规则里的 shell permission guidance" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("Skill 辅助本地 RAG 检索")).toBeInTheDocument();
+      expect(within(conversation).getByText(/推荐 Skill：docs-helper。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/找到 2 条匹配片段，已索引 7 个文档。/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/主要来源：04-permission-safety-shell\.md、OPENCOW_CORE_RULES\.md。/)).toBeInTheDocument();
     });
   });
 });

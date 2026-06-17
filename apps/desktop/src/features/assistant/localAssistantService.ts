@@ -81,6 +81,8 @@ export type LocalMcpPluginScanItem = {
 export type LocalKnowledgeSearchResult = {
   query: string;
   summary: string;
+  provider?: "ollama-embedding" | "keyword-fallback";
+  fallback_reason?: string | null;
   match_count: number;
   indexed_document_count: number;
   items: Array<{
@@ -1118,6 +1120,8 @@ function createBrowserPreviewLocalKnowledgeSearch(query: string): LocalKnowledge
   return {
     query,
     summary: "Browser preview mode returned 2 matching passages across 7 indexed documents.",
+    provider: "keyword-fallback",
+    fallback_reason: "Browser preview mode does not start Ollama embedding, so deterministic keyword search is used.",
     match_count: 2,
     indexed_document_count: 7,
     items: [
@@ -1266,9 +1270,25 @@ function createBrowserPreviewEnabledLocalSkills(): EnabledLocalSkillsResult {
 
 function createBrowserPreviewEnabledLocalSkillMatch(query: string): EnabledLocalSkillMatchResult {
   const normalizedQuery = query.toLowerCase();
+  const prefersDocsHelper =
+    normalizedQuery.includes("docs")
+    || normalizedQuery.includes("rules")
+    || normalizedQuery.includes("knowledge")
+    || normalizedQuery.includes("rag")
+    || normalizedQuery.includes("文档")
+    || normalizedQuery.includes("规则")
+    || normalizedQuery.includes("知识库");
   const prefersShellAutomation =
     normalizedQuery.includes("shell") || normalizedQuery.includes("automation");
-  const recommendedSkill = prefersShellAutomation
+  const recommendedSkill = prefersDocsHelper
+    ? {
+        name: "docs-helper",
+        path: "skills/docs-helper/SKILL.md",
+        source: "workspace-skill",
+        description: "Search local docs and rules before action.",
+        content_preview: "Use this skill when the task needs local docs, rules, and RAG-style guidance."
+      }
+    : prefersShellAutomation
     ? {
         name: "shell-automation",
         path: "skills/shell-automation/SKILL.md",

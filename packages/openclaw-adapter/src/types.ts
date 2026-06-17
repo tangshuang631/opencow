@@ -137,6 +137,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "skills-local-ollama-description";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "skills-local-install";
       readonly title: string;
       readonly summary: string;
@@ -271,6 +278,13 @@ export type LocalAssistantTaskPlan =
     }
   | {
       readonly kind: "npc-local-collaboration-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "npc-template-preview";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -465,6 +479,7 @@ export type LocalAssistantTaskPlan =
         | "capability-skills-overview"
         | "skills-local-scan"
         | "skills-local-inspect"
+        | "skills-local-ollama-description"
         | "skills-local-install"
         | "skills-local-enable"
         | "skills-local-disable"
@@ -491,6 +506,7 @@ export type LocalAssistantTaskPlan =
         | "skills-local-enabled-rag-shell-create-temp-output"
         | "skills-local-enabled-rag-shell-remove-temp-output"
         | "npc-local-collaboration-preview"
+        | "npc-template-preview"
         | "npc-local-project-showcase-preview"
         | "npc-local-shell-plan-preview"
         | "capability-npc-overview"

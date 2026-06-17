@@ -348,6 +348,8 @@ pub struct LocalMcpPluginStartResult {
 pub struct LocalKnowledgeSearchResult {
     query: String,
     summary: String,
+    provider: String,
+    fallback_reason: Option<String>,
     match_count: usize,
     indexed_document_count: usize,
     items: Vec<LocalKnowledgeSearchItem>,
@@ -1241,6 +1243,10 @@ pub fn local_knowledge_search(query: String) -> Result<LocalKnowledgeSearchResul
     Ok(LocalKnowledgeSearchResult {
         query,
         summary,
+        provider: "keyword-fallback".to_string(),
+        fallback_reason: Some(
+            "Ollama embedding is not available in the current local index path, so deterministic keyword retrieval was used.".to_string(),
+        ),
         match_count,
         indexed_document_count,
         items,

@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const requiredPaths = [
   "OPENCOW_CORE_RULES.md",
@@ -30,22 +31,71 @@ const requiredPaths = [
   "vendor"
 ];
 
-const missing = requiredPaths.filter((path) => !existsSync(path));
+const generatedSourcePairs = [
+  {
+    source: "packages/openclaw-adapter/src/localAssistantPlan.ts",
+    generated: "packages/openclaw-adapter/dist/localAssistantPlan.js"
+  },
+  {
+    source: "packages/openclaw-adapter/src/types.ts",
+    generated: "packages/openclaw-adapter/dist/types.d.ts"
+  },
+  {
+    source: "packages/openclaw-adapter/src/browser.ts",
+    generated: "packages/openclaw-adapter/dist/browser.js"
+  }
+];
 
-if (missing.length > 0) {
-  throw new Error(`Missing required paths: ${missing.join(", ")}`);
+export function findStaleGeneratedFiles(pairs, statFile = statSync) {
+  return pairs.filter(({ source, generated }) => {
+    const sourceMtime = statFile(source).mtimeMs;
+    const generatedMtime = statFile(generated).mtimeMs;
+
+    return generatedMtime + 1000 < sourceMtime;
+  });
 }
 
-const launcher = readFileSync("start-opencow-test.bat", "utf8");
-const checkModeExitIndex = launcher.indexOf('if /I "%MODE%"=="check"');
-const pauseIndex = launcher.indexOf("pause >nul");
+export function formatStaleGeneratedFilesError(staleGeneratedFiles) {
+  const details = staleGeneratedFiles.map(({ source, generated }) => `${generated} is older than ${source}`);
 
-if (checkModeExitIndex === -1) {
-  throw new Error("Desktop launcher check mode must exit without waiting for user input on failure");
+  return [
+    "OpenClaw adapter dist is stale.",
+    ...details,
+    "Run: npm --workspace packages/openclaw-adapter run build"
+  ].join(" ");
 }
 
-if (pauseIndex === -1 || checkModeExitIndex > pauseIndex) {
-  throw new Error("Desktop launcher pause must remain behind the check-mode failure exit");
+export function runHealthCheck({
+  existsPath = existsSync,
+  readText = readFileSync,
+  statFile = statSync
+} = {}) {
+  const missing = requiredPaths.filter((path) => !existsPath(path));
+
+  if (missing.length > 0) {
+    throw new Error(`Missing required paths: ${missing.join(", ")}`);
+  }
+
+  const launcher = readText("start-opencow-test.bat", "utf8");
+  const checkModeExitIndex = launcher.indexOf('if /I "%MODE%"=="check"');
+  const pauseIndex = launcher.indexOf("pause >nul");
+
+  if (checkModeExitIndex === -1) {
+    throw new Error("Desktop launcher check mode must exit without waiting for user input on failure");
+  }
+
+  if (pauseIndex === -1 || checkModeExitIndex > pauseIndex) {
+    throw new Error("Desktop launcher pause must remain behind the check-mode failure exit");
+  }
+
+  const staleGeneratedFiles = findStaleGeneratedFiles(generatedSourcePairs, statFile);
+
+  if (staleGeneratedFiles.length > 0) {
+    throw new Error(formatStaleGeneratedFilesError(staleGeneratedFiles));
+  }
 }
 
-console.log("health check passed");
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  runHealthCheck();
+  console.log("health check passed");
+}

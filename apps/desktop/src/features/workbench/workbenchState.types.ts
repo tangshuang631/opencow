@@ -99,6 +99,7 @@ export type LocalTaskExecutionKind =
   | "capability-skills-overview"
   | "skills-local-scan"
   | "skills-local-inspect"
+  | "skills-local-ollama-description"
   | "skills-local-install"
   | "skills-local-enable"
   | "skills-local-disable"

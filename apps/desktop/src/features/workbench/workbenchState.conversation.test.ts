@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  deleteRecentConversationState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createNewConversationState,
@@ -169,5 +170,52 @@ describe("createNewConversationState", () => {
 
     expect(next.history.recentConversations[0]?.title).toContain("新的最近会话应该排在最前面");
     expect(next.history.recentConversations[1]?.title).toBe("更早的最近会话");
+  });
+
+  it("switches away from the current restored conversation when that recent conversation is deleted", () => {
+    const currentEntries = [
+      {
+        id: "current-recent-entry",
+        kind: "user" as const,
+        title: "用户",
+        summary: "当前查看的是最近会话 A"
+      }
+    ];
+    const fallbackEntries = [
+      {
+        id: "fallback-entry",
+        kind: "user" as const,
+        title: "用户",
+        summary: "删除 A 后应该切到这里"
+      }
+    ];
+    const state = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        entries: currentEntries
+      },
+      history: {
+        lastNonEmptyConversationEntries: currentEntries,
+        recentConversations: [
+          {
+            id: "recent-a",
+            title: "会话 A",
+            summary: "当前查看的是最近会话 A",
+            entries: currentEntries
+          },
+          {
+            id: "recent-b",
+            title: "会话 B",
+            summary: "删除 A 后应该切到这里",
+            entries: fallbackEntries
+          }
+        ]
+      }
+    };
+
+    const next = deleteRecentConversationState(state, "recent-a");
+
+    expect(next.conversation.entries[0]?.summary).toBe("删除 A 后应该切到这里");
+    expect(next.history.recentConversations.map((item) => item.id)).toEqual(["recent-b"]);
   });
 });

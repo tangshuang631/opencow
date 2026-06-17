@@ -57,4 +57,34 @@ describe("assistantTaskService enabled local skills match", () => {
     expect(result.resultSummary).toContain(".opencow/skills/enabled-skills.json");
     expect(result.resultSummary).toContain("内容预览：Use this skill when the task needs shell automation");
   });
+
+  it("executes a docs-focused enabled skill match through the desktop service", async () => {
+    matchEnabledLocalSkillsMock.mockResolvedValueOnce({
+      query: "推荐一个已启用 docs skill 来搜索本地规则",
+      summary: "Enabled local skill matching found 1 recommended skill across 2 enabled entries.",
+      registry_path: ".opencow/skills/enabled-skills.json",
+      enabled_skill_count: 2,
+      match_count: 1,
+      items: [
+        {
+          name: "docs-helper",
+          path: "skills/docs-helper/SKILL.md",
+          source: "workspace-skill",
+          description: "Search local docs and rules before action.",
+          content_preview: "Use this skill when the task needs local docs, rules, and RAG-style guidance."
+        }
+      ]
+    });
+
+    const result = await executeAssistantTask({
+      kind: "skills-local-enabled-match",
+      title: "Match enabled local skills",
+      summary: "推荐一个已启用 docs skill 来搜索本地规则",
+      auditSummary: "Local assistant planned an enabled local skills match task.",
+      auditDetail: "Readonly enabled local skills match task."
+    } as const);
+
+    expect(result.resultSummary).toContain("推荐 Skill：docs-helper");
+    expect(result.resultSummary).toContain("内容预览：Use this skill when the task needs local docs, rules, and RAG-style guidance.");
+  });
 });

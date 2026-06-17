@@ -6,6 +6,7 @@ import {
   loadPersistedWorkbenchState,
   persistWorkbenchState
 } from "./workbenchState.persistence";
+import { createNewConversationState } from "./workbenchState.conversation";
 import { createUserTaskSubmittedState } from "./workbenchState.tasks";
 
 const tauriInternals = "__TAURI_INTERNALS__" as const;
@@ -126,26 +127,18 @@ describe("workbenchState.persistence", () => {
     expect(window.localStorage.getItem("opencow.desktop.workbench-state.v1")).toBeNull();
   });
 
-  it("restores the most recent non-empty conversation after a blank new-conversation state was persisted", async () => {
+  it("keeps a persisted blank new conversation blank while preserving history for manual restore", async () => {
     const populatedState = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "keep this history after a blank new conversation"
     });
 
     await persistWorkbenchState(populatedState);
 
-    await persistWorkbenchState({
-      ...populatedState,
-      conversation: {
-        entries: []
-      },
-      history: {
-        lastNonEmptyConversationEntries: populatedState.conversation.entries
-      }
-    });
+    await persistWorkbenchState(createNewConversationState(populatedState));
 
     const restored = await loadPersistedWorkbenchState();
 
-    expect(restored.conversation.entries.some((entry) => entry.summary === "keep this history after a blank new conversation")).toBe(true);
+    expect(restored.conversation.entries).toHaveLength(0);
     expect(restored.history.lastNonEmptyConversationEntries.some(
       (entry) => entry.summary === "keep this history after a blank new conversation"
     )).toBe(true);
