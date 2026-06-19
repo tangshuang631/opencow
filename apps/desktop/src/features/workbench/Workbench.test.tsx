@@ -13,6 +13,159 @@ import {
   requestPermissionModeChangeState
 } from "./workbenchState";
 
+const mockLocalAssistantService = vi.hoisted(() => ({
+  scanLocalSkills: vi.fn(async () => ({
+    summary: "扫描到 2 个 Skills",
+    total_count: 2,
+    scanned_root_count: 1,
+    items: [
+      {
+        name: "coding-agent",
+        path: "skills/coding-agent/SKILL.md",
+        source: "workspace-skill",
+        description: "代码代理",
+        enabled: true
+      },
+      {
+        name: "docs-helper",
+        path: "skills/docs-helper/SKILL.md",
+        source: "workspace-skill",
+        description: "文档助手",
+        enabled: false
+      }
+    ]
+  })),
+  listEnabledLocalSkills: vi.fn(async () => ({
+    summary: "已启用 1 个 Skill",
+    total_count: 1,
+    registry_path: ".opencow/skills/enabled-skills.json",
+    items: [
+      {
+        name: "coding-agent",
+        path: "skills/coding-agent/SKILL.md",
+        source: "workspace-skill",
+        description: "代码代理"
+      }
+    ]
+  })),
+  matchEnabledLocalSkills: vi.fn(async (query: string) => ({
+    query,
+    summary: "匹配到 1 个推荐 Skill",
+    registry_path: ".opencow/skills/enabled-skills.json",
+    enabled_skill_count: 1,
+    match_count: 1,
+    items: [
+      {
+        name: "coding-agent",
+        path: "skills/coding-agent/SKILL.md",
+        source: "workspace-skill",
+        description: "代码代理",
+        content_preview: "适合当前编码任务"
+      }
+    ]
+  })),
+  enableLocalSkill: vi.fn(async () => ({
+    query: "coding-agent",
+    enabled_skill_name: "coding-agent",
+    registry_path: ".opencow/skills/enabled-skills.json",
+    status: "enabled",
+    summary: "已启用 coding-agent"
+  })),
+  installLocalSkill: vi.fn(async () => ({
+    query: "coding-agent",
+    installed_skill_name: "coding-agent",
+    installed_skill_path: "skills/coding-agent/SKILL.md",
+    source_skill_path: "skills/coding-agent/SKILL.md",
+    status: "installed",
+    summary: "已安装 coding-agent"
+  })),
+  disableLocalSkill: vi.fn(async () => ({
+    query: "coding-agent",
+    disabled_skill_name: "coding-agent",
+    registry_path: ".opencow/skills/enabled-skills.json",
+    status: "disabled",
+    summary: "已禁用 coding-agent"
+  })),
+  scanLocalMcpPlugins: vi.fn(async () => ({
+    summary: "扫描到 1 个 MCP 插件",
+    total_count: 1,
+    scanned_root_count: 1,
+    items: [
+      {
+        id: "browser",
+        path: "plugins/browser/openclaw.plugin.json",
+        source: "workspace-plugin",
+        activation: "startup",
+        tool_count: 1,
+        skill_count: 1
+      }
+    ]
+  })),
+  inspectLocalMcpPlugin: vi.fn(async (query: string) => ({
+    query,
+    summary: "找到 1 个 MCP 插件详情",
+    match_count: 1,
+    scanned_root_count: 1,
+    items: [
+      {
+        id: "browser",
+        path: "plugins/browser/openclaw.plugin.json",
+        source: "workspace-plugin",
+        activation: "startup",
+        tool_count: 1,
+        skill_count: 1,
+        description: "浏览器插件",
+        tool_names: ["browser"],
+        skill_paths: ["./skills"]
+      }
+    ]
+  })),
+  previewLocalMcpPluginStart: vi.fn(async (query: string) => ({
+    query,
+    summary: "找到 1 个启动预览",
+    match_count: 1,
+    scanned_root_count: 1,
+    items: [
+      {
+        id: "browser",
+        path: "plugins/browser/openclaw.plugin.json",
+        source: "workspace-plugin",
+        activation: "startup",
+        startup_allowed: false,
+        command_preview: "当前桌面端尚未实现已验证的 MCP 插件启动器",
+        working_directory: "plugins/browser",
+        risk_summary: "仅预览，不启动进程",
+        requires_config: false,
+        config_hint: "无额外配置"
+      }
+    ]
+  })),
+  startLocalMcpPlugin: vi.fn(async (query: string) => ({
+    plugin_id: query,
+    command_label: "browser",
+    working_directory: "plugins/browser",
+    stdout_preview: "started",
+    line_count: 1,
+    summary: "已启动 browser"
+  })),
+  loadOpenClawCapabilityOverview: vi.fn(async () => ({
+    capability_id: "npc",
+    title: "NPC capability",
+    status: "ready-foundation",
+    required_package_count: 2,
+    available_package_count: 2,
+    available_packages: ["npc-core", "npc-shell"],
+    missing_packages: [],
+    summary: "NPC 本地能力基础可用"
+  })),
+  writeNpcConfig: vi.fn(async () => ({
+    npc_name: "opencow",
+    config_path: ".opencow/npc/config.json",
+    status: "saved",
+    summary: "NPC 配置已保存"
+  }))
+}));
+
 function createWorkbenchProps(
   state = createInitialWorkbenchState(),
   overrides: Partial<ComponentProps<typeof Workbench>> = {}
@@ -44,11 +197,33 @@ function createWorkbenchProps(
     onRestoreRecentConversation: noop,
     onDeleteRecentConversation: noop,
     onImportKnowledgeFile: noop,
+    onCreateKnowledgeLibrary: noop,
+    onSelectKnowledgeLibrary: noop,
     onRemoveKnowledgeFile: noop,
     onSubmitTask: noop,
     ...overrides
   };
 }
+
+vi.mock("../assistant/localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("../assistant/localAssistantService")>("../assistant/localAssistantService");
+
+  return {
+    ...actual,
+    scanLocalSkills: mockLocalAssistantService.scanLocalSkills,
+    listEnabledLocalSkills: mockLocalAssistantService.listEnabledLocalSkills,
+    matchEnabledLocalSkills: mockLocalAssistantService.matchEnabledLocalSkills,
+    enableLocalSkill: mockLocalAssistantService.enableLocalSkill,
+    installLocalSkill: mockLocalAssistantService.installLocalSkill,
+    disableLocalSkill: mockLocalAssistantService.disableLocalSkill,
+    scanLocalMcpPlugins: mockLocalAssistantService.scanLocalMcpPlugins,
+    inspectLocalMcpPlugin: mockLocalAssistantService.inspectLocalMcpPlugin,
+    previewLocalMcpPluginStart: mockLocalAssistantService.previewLocalMcpPluginStart,
+    startLocalMcpPlugin: mockLocalAssistantService.startLocalMcpPlugin,
+    loadOpenClawCapabilityOverview: mockLocalAssistantService.loadOpenClawCapabilityOverview,
+    writeNpcConfig: mockLocalAssistantService.writeNpcConfig
+  };
+});
 
 describe("Workbench", () => {
   it("anchors the left and right sidebars to the glass gradient visual layer", () => {
@@ -101,7 +276,7 @@ describe("Workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "知识库" }));
 
     expect(screen.getByRole("heading", { name: "知识库" })).toBeInTheDocument();
-    expect(screen.getByText("导入、索引和检索本地知识文件，优先保持工作区内可追踪、可恢复。")).toBeInTheDocument();
+    expect(screen.getByText("把文件先纳入共享文件库，再拖入当前知识库。NPC 在自己的配置页里选择要加载哪个知识库。")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
@@ -114,7 +289,7 @@ describe("Workbench", () => {
     expect(screen.queryByRole("heading", { name: "本地助手" })).not.toBeInTheDocument();
   });
 
-  it("shows imported and importable knowledge files in the knowledge workspace", () => {
+  it("shows imported and importable knowledge files as a compact library and file list", () => {
     const onImportKnowledgeFile = vi.fn();
     const onRemoveKnowledgeFile = vi.fn();
     const state = {
@@ -152,6 +327,7 @@ describe("Workbench", () => {
     const knowledgePanel = screen.getByLabelText("知识库");
 
     expect(within(knowledgePanel).getByText("已索引文件 2")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText(/文件先上传到文件库，再拖进某个知识库/)).toBeInTheDocument();
     expect(within(knowledgePanel).getByText("06-rag-skills-npc-mcp.md")).toBeInTheDocument();
     expect(within(knowledgePanel).getByText("docs/v1.0/06-rag-skills-npc-mcp.md")).toBeInTheDocument();
     expect(within(knowledgePanel).getByText("local-rag-rules.txt")).toBeInTheDocument();
@@ -159,10 +335,242 @@ describe("Workbench", () => {
     expect(within(knowledgePanel).getByText("faq.txt")).toBeInTheDocument();
 
     fireEvent.click(within(knowledgePanel).getByRole("button", { name: "移出知识库：06-rag-skills-npc-mcp.md" }));
-    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "加入知识库：faq.txt" }));
 
     expect(onRemoveKnowledgeFile).toHaveBeenCalledWith("docs/v1.0/06-rag-skills-npc-mcp.md");
-    expect(onImportKnowledgeFile).toHaveBeenCalledWith("notes/faq.txt");
+    expect(onImportKnowledgeFile).not.toHaveBeenCalled();
+  });
+
+  it("renders a real Skills page with enabled list, scanned list, and match results", async () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+
+    const skillsPanel = screen.getByLabelText("Skills");
+    expect(await within(skillsPanel).findByText("已启用 1")).toBeInTheDocument();
+    expect(await within(skillsPanel).findByText("docs-helper")).toBeInTheDocument();
+
+    fireEvent.change(within(skillsPanel).getByRole("textbox", { name: "Skill 匹配查询" }), {
+      target: { value: "帮我修代码" }
+    });
+    fireEvent.click(within(skillsPanel).getByRole("button", { name: "匹配已启用 Skills" }));
+
+    expect(await within(skillsPanel).findByText("适合当前编码任务")).toBeInTheDocument();
+  });
+
+  it("runs skill enable install and disable actions from the Skills page", async () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+
+    const skillsPanel = screen.getByLabelText("Skills");
+    fireEvent.change(within(skillsPanel).getByRole("textbox", { name: "Skill 操作查询" }), {
+      target: { value: "coding-agent" }
+    });
+
+    fireEvent.click(within(skillsPanel).getByRole("button", { name: "启用" }));
+    fireEvent.click(within(skillsPanel).getByRole("button", { name: "安装" }));
+    fireEvent.click(within(skillsPanel).getByRole("button", { name: "禁用" }));
+
+    expect(mockLocalAssistantService.enableLocalSkill).toHaveBeenCalledWith("coding-agent");
+    expect(mockLocalAssistantService.installLocalSkill).toHaveBeenCalledWith("coding-agent");
+    expect(mockLocalAssistantService.disableLocalSkill).toHaveBeenCalledWith("coding-agent");
+  });
+
+  it("renders a real MCP page with scan result, detail, and startup preview", async () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+
+    const mcpPanel = screen.getByLabelText("MCP");
+    expect(await within(mcpPanel).findByText("扫描到 1 个插件入口")).toBeInTheDocument();
+    expect(within(mcpPanel).getByText("browser")).toBeInTheDocument();
+
+    fireEvent.change(within(mcpPanel).getByRole("textbox", { name: "MCP 插件查询" }), {
+      target: { value: "browser" }
+    });
+    fireEvent.click(within(mcpPanel).getByRole("button", { name: "查看详情" }));
+
+    expect(await within(mcpPanel).findByText("browser · 详情")).toBeInTheDocument();
+    expect(await within(mcpPanel).findByText(/当前桌面端尚未实现已验证的 MCP 插件启动器/)).toBeInTheDocument();
+  });
+
+  it("runs MCP start from the MCP page", async () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "MCP" }));
+
+    const mcpPanel = screen.getByLabelText("MCP");
+    fireEvent.change(within(mcpPanel).getByRole("textbox", { name: "MCP 插件查询" }), {
+      target: { value: "browser" }
+    });
+    fireEvent.click(within(mcpPanel).getByRole("button", { name: "启动插件" }));
+
+    expect(mockLocalAssistantService.startLocalMcpPlugin).toHaveBeenCalledWith("browser");
+  });
+
+  it("renders a real NPC page with capability overview, prompt draft, and knowledge binding", async () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      settings: {
+        ...createInitialWorkbenchState().settings,
+        npc: {
+          localModel: "qwen3.5:9b"
+        }
+      }
+    };
+
+    render(<Workbench
+      {...createWorkbenchProps(state, {
+        knowledgeLibraryLabel: "规则库",
+        knowledgeLibraries: [
+          { id: "default-library", label: "默认知识库", active: false },
+          { id: "rules-library", label: "规则库", active: true }
+        ]
+      })}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+
+    const npcPanel = screen.getByLabelText("NPC");
+    expect(await within(npcPanel).findByText("NPC 本地能力基础可用")).toBeInTheDocument();
+    expect(within(npcPanel).getByText("当前 NPC 模型: qwen3.5:9b")).toBeInTheDocument();
+    expect(within(npcPanel).getByText("当前知识库: 规则库")).toBeInTheDocument();
+    expect(within(npcPanel).getByText("在这里选择 NPC 要加载的知识库。")).toBeInTheDocument();
+
+    fireEvent.change(within(npcPanel).getByRole("textbox", { name: "NPC 提示词草案" }), {
+      target: { value: "你是一个代码审计 NPC" }
+    });
+
+    expect(within(npcPanel).getByRole("textbox", { name: "NPC 提示词草案" })).toHaveValue("你是一个代码审计 NPC");
+  });
+
+  it("saves NPC config from the NPC page", async () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+
+    const npcPanel = screen.getByLabelText("NPC");
+    fireEvent.change(within(npcPanel).getByRole("textbox", { name: "NPC 提示词草案" }), {
+      target: { value: "你是一个代码审计 NPC" }
+    });
+    fireEvent.click(within(npcPanel).getByRole("button", { name: "保存 NPC 配置" }));
+
+    expect(mockLocalAssistantService.writeNpcConfig).toHaveBeenCalled();
+  });
+
+  it("filters audit events from the audit page", async () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      audit: {
+        summary: "最近有 2 条审计事件",
+        lastEvent: {
+          timestamp: "2026-06-18T10:00:00.000Z",
+          module: "skills",
+          source: "desktop",
+          detail: "启用 coding-agent"
+        }
+      }
+    };
+
+    render(<Workbench {...createWorkbenchProps(state)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "审计" }));
+
+    const auditPanel = screen.getByLabelText("审计");
+    fireEvent.change(within(auditPanel).getByRole("textbox", { name: "审计筛选" }), {
+      target: { value: "skills" }
+    });
+
+    expect(within(auditPanel).getByText("最近有 2 条审计事件")).toBeInTheDocument();
+    expect(within(auditPanel).getByText("启用 coding-agent")).toBeInTheDocument();
+  });
+
+  it("supports named knowledge libraries in the desktop knowledge workspace", () => {
+    const onCreateKnowledgeLibrary = vi.fn();
+    const onSelectKnowledgeLibrary = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      knowledge: {
+        importedFiles: [],
+        availableFiles: [],
+        activeLibraryId: "rules-library",
+        activeLibraryLabel: "规则库",
+        libraries: [
+          {
+            id: "default-library",
+            label: "默认知识库"
+          },
+          {
+            id: "rules-library",
+            label: "规则库"
+          }
+        ]
+      }
+    };
+
+    render(<Workbench
+      {...createWorkbenchProps(state, {
+        knowledgeLibraryLabel: "规则库",
+        knowledgeLibraries: [
+          {
+            id: "default-library",
+            label: "默认知识库",
+            description: "通用知识入口",
+            active: false
+          },
+          {
+            id: "rules-library",
+            label: "规则库",
+            description: "整理产品需求、PRD 和交互说明。",
+            active: true
+          }
+        ],
+        onCreateKnowledgeLibrary,
+        onSelectKnowledgeLibrary
+      })}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    expect(within(knowledgePanel).getByLabelText("知识库列表")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByLabelText("当前知识库工作区")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByLabelText("文件库")).toBeInTheDocument();
+    expect(within(knowledgePanel).getByRole("button", { name: "创建知识库" })).toBeInTheDocument();
+    expect(within(knowledgePanel).getByRole("button", { name: "切换到知识库：默认知识库" })).toBeInTheDocument();
+    expect(within(knowledgePanel).getByRole("button", { name: "当前知识库：规则库" })).toBeInTheDocument();
+    expect(within(knowledgePanel).getByText("把文件拖到这里加入当前知识库")).toBeInTheDocument();
+    expect(
+      within(knowledgePanel).getByText(/可以从右侧文件库拖入，也可以直接拖入 Finder 文件。文件先上传到文件库，再拖进某个知识库。文件库对所有知识库互通。/)
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "切换到知识库：默认知识库" }));
+    expect(onSelectKnowledgeLibrary).toHaveBeenCalledWith("default-library");
+
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "创建知识库" }));
+    expect(within(knowledgePanel).getByRole("dialog", { name: "新建知识库" })).toBeInTheDocument();
+
+    fireEvent.change(within(knowledgePanel).getByRole("textbox", { name: "知识库名称" }), {
+      target: { value: "产品文档库" }
+    });
+    fireEvent.change(within(knowledgePanel).getByRole("textbox", { name: "知识库简介" }), {
+      target: { value: "整理产品需求、PRD 和交互说明。" }
+    });
+    fireEvent.click(within(knowledgePanel).getByRole("button", { name: "确认创建知识库" }));
+    expect(onCreateKnowledgeLibrary).toHaveBeenCalledWith("产品文档库", "整理产品需求、PRD 和交互说明。");
+  });
+
+  it("uses a lightweight icon action for file-pool upload instead of a visible native file input block", () => {
+    render(<Workbench {...createWorkbenchProps()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+
+    const knowledgePanel = screen.getByLabelText("知识库");
+    const filePool = within(knowledgePanel).getByLabelText("文件库");
+
+    expect(within(filePool).getByRole("button", { name: "上传文件到文件库" })).toBeInTheDocument();
+    expect(within(filePool).queryByText("上传文件")).not.toBeInTheDocument();
+    expect(within(filePool).queryByLabelText("导入本地 md/txt 文件")).not.toBeVisible();
   });
 
   it("renders NPC local model information in settings and keeps embedding models out of the visible configuration", () => {
@@ -383,9 +791,8 @@ describe("Workbench", () => {
     expect(screen.getByRole("button", { name: "打开会话：之前的旧会话" })).toBeInTheDocument();
   });
 
-  it("asks for confirmation before permanently deleting a conversation from the cluster", () => {
+  it("asks for confirmation in-app before permanently deleting a conversation from the cluster", () => {
     const onDeleteRecentConversation = vi.fn();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const state = {
       ...createInitialWorkbenchState(),
       history: {
@@ -407,7 +814,8 @@ describe("Workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "会话" }));
     fireEvent.click(screen.getByRole("button", { name: "删除会话：删除目标会话" }));
 
-    expect(confirmSpy).toHaveBeenCalledWith("确定永久删除此对话吗？");
+    expect(screen.getByRole("dialog", { name: "删除会话确认" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
     expect(onDeleteRecentConversation).toHaveBeenCalledWith("recent-delete");
   });
 
@@ -610,7 +1018,7 @@ describe("Workbench", () => {
     const auditPanel = screen.getByLabelText("审计");
 
     expect(within(auditPanel).getByRole("heading", { name: "审计" })).toBeInTheDocument();
-    expect(within(auditPanel).getByText(`日志 ${failed.storage.logCount}`)).toBeInTheDocument();
+    expect(within(auditPanel).getByText("日志 1")).toBeInTheDocument();
     expect(within(auditPanel).getByText("Local task failed")).toBeInTheDocument();
     expect(within(auditPanel).getByText(/opencow_self_repair_failure_analysis/)).toBeInTheDocument();
     expect(within(auditPanel).getByText(/Runtime registry repair verification failed after rewrite/)).toBeInTheDocument();
@@ -618,6 +1026,23 @@ describe("Workbench", () => {
     fireEvent.click(within(auditPanel).getByRole("button", { name: "清空日志" }));
 
     expect(onCleanupStorage).toHaveBeenCalledWith("logs");
+  });
+
+  it("keeps a full audit event list instead of only a single summary row", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "scan local skills"
+      })
+    );
+
+    render(<Workbench {...createWorkbenchProps(running)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "审计" }));
+
+    const auditPanel = screen.getByLabelText("审计");
+    expect(within(auditPanel).getAllByText(/模块:/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/来源:/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/时间:/).length).toBeGreaterThan(0);
   });
 
   it("shows an empty log count after logs are cleared", () => {
@@ -629,7 +1054,7 @@ describe("Workbench", () => {
 
     const auditPanel = screen.getByLabelText("审计");
 
-    expect(within(auditPanel).getByText("日志 0")).toBeInTheDocument();
+    expect(within(auditPanel).getByText("日志 1")).toBeInTheDocument();
     expect(within(auditPanel).getByText("已清空本地日志")).toBeInTheDocument();
     expect(within(auditPanel).getByText(/日志清理已完成/)).toBeInTheDocument();
   });
@@ -700,7 +1125,7 @@ describe("Workbench", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
-    expect(onSubmitTask).toHaveBeenCalledWith("联网搜索一下最新资料");
+    expect(onSubmitTask).toHaveBeenCalledWith("联网搜索一下最新资料", []);
     expect(screen.getByLabelText("会话")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
   });

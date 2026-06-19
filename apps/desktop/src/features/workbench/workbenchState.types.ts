@@ -47,6 +47,7 @@ export type ConversationEntry = {
   kind: "assistant" | "system" | "user";
   title: string;
   summary: string;
+  attachments?: ChatAttachment[];
   detailLines?: string[];
   actionLabel?: string;
   rollbackTargetId?: string;
@@ -70,9 +71,29 @@ export type ImportedKnowledgeFile = {
   status: KnowledgeFileStatus;
 };
 
+export type ChatAttachmentSource = "picker" | "drop" | "paste";
+
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: "image" | "file";
+  filePath?: string;
+  previewUrl?: string;
+  base64Data?: string;
+  source: ChatAttachmentSource;
+};
+
 export type AvailableKnowledgeFile = {
   path: string;
   title: string;
+};
+
+export type KnowledgeLibraryRecord = {
+  id: string;
+  label: string;
+  description?: string;
 };
 
 export type RecentConversationRecord = {
@@ -130,6 +151,7 @@ export type LocalTaskExecutionKind =
   | "npc-local-project-showcase-publish-preview"
   | "npc-local-project-showcase-git-confirmation-preview"
   | "npc-local-shell-plan-preview"
+  | "npc-template-preview"
   | "npc-config-write"
   | "capability-npc-overview"
   | "capability-mcp-overview"
@@ -153,6 +175,7 @@ export type LocalTaskItem = {
   source: "composer";
   status: "queued" | "running" | "completed" | "failed" | "cancelled";
   summary: string;
+  attachments?: ChatAttachment[];
   executionMessage?: string;
   attemptCount: number;
   executionKind?: LocalTaskExecutionKind;
@@ -181,6 +204,7 @@ export type WorkbenchState = {
     availableModels: Array<{
       name: string;
       sizeLabel: string;
+      capabilities?: string[];
     }>;
   };
   permission: {
@@ -199,6 +223,9 @@ export type WorkbenchState = {
     entries: ConversationEntry[];
     mode?: ConversationMode;
     restoredFromConversationId?: string | null;
+  };
+  composer: {
+    draftAttachments: ChatAttachment[];
   };
   history: {
     lastNonEmptyConversationEntries: ConversationEntry[];
@@ -221,6 +248,9 @@ export type WorkbenchState = {
   knowledge: {
     importedFiles: ImportedKnowledgeFile[];
     availableFiles: AvailableKnowledgeFile[];
+    activeLibraryId?: string;
+    activeLibraryLabel?: string;
+    libraries?: KnowledgeLibraryRecord[];
   };
   sources: {
     items: SearchSourceItem[];

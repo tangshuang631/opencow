@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   clearKnowledgeImports,
+  createKnowledgeLibrary,
   importKnowledgeFile,
   loadKnowledgeInventory,
   loadOpenClawCapabilityOverview,
-  removeKnowledgeFile
+  removeKnowledgeFile,
+  selectKnowledgeLibrary
 } from "./localAssistantService";
 import {
   runControlledFullShellCommand,
@@ -43,7 +45,16 @@ describe("localAssistantService desktop knowledge inventory", () => {
           ],
           indexed_document_count: 1,
           registry_path: ".opencow/knowledge/imported-files.json",
-          summary: "Knowledge inventory loaded."
+          summary: "Knowledge inventory loaded.",
+          active_library_id: "default-library",
+          active_library_label: "默认知识库",
+          libraries: [
+            {
+              id: "default-library",
+              label: "默认知识库",
+              description: "系统默认知识库"
+            }
+          ]
         };
       }
 
@@ -68,7 +79,16 @@ describe("localAssistantService desktop knowledge inventory", () => {
       ],
       indexedDocumentCount: 1,
       registryPath: ".opencow/knowledge/imported-files.json",
-      summary: "Knowledge inventory loaded."
+      summary: "Knowledge inventory loaded.",
+      activeLibraryId: "default-library",
+      activeLibraryLabel: "默认知识库",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          description: "系统默认知识库"
+        }
+      ]
     });
   });
 
@@ -90,17 +110,32 @@ describe("localAssistantService desktop knowledge inventory", () => {
           available_files: [],
           indexed_document_count: 1,
           registry_path: ".opencow/knowledge/imported-files.json",
-          summary: "Knowledge file imported."
+          summary: "Knowledge file imported.",
+          active_library_id: "rules-library",
+          active_library_label: "规则库",
+          libraries: [
+            {
+              id: "default-library",
+              label: "默认知识库",
+              description: "系统默认知识库"
+            },
+            {
+              id: "rules-library",
+              label: "规则库",
+              description: "规则与约束集合"
+            }
+          ]
         };
       }
 
       return null;
     });
 
-    const result = await importKnowledgeFile("notes/guide.txt");
+    const result = await importKnowledgeFile("notes/guide.txt", "rules-library");
 
     expect(capturedPayload).toEqual({
-      path: "notes/guide.txt"
+      path: "notes/guide.txt",
+      libraryId: "rules-library"
     });
     expect(result.importedFiles[0]).toMatchObject({
       path: "notes/guide.txt",
@@ -108,6 +143,7 @@ describe("localAssistantService desktop knowledge inventory", () => {
       status: "ready"
     });
     expect(result.indexedDocumentCount).toBe(1);
+    expect(result.activeLibraryLabel).toBe("规则库");
   });
 
   it("passes the selected path into desktop knowledge removal and normalizes the response", async () => {
@@ -134,10 +170,11 @@ describe("localAssistantService desktop knowledge inventory", () => {
       return null;
     });
 
-    const result = await removeKnowledgeFile("notes/guide.txt");
+    const result = await removeKnowledgeFile("notes/guide.txt", "rules-library");
 
     expect(capturedPayload).toEqual({
-      path: "notes/guide.txt"
+      path: "notes/guide.txt",
+      libraryId: "rules-library"
     });
     expect(result.importedFiles).toEqual([]);
     expect(result.availableFiles[0]).toMatchObject({
@@ -166,14 +203,28 @@ describe("localAssistantService desktop knowledge inventory", () => {
           ],
           indexed_document_count: 0,
           registry_path: ".opencow/knowledge/imported-files.json",
-          summary: "Knowledge imports cleared."
+          summary: "Knowledge imports cleared.",
+          active_library_id: "rules-library",
+          active_library_label: "规则库",
+          libraries: [
+            {
+              id: "default-library",
+              label: "默认知识库",
+              description: "系统默认知识库"
+            },
+            {
+              id: "rules-library",
+              label: "规则库",
+              description: "规则与约束集合"
+            }
+          ]
         };
       }
 
       return null;
     });
 
-    const result = await clearKnowledgeImports();
+    const result = await clearKnowledgeImports("rules-library");
 
     expect(result).toEqual({
       importedFiles: [],
@@ -189,8 +240,114 @@ describe("localAssistantService desktop knowledge inventory", () => {
       ],
       indexedDocumentCount: 0,
       registryPath: ".opencow/knowledge/imported-files.json",
-      summary: "Knowledge imports cleared."
+      summary: "Knowledge imports cleared.",
+      activeLibraryId: "rules-library",
+      activeLibraryLabel: "规则库",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          description: "系统默认知识库"
+        },
+        {
+          id: "rules-library",
+          label: "规则库",
+          description: "规则与约束集合"
+        }
+      ]
     });
+  });
+
+  it("creates a desktop named knowledge library and normalizes the response", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "knowledge_library_create") {
+        capturedPayload = payload;
+        return {
+          imported_files: [],
+          available_files: [],
+          indexed_document_count: 0,
+          registry_path: ".opencow/knowledge/imported-files.json",
+          summary: "Knowledge library created.",
+          active_library_id: "product-docs",
+          active_library_label: "产品文档库",
+          libraries: [
+            {
+              id: "default-library",
+              label: "默认知识库",
+              description: "系统默认知识库"
+            },
+            {
+              id: "product-docs",
+              label: "产品文档库",
+              description: "整理产品需求、PRD 和交互说明。"
+            }
+          ]
+        };
+      }
+
+      return null;
+    });
+
+    const result = await createKnowledgeLibrary("产品文档库", "整理产品需求、PRD 和交互说明。");
+
+    expect(capturedPayload).toEqual({
+      name: "产品文档库",
+      description: "整理产品需求、PRD 和交互说明。"
+    });
+    expect(result.activeLibraryId).toBe("product-docs");
+    expect(result.activeLibraryLabel).toBe("产品文档库");
+    expect(result.libraries?.map((library) => library.label)).toEqual(["默认知识库", "产品文档库"]);
+    expect(result.libraries?.[1]?.description).toBe("整理产品需求、PRD 和交互说明。");
+  });
+
+  it("selects a desktop named knowledge library and normalizes the response", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "knowledge_library_select") {
+        capturedPayload = payload;
+        return {
+          imported_files: [],
+          available_files: [
+            {
+              path: "notes/guide.txt",
+              title: "guide.txt"
+            }
+          ],
+          indexed_document_count: 0,
+          registry_path: ".opencow/knowledge/imported-files.json",
+          summary: "Knowledge library selected.",
+          active_library_id: "default-library",
+          active_library_label: "默认知识库",
+          libraries: [
+            {
+              id: "default-library",
+              label: "默认知识库",
+              description: "系统默认知识库"
+            },
+            {
+              id: "rules-library",
+              label: "规则库",
+              description: "规则与约束集合"
+            }
+          ]
+        };
+      }
+
+      return null;
+    });
+
+    const result = await selectKnowledgeLibrary("default-library");
+
+    expect(capturedPayload).toEqual({
+      libraryId: "default-library"
+    });
+    expect(result.activeLibraryLabel).toBe("默认知识库");
+    expect(result.availableFiles[0]?.path).toBe("notes/guide.txt");
   });
 
   it("sends snake_case payload keys for desktop capability overview requests", async () => {

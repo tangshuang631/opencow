@@ -106,6 +106,13 @@ export type KnowledgeInventoryResult = {
   indexedDocumentCount: number;
   registryPath: string;
   summary: string;
+  activeLibraryId?: string;
+  activeLibraryLabel?: string;
+  libraries?: Array<{
+    id: string;
+    label: string;
+    description?: string;
+  }>;
 };
 
 type DesktopKnowledgeInventoryResult = {
@@ -121,6 +128,13 @@ type DesktopKnowledgeInventoryResult = {
   indexed_document_count: number;
   registry_path: string;
   summary: string;
+  active_library_id?: string;
+  active_library_label?: string;
+  libraries?: Array<{
+    id: string;
+    label: string;
+    description?: string;
+  }>;
 };
 
 export type LocalSkillScanResult = {
@@ -389,50 +403,87 @@ export type ControlledFullShellCommandResult = {
   summary: string;
 };
 
-export async function searchLocalKnowledge(query: string): Promise<LocalKnowledgeSearchResult> {
+export async function searchLocalKnowledge(
+  query: string,
+  options?: {
+    libraryId?: string;
+  }
+): Promise<LocalKnowledgeSearchResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalKnowledgeSearch(query);
   }
 
   return invoke<LocalKnowledgeSearchResult>("local_knowledge_search", {
-    query
+    query,
+    libraryId: options?.libraryId
   });
 }
 
-export async function loadKnowledgeInventory(): Promise<KnowledgeInventoryResult> {
+export async function loadKnowledgeInventory(
+  options?: {
+    libraryId?: string;
+  }
+): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
-  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_inventory"));
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_inventory", {
+    libraryId: options?.libraryId
+  }));
 }
 
-export async function importKnowledgeFile(path: string): Promise<KnowledgeInventoryResult> {
+export async function importKnowledgeFile(path: string, libraryId?: string): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
   return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_file_import", {
-    path
+    path,
+    libraryId
   }));
 }
 
-export async function removeKnowledgeFile(path: string): Promise<KnowledgeInventoryResult> {
+export async function removeKnowledgeFile(path: string, libraryId?: string): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
   return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_file_remove", {
-    path
+    path,
+    libraryId
   }));
 }
 
-export async function clearKnowledgeImports(): Promise<KnowledgeInventoryResult> {
+export async function clearKnowledgeImports(libraryId?: string): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
-  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_imports_clear"));
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_imports_clear", {
+    libraryId
+  }));
+}
+
+export async function createKnowledgeLibrary(name: string, description?: string): Promise<KnowledgeInventoryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewKnowledgeInventory();
+  }
+
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_library_create", {
+    name,
+    description
+  }));
+}
+
+export async function selectKnowledgeLibrary(libraryId: string): Promise<KnowledgeInventoryResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewKnowledgeInventory();
+  }
+
+  return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_library_select", {
+    libraryId
+  }));
 }
 
 export async function scanLocalSkills(): Promise<LocalSkillScanResult> {
@@ -830,7 +881,15 @@ function createBrowserPreviewKnowledgeInventory(): KnowledgeInventoryResult {
     availableFiles: [],
     indexedDocumentCount: 0,
     registryPath: ".opencow/knowledge/imported-files.json",
-    summary: "Browser preview mode cannot inspect the real knowledge inventory and returns an empty preview."
+    summary: "Browser preview mode cannot inspect the real knowledge inventory and returns an empty preview.",
+    activeLibraryId: "default-library",
+    activeLibraryLabel: "默认知识库",
+    libraries: [
+      {
+        id: "default-library",
+        label: "默认知识库"
+      }
+    ]
   };
 }
 
@@ -846,7 +905,10 @@ function normalizeDesktopKnowledgeInventory(
     availableFiles: result.available_files,
     indexedDocumentCount: result.indexed_document_count,
     registryPath: result.registry_path,
-    summary: result.summary
+    summary: result.summary,
+    activeLibraryId: result.active_library_id,
+    activeLibraryLabel: result.active_library_label,
+    libraries: result.libraries
   };
 }
 

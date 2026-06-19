@@ -141,7 +141,9 @@ pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
 }
 
 #[tauri::command]
-pub fn workspace_npc_config_write(payload: NpcConfigWritePayload) -> Result<NpcConfigWriteResult, String> {
+pub fn workspace_npc_config_write(
+    payload: NpcConfigWritePayload,
+) -> Result<NpcConfigWriteResult, String> {
     let root = resolve_workspace_root()?;
     let config_object = payload
         .config
@@ -165,7 +167,10 @@ pub fn workspace_npc_config_write(payload: NpcConfigWritePayload) -> Result<NpcC
     let mut saved_config = payload.config;
     if let Some(object) = saved_config.as_object_mut() {
         object.insert("source_query".to_string(), Value::String(payload.query));
-        object.insert("model_output".to_string(), Value::String(payload.model_output));
+        object.insert(
+            "model_output".to_string(),
+            Value::String(payload.model_output),
+        );
         object.insert("schema_version".to_string(), Value::from(1));
     }
 
@@ -205,15 +210,21 @@ fn slugify_npc_config_name(name: &str) -> String {
 }
 
 fn ensure_path_stays_in_workspace(root: &Path, target: &Path) -> Result<(), String> {
-    let absolute_root = root
-        .canonicalize()
-        .map_err(|error| format!("failed to canonicalize workspace root {}: {error}", root.display()))?;
+    let absolute_root = root.canonicalize().map_err(|error| {
+        format!(
+            "failed to canonicalize workspace root {}: {error}",
+            root.display()
+        )
+    })?;
     let parent = target
         .parent()
         .ok_or_else(|| format!("target path has no parent: {}", target.display()))?;
-    let absolute_parent = parent
-        .canonicalize()
-        .map_err(|error| format!("failed to canonicalize target parent {}: {error}", parent.display()))?;
+    let absolute_parent = parent.canonicalize().map_err(|error| {
+        format!(
+            "failed to canonicalize target parent {}: {error}",
+            parent.display()
+        )
+    })?;
 
     if absolute_parent.starts_with(&absolute_root) {
         Ok(())
@@ -368,10 +379,19 @@ struct ImportedKnowledgeFileRecord {
     path: String,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct KnowledgeLibraryRecord {
+    id: String,
+    label: String,
+    description: String,
+    imported_files: Vec<ImportedKnowledgeFileRecord>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct KnowledgeImportRegistry {
     version: usize,
-    imported_files: Vec<ImportedKnowledgeFileRecord>,
+    active_library_id: String,
+    libraries: Vec<KnowledgeLibraryRecord>,
 }
 
 #[derive(Serialize)]
@@ -394,6 +414,16 @@ pub struct KnowledgeInventoryResult {
     indexed_document_count: usize,
     registry_path: String,
     summary: String,
+    active_library_id: String,
+    active_library_label: String,
+    libraries: Vec<KnowledgeInventoryLibraryItem>,
+}
+
+#[derive(Serialize)]
+pub struct KnowledgeInventoryLibraryItem {
+    id: String,
+    label: String,
+    description: String,
 }
 
 #[derive(Serialize)]
@@ -1186,9 +1216,26 @@ pub fn openclaw_capability_overview(
 }
 
 #[tauri::command]
-pub fn local_knowledge_search(query: String) -> Result<LocalKnowledgeSearchResult, String> {
+pub fn local_knowledge_search(
+    query: String,
+    library_id: Option<String>,
+) -> Result<LocalKnowledgeSearchResult, String> {
     let root = resolve_workspace_root()?;
-    let candidates = collect_local_knowledge_candidates(&root)?;
+    let registry = read_knowledge_import_registry(&root)?;
+    let active_library_id = resolve_knowledge_library_id(&registry, library_id);
+    let candidates = registry
+        .libraries
+        .iter()
+        .find(|library| library.id == active_library_id)
+        .map(|library| {
+            library
+                .imported_files
+                .iter()
+                .map(|entry| root.join(&entry.path))
+                .filter(|path| path.exists() && is_local_knowledge_file(path))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let indexed_document_count = candidates.len();
     let tokens = tokenize_query(&query);
     let mut items = Vec::new();
@@ -1254,13 +1301,16 @@ pub fn local_knowledge_search(query: String) -> Result<LocalKnowledgeSearchResul
 }
 
 #[tauri::command]
-pub fn knowledge_inventory() -> Result<KnowledgeInventoryResult, String> {
+pub fn knowledge_inventory(library_id: Option<String>) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
-    build_knowledge_inventory(&root)
+    build_knowledge_inventory(&root, library_id)
 }
 
 #[tauri::command]
-pub fn knowledge_file_import(path: String) -> Result<KnowledgeInventoryResult, String> {
+pub fn knowledge_file_import(
+    path: String,
+    library_id: Option<String>,
+) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
     let normalized = normalize_workspace_relative_knowledge_path(&root, &path)?;
 
@@ -1271,45 +1321,143 @@ pub fn knowledge_file_import(path: String) -> Result<KnowledgeInventoryResult, S
     }
 
     let mut registry = read_knowledge_import_registry(&root)?;
+    let target_library_id = resolve_knowledge_library_id(&registry, library_id);
 
-    if !registry
-        .imported_files
-        .iter()
-        .any(|entry| entry.path == normalized)
+    if let Some(library) = registry
+        .libraries
+        .iter_mut()
+        .find(|library| library.id == target_library_id)
     {
-        registry
+        if !library
             .imported_files
-            .push(ImportedKnowledgeFileRecord { path: normalized });
-        registry.imported_files.sort_by(|left, right| left.path.cmp(&right.path));
-        write_knowledge_import_registry(&root, &registry)?;
+            .iter()
+            .any(|entry| entry.path == normalized)
+        {
+            library
+                .imported_files
+                .push(ImportedKnowledgeFileRecord { path: normalized });
+            library
+                .imported_files
+                .sort_by(|left, right| left.path.cmp(&right.path));
+            write_knowledge_import_registry(&root, &registry)?;
+        }
     }
 
-    build_knowledge_inventory(&root)
+    build_knowledge_inventory(&root, Some(target_library_id))
 }
 
 #[tauri::command]
-pub fn knowledge_file_remove(path: String) -> Result<KnowledgeInventoryResult, String> {
+pub fn knowledge_file_remove(
+    path: String,
+    library_id: Option<String>,
+) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
     let normalized = normalize_workspace_relative_knowledge_path(&root, &path)?;
     let mut registry = read_knowledge_import_registry(&root)?;
+    let target_library_id = resolve_knowledge_library_id(&registry, library_id);
 
-    registry.imported_files.retain(|entry| entry.path != normalized);
+    if let Some(library) = registry
+        .libraries
+        .iter_mut()
+        .find(|library| library.id == target_library_id)
+    {
+        library
+            .imported_files
+            .retain(|entry| entry.path != normalized);
+    }
     write_knowledge_import_registry(&root, &registry)?;
 
-    build_knowledge_inventory(&root)
+    build_knowledge_inventory(&root, Some(target_library_id))
 }
 
 #[tauri::command]
-pub fn knowledge_imports_clear() -> Result<KnowledgeInventoryResult, String> {
+pub fn knowledge_imports_clear(
+    library_id: Option<String>,
+) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
-    write_knowledge_import_registry(
-        &root,
-        &KnowledgeImportRegistry {
-            version: 1,
-            imported_files: Vec::new(),
-        },
-    )?;
-    build_knowledge_inventory(&root)
+    let mut registry = read_knowledge_import_registry(&root)?;
+    let target_library_id = resolve_knowledge_library_id(&registry, library_id);
+
+    if let Some(library) = registry
+        .libraries
+        .iter_mut()
+        .find(|library| library.id == target_library_id)
+    {
+        library.imported_files.clear();
+    }
+
+    write_knowledge_import_registry(&root, &registry)?;
+    build_knowledge_inventory(&root, Some(target_library_id))
+}
+
+#[tauri::command]
+pub fn knowledge_library_create(
+    name: String,
+    description: Option<String>,
+) -> Result<KnowledgeInventoryResult, String> {
+    let root = resolve_workspace_root()?;
+    let trimmed = name.trim();
+    let trimmed_description = description.unwrap_or_default().trim().to_string();
+
+    if trimmed.is_empty() {
+        return Err("knowledge library name cannot be empty".to_string());
+    }
+
+    let mut slug = trimmed
+        .to_lowercase()
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric()
+                || *character == '-'
+                || *character == ' '
+                || ('\u{4e00}'..='\u{9fa5}').contains(character)
+        })
+        .collect::<String>()
+        .replace(' ', "-");
+
+    if slug.is_empty() {
+        slug = format!(
+            "knowledge-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0)
+        );
+    }
+
+    let mut registry = read_knowledge_import_registry(&root)?;
+
+    if let Some(existing) = registry
+        .libraries
+        .iter()
+        .find(|library| library.id == slug || library.label == trimmed)
+    {
+        registry.active_library_id = existing.id.clone();
+        write_knowledge_import_registry(&root, &registry)?;
+        return build_knowledge_inventory(&root, Some(existing.id.clone()));
+    }
+
+    registry.active_library_id = slug.clone();
+    registry.libraries.push(KnowledgeLibraryRecord {
+        id: slug.clone(),
+        label: trimmed.to_string(),
+        description: trimmed_description,
+        imported_files: Vec::new(),
+    });
+    write_knowledge_import_registry(&root, &registry)?;
+
+    build_knowledge_inventory(&root, Some(slug))
+}
+
+#[tauri::command]
+pub fn knowledge_library_select(library_id: String) -> Result<KnowledgeInventoryResult, String> {
+    let root = resolve_workspace_root()?;
+    let mut registry = read_knowledge_import_registry(&root)?;
+    let target_library_id = resolve_knowledge_library_id(&registry, Some(library_id));
+    registry.active_library_id = target_library_id.clone();
+    write_knowledge_import_registry(&root, &registry)?;
+
+    build_knowledge_inventory(&root, Some(target_library_id))
 }
 
 #[tauri::command]
@@ -3019,68 +3167,132 @@ fn collect_existing_paths(root: &Path, candidates: &[&str]) -> Vec<String> {
         .collect()
 }
 
-fn collect_local_knowledge_candidates(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut candidates = Vec::new();
-
-    for entry in
-        fs::read_dir(root).map_err(|error| format!("failed to read workspace root: {error}"))?
-    {
-        let entry =
-            entry.map_err(|error| format!("failed to inspect workspace root entry: {error}"))?;
-        let path = entry.path();
-
-        if entry
-            .file_type()
-            .map(|kind| kind.is_file())
-            .unwrap_or(false)
-            && is_local_knowledge_file(&path)
-        {
-            candidates.push(path);
-        }
-    }
-
-    let docs_root = root.join("docs");
-
-    if docs_root.exists() {
-        collect_local_knowledge_candidates_recursive(&docs_root, &mut candidates)?;
-    }
-
-    let knowledge_registry = read_knowledge_import_registry(root)?;
-
-    for entry in knowledge_registry.imported_files {
-        let candidate = root.join(&entry.path);
-
-        if candidate.exists() && is_local_knowledge_file(&candidate) {
-            candidates.push(candidate);
-        }
-    }
-
-    candidates.sort();
-    candidates.dedup();
-
-    Ok(candidates)
-}
-
 fn knowledge_registry_path(root: &Path) -> PathBuf {
     root.join(".opencow")
         .join("knowledge")
         .join("imported-files.json")
 }
 
+fn default_knowledge_library() -> KnowledgeLibraryRecord {
+    KnowledgeLibraryRecord {
+        id: "default-library".to_string(),
+        label: "默认知识库".to_string(),
+        description: "系统默认知识库。".to_string(),
+        imported_files: Vec::new(),
+    }
+}
+
+fn normalize_knowledge_registry(mut registry: KnowledgeImportRegistry) -> KnowledgeImportRegistry {
+    if registry.libraries.is_empty() {
+        registry.libraries.push(default_knowledge_library());
+    }
+
+    if !registry
+        .libraries
+        .iter()
+        .any(|library| library.id == registry.active_library_id)
+    {
+        registry.active_library_id = registry
+            .libraries
+            .first()
+            .map(|library| library.id.clone())
+            .unwrap_or_else(|| "default-library".to_string());
+    }
+
+    registry
+}
+
+fn create_default_knowledge_registry() -> KnowledgeImportRegistry {
+    let library = default_knowledge_library();
+
+    KnowledgeImportRegistry {
+        version: 2,
+        active_library_id: library.id.clone(),
+        libraries: vec![library],
+    }
+}
+
+fn read_legacy_knowledge_import_registry(
+    root: &Path,
+) -> Result<Option<KnowledgeImportRegistry>, String> {
+    let path = knowledge_registry_path(root);
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+    let imported_files = parsed
+        .get("imported_files")
+        .and_then(|value| value.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.get("path")
+                        .and_then(|value| value.as_str())
+                        .map(|path| ImportedKnowledgeFileRecord {
+                            path: path.to_string(),
+                        })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if imported_files.is_empty()
+        && !parsed.get("imported_files").is_some()
+        && !parsed.get("libraries").is_some()
+    {
+        return Ok(None);
+    }
+
+    Ok(Some(KnowledgeImportRegistry {
+        version: 2,
+        active_library_id: "default-library".to_string(),
+        libraries: vec![KnowledgeLibraryRecord {
+            id: "default-library".to_string(),
+            label: "默认知识库".to_string(),
+            description: "系统默认知识库。".to_string(),
+            imported_files,
+        }],
+    }))
+}
+
+fn resolve_knowledge_library_id(
+    registry: &KnowledgeImportRegistry,
+    library_id: Option<String>,
+) -> String {
+    if let Some(candidate) = library_id {
+        if registry
+            .libraries
+            .iter()
+            .any(|library| library.id == candidate)
+        {
+            return candidate;
+        }
+    }
+
+    registry.active_library_id.clone()
+}
+
 fn read_knowledge_import_registry(root: &Path) -> Result<KnowledgeImportRegistry, String> {
     let path = knowledge_registry_path(root);
 
     if !path.exists() {
-        return Ok(KnowledgeImportRegistry {
-            version: 1,
-            imported_files: Vec::new(),
-        });
+        return Ok(create_default_knowledge_registry());
     }
 
     let raw = fs::read_to_string(&path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
-    serde_json::from_str(&raw)
-        .map_err(|error| format!("failed to parse {}: {error}", path.display()))
+    match serde_json::from_str::<KnowledgeImportRegistry>(&raw) {
+        Ok(registry) => Ok(normalize_knowledge_registry(registry)),
+        Err(_) => {
+            if let Some(legacy_registry) = read_legacy_knowledge_import_registry(root)? {
+                write_knowledge_import_registry(root, &legacy_registry)?;
+                Ok(normalize_knowledge_registry(legacy_registry))
+            } else {
+                Err(format!("failed to parse {}", path.display()))
+            }
+        }
+    }
 }
 
 fn write_knowledge_import_registry(
@@ -3107,19 +3319,33 @@ fn normalize_workspace_relative_knowledge_path(root: &Path, path: &str) -> Resul
     Ok(to_workspace_relative_path(root, &candidate))
 }
 
-fn build_knowledge_inventory(root: &Path) -> Result<KnowledgeInventoryResult, String> {
+fn build_knowledge_inventory(
+    root: &Path,
+    requested_library_id: Option<String>,
+) -> Result<KnowledgeInventoryResult, String> {
     let registry = read_knowledge_import_registry(root)?;
     let registry_path = to_workspace_relative_path(root, &knowledge_registry_path(root));
+    let active_library_id = resolve_knowledge_library_id(&registry, requested_library_id);
+    let active_library = registry
+        .libraries
+        .iter()
+        .find(|library| library.id == active_library_id)
+        .cloned()
+        .unwrap_or_else(default_knowledge_library);
     let mut imported_files = Vec::new();
 
-    for entry in &registry.imported_files {
+    for entry in &active_library.imported_files {
         let absolute_path = root.join(&entry.path);
         let title = absolute_path
             .file_name()
             .and_then(|value| value.to_str())
             .unwrap_or("document")
             .to_string();
-        let status = if absolute_path.exists() { "ready" } else { "missing" };
+        let status = if absolute_path.exists() {
+            "ready"
+        } else {
+            "missing"
+        };
 
         imported_files.push(KnowledgeInventoryFileItem {
             path: entry.path.clone(),
@@ -3154,6 +3380,7 @@ fn build_knowledge_inventory(root: &Path) -> Result<KnowledgeInventoryResult, St
         .collect::<Vec<_>>();
 
     available_files.sort_by(|left, right| left.path.cmp(&right.path));
+    let available_file_count = available_files.len();
 
     Ok(KnowledgeInventoryResult {
         imported_files,
@@ -3162,9 +3389,19 @@ fn build_knowledge_inventory(root: &Path) -> Result<KnowledgeInventoryResult, St
         registry_path,
         summary: format!(
             "Knowledge inventory loaded with {} imported files and {} available files.",
-            indexed_document_count,
-            available_files.len()
+            indexed_document_count, available_file_count
         ),
+        active_library_id: active_library.id.clone(),
+        active_library_label: active_library.label.clone(),
+        libraries: registry
+            .libraries
+            .iter()
+            .map(|library| KnowledgeInventoryLibraryItem {
+                id: library.id.clone(),
+                label: library.label.clone(),
+                description: library.description.clone(),
+            })
+            .collect(),
     })
 }
 
@@ -3900,22 +4137,19 @@ mod tests {
         build_controlled_full_shell_command, build_enabled_local_skill_items,
         build_npc_showcase_screenshot_artifact_path, build_npc_showcase_site_root,
         build_openclaw_capability_spec, build_readonly_shell_command,
-        build_workspace_write_shell_command, classify_mcp_plugin_source,
-        controlled_full_command,
+        build_workspace_write_shell_command, classify_mcp_plugin_source, controlled_full_command,
         extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file,
         local_mcp_plugin_inspect, local_mcp_plugin_scan, local_mcp_plugin_start_preview,
         local_skill_disable, local_skill_install, looks_like_workspace_root,
         opencow_self_repair_enabled_skills_registry,
         opencow_self_repair_workspace_project_runtime_registry, parse_skill_frontmatter_name,
-        parse_workspace_project_run_pid,
-        read_enabled_skill_registry, read_workspace_project_runtime_records,
-        resolve_workspace_root, score_mcp_plugin_match, score_skill_match, score_snippet,
-        split_knowledge_segments, tokenize_query, truncate_preview,
-        workspace_readonly_command,
-        workspace_project_npc_screenshot_capture, workspace_project_npc_showcase_publish_preview,
-        workspace_project_npc_showcase_site_write, workspace_project_run,
-        workspace_project_run_preview, workspace_project_status, workspace_project_stop,
-        workspace_write_command,
+        parse_workspace_project_run_pid, read_enabled_skill_registry,
+        read_workspace_project_runtime_records, resolve_workspace_root, score_mcp_plugin_match,
+        score_skill_match, score_snippet, split_knowledge_segments, tokenize_query,
+        truncate_preview, workspace_project_npc_screenshot_capture,
+        workspace_project_npc_showcase_publish_preview, workspace_project_npc_showcase_site_write,
+        workspace_project_run, workspace_project_run_preview, workspace_project_status,
+        workspace_project_stop, workspace_readonly_command, workspace_write_command,
     };
     use serde_json::{json, Value};
     use std::{
@@ -3999,12 +4233,13 @@ mod tests {
 
     #[test]
     fn rejects_unknown_readonly_shell_command_id() {
-        let error =
-            match build_readonly_shell_command("unknown-readonly-command", Path::new("E:\\2026\\opencow"))
-            {
-                Ok(_) => panic!("expected unsupported readonly shell command id error"),
-                Err(error) => error,
-            };
+        let error = match build_readonly_shell_command(
+            "unknown-readonly-command",
+            Path::new("E:\\2026\\opencow"),
+        ) {
+            Ok(_) => panic!("expected unsupported readonly shell command id error"),
+            Err(error) => error,
+        };
 
         assert_eq!(
             error,
@@ -4196,7 +4431,9 @@ mod tests {
         assert!(is_local_knowledge_file(Path::new(
             "docs/v1.0/06-rag-skills-npc-mcp.md"
         )));
-        assert!(is_local_knowledge_file(Path::new("notes/local-rag-rules.txt")));
+        assert!(is_local_knowledge_file(Path::new(
+            "notes/local-rag-rules.txt"
+        )));
         assert!(!is_local_knowledge_file(Path::new("docs/product/faq.mdx")));
         assert!(!is_local_knowledge_file(Path::new("package.json")));
     }
@@ -4208,7 +4445,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-knowledge-registry-empty-{unique}"));
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-knowledge-registry-empty-{unique}"));
 
         fs::create_dir_all(&workspace_root).unwrap();
 
@@ -4227,7 +4465,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let workspace_root = env::temp_dir().join(format!("opencow-knowledge-registry-write-{unique}"));
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-knowledge-registry-write-{unique}"));
 
         fs::create_dir_all(&workspace_root).unwrap();
 

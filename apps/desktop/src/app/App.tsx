@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { executeAssistantTask, planAssistantTask } from "../features/assistant/assistantTaskService";
 import {
   createLocalModelFailureDiagnostics,
@@ -13,10 +14,14 @@ import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapa
 import { inspectLocalSkill, writeNpcConfig } from "../features/assistant/localAssistantService";
 import {
   clearKnowledgeImports,
+  createKnowledgeLibrary,
   importKnowledgeFile,
   loadKnowledgeInventory,
-  removeKnowledgeFile
+  removeKnowledgeFile,
+  selectKnowledgeLibrary
 } from "../features/assistant/localAssistantService";
+import type { ChatAttachment } from "../features/workbench/workbenchState";
+import type { AppCloseDecision } from "../features/appClose";
 import {
   applyPendingRollbackState,
   approvePendingConfirmationState,
@@ -31,6 +36,7 @@ import {
   createDuplicatePendingApprovalSkippedState,
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
+  createArchivedConversationState,
   createNewConversationState,
   deleteRecentConversationState,
   createModelSelectedState,
@@ -698,8 +704,40 @@ function truncateChatSearchField(value: string, maxLength = MAX_CHAT_SEARCH_FIEL
   return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
+function isLikelyVisionOllamaModel(model: WorkbenchState["model"]["availableModels"][number] | undefined): boolean {
+  if (!model) {
+    return false;
+  }
+
+  const capabilities = model.capabilities ?? [];
+  const capabilityBasedVision = capabilities.some((capability) => {
+    const normalized = capability.toLowerCase();
+    return normalized.includes("vision")
+      || normalized.includes("image")
+      || normalized.includes("multimodal");
+  });
+  const normalizedName = model.name.toLowerCase().replace(/[-_.]/g, "");
+  const visionModelNameHints = [
+    "llava",
+    "bakllava",
+    "moondream",
+    "minicpmv",
+    "qwen2vl",
+    "qwen25vl",
+    "qwenvl",
+    "gemma3",
+    "mllama",
+    "vision"
+  ];
+
+  return capabilityBasedVision || visionModelNameHints.some((hint) => normalizedName.includes(hint));
+}
+
 function createLocalModelChatMessage(payload: {
   message: string;
+  attachments?: ChatAttachment[];
+  selectedModel?: string;
+  selectedModelSupportsVision?: boolean;
   searchEnabled: boolean;
   searchProviderLabel: string;
   sources: WorkbenchState["sources"]["items"];
@@ -708,10 +746,38 @@ function createLocalModelChatMessage(payload: {
   const visibleSources = payload.searchEnabled
     ? payload.sources.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS)
     : [];
+  const attachmentLines = (payload.attachments ?? []).map((attachment, index) => {
+    const readableKind = attachment.kind === "image" ? "图片" : "文件";
+    const sizeKb = Math.max(1, Math.round(attachment.sizeBytes / 1024));
+    const visionHint = attachment.kind === "image" && attachment.base64Data
+      ? "已随请求附带图片内容"
+      : attachment.kind === "image"
+        ? "仅有图片元数据，无法直接读取图像内容"
+        : "非图片附件，仅有文件元数据";
+
+    return `${index + 1}. ${attachment.name} | 类型=${readableKind} | MIME=${attachment.mimeType} | 大小=${sizeKb}KB | ${visionHint}`;
+  });
+  const attachmentContext = attachmentLines.length > 0
+    ? [
+        "本轮用户附带了附件。回答时必须结合这些附件；如果附件内容不可直接读取，请明确说明限制，不要忽略附件。",
+        ...(attachmentLines.some((line) => line.includes("已随请求附带图片内容"))
+          ? [
+              payload.selectedModel ? `当前所选模型：${payload.selectedModel}` : null,
+              payload.selectedModelSupportsVision === false
+                ? "当前模型可能不是视觉模型。图片内容已经通过 Ollama images 字段随请求发送，但该模型可能无法识别图片；如果无法读图，请明确说明：请切换到支持视觉输入的 Ollama 模型，例如 llava、qwen2.5vl、minicpm-v、moondream 或其他 vision/multimodal 模型。"
+                : "图片内容已经通过 Ollama images 字段随请求发送；如果你无法识别图片，请说明当前所选 Ollama 模型可能不支持视觉输入，而不是说 OpenCow 没有传图或不支持图片。"
+            ]
+              .filter((line): line is string => Boolean(line))
+          : []),
+        ...attachmentLines,
+        ""
+      ]
+    : [];
 
   if (visibleSources.length === 0) {
     if (payload.searchEnabled) {
       return [
+        ...attachmentContext,
         "联网搜索已开启，但本轮没有可用外部来源。",
         `当前搜索 provider：${payload.searchProviderLabel.trim() || "未配置"}`,
         "不要声称已经完成实时联网检索；如果回答需要最新资料，请说明缺少可用联网来源，并基于已有知识谨慎回答。",
@@ -720,7 +786,7 @@ function createLocalModelChatMessage(payload: {
       ].join("\n");
     }
 
-    return normalizedMessage;
+    return [...attachmentContext, normalizedMessage].join("\n");
   }
 
   const sourceLines = visibleSources.map((source, index) => {
@@ -734,6 +800,7 @@ function createLocalModelChatMessage(payload: {
   });
 
   return [
+    ...attachmentContext,
     "联网搜索参考（只作为参考，不要盲信；请自行判断来源可靠性、时效性和与问题的相关性，综合后用中文回答。）",
     ...sourceLines,
     "",
@@ -780,6 +847,7 @@ async function executeLocalModelChatTask(payload: {
   model: string;
   availableModels: WorkbenchState["model"]["availableModels"];
   message: string;
+  attachments?: ChatAttachment[];
   searchEnabled: boolean;
   searchProviderLabel: string;
   sources: WorkbenchState["sources"]["items"];
@@ -811,9 +879,17 @@ async function executeLocalModelChatTask(payload: {
       ? "enabled-with-sources"
       : "enabled-no-sources"
     : "disabled";
+  const selectedModelSummary = payload.availableModels.find((model) => model.name === selectedModel);
   const result = await chatWithOllamaModel({
     model: selectedModel,
-    message: createLocalModelChatMessage(payload),
+    message: createLocalModelChatMessage({
+      ...payload,
+      selectedModel,
+      selectedModelSupportsVision: isLikelyVisionOllamaModel(selectedModelSummary)
+    }),
+    images: (payload.attachments ?? [])
+      .filter((attachment) => attachment.kind === "image" && Boolean(attachment.base64Data))
+      .map((attachment) => attachment.base64Data as string),
     requestId: payload.requestId,
     signal: payload.signal,
     onChunk: payload.onChunk
@@ -1793,7 +1869,25 @@ function isDuplicatePendingConfirmationMessage(message: string, state: Workbench
 }
 
 function isTauriDesktopRuntime() {
-  return typeof window !== "undefined" && TAURI_INTERNALS_KEY in window;
+  if (typeof window === "undefined" || !(TAURI_INTERNALS_KEY in window)) {
+    return false;
+  }
+
+  const internals = (window as Window & {
+    [TAURI_INTERNALS_KEY]?: {
+      invoke?: unknown;
+      metadata?: {
+        currentWindow?: {
+          label?: string;
+        };
+      };
+    };
+  })[TAURI_INTERNALS_KEY];
+
+  return Boolean(
+    typeof internals?.invoke === "function"
+      || internals?.metadata?.currentWindow?.label
+  );
 }
 
 export function App() {
@@ -1803,6 +1897,7 @@ export function App() {
       ? createInitialWorkbenchState()
       : loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState)
   );
+  const [closeDecision, setCloseDecision] = useState<AppCloseDecision>(null);
   const [hasHydratedPersistedState, setHasHydratedPersistedState] = useState(!shouldHydrateNativeState);
   const stateRef = useRef(state);
   const hasLoadedOllamaOverviewRef = useRef(false);
@@ -1892,7 +1987,10 @@ export function App() {
             ...current,
             knowledge: {
               importedFiles: inventory.importedFiles,
-              availableFiles: inventory.availableFiles
+              availableFiles: inventory.availableFiles,
+              activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+              activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+              libraries: inventory.libraries ?? current.knowledge.libraries
             },
             storage: {
               ...current.storage,
@@ -1946,6 +2044,24 @@ export function App() {
   useEffect(() => () => {
     cancelActiveLocalModelRequest();
   }, []);
+
+  useEffect(() => {
+    if (!shouldHydrateNativeState) {
+      return;
+    }
+
+    let nativeCloseUnlisten: (() => void) | null = null;
+
+    void getCurrentWindow().listen("app_close_requested", () => {
+      setCloseDecision("minimize");
+    }).then((dispose) => {
+      nativeCloseUnlisten = dispose;
+    });
+
+    return () => {
+      nativeCloseUnlisten?.();
+    };
+  }, [shouldHydrateNativeState]);
 
   useEffect(() => {
     if (!shouldScheduleLocalTaskStart(state) && !shouldRecoverStaleActiveTaskSlot(state)) {
@@ -2109,6 +2225,7 @@ export function App() {
               model: activeModel,
               availableModels,
               message: localModelMessage,
+              attachments: activeTask.attachments,
               searchEnabled: stateRef.current.search.enabled,
               searchProviderLabel: stateRef.current.search.providerLabel,
               sources: stateRef.current.sources.items,
@@ -2834,14 +2951,17 @@ export function App() {
 
   function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
     if (target === "knowledge") {
-      void clearKnowledgeImports()
+      void clearKnowledgeImports(stateRef.current.knowledge.activeLibraryId)
         .then((inventory) => {
           startTransition(() => {
             setState((current) => createStorageCleanupState({
               ...current,
               knowledge: {
                 importedFiles: inventory.importedFiles,
-                availableFiles: inventory.availableFiles
+                availableFiles: inventory.availableFiles,
+                activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+                activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+                libraries: inventory.libraries ?? current.knowledge.libraries
               },
               storage: {
                 ...current.storage,
@@ -2931,6 +3051,13 @@ export function App() {
     });
   }
 
+  function handleArchiveConversation() {
+    cancelActiveLocalModelRequest();
+    startTransition(() => {
+      setState((current) => createArchivedConversationState(createTaskExecutionCancelledState(current)));
+    });
+  }
+
   function handleRestoreRecentConversation(conversationId: string) {
     startTransition(() => {
       setState((current) => restoreRecentConversationState(current, conversationId));
@@ -2944,14 +3071,17 @@ export function App() {
   }
 
   function handleImportKnowledgeFile(path: string) {
-    void importKnowledgeFile(path)
+    void importKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId)
       .then((inventory) => {
         startTransition(() => {
           setState((current) => ({
             ...current,
             knowledge: {
               importedFiles: inventory.importedFiles,
-              availableFiles: inventory.availableFiles
+              availableFiles: inventory.availableFiles,
+              activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+              activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+              libraries: inventory.libraries ?? current.knowledge.libraries
             },
             storage: {
               ...current.storage,
@@ -2964,14 +3094,17 @@ export function App() {
   }
 
   function handleRemoveKnowledgeFile(path: string) {
-    void removeKnowledgeFile(path)
+    void removeKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId)
       .then((inventory) => {
         startTransition(() => {
           setState((current) => ({
             ...current,
             knowledge: {
               importedFiles: inventory.importedFiles,
-              availableFiles: inventory.availableFiles
+              availableFiles: inventory.availableFiles,
+              activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+              activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+              libraries: inventory.libraries ?? current.knowledge.libraries
             },
             storage: {
               ...current.storage,
@@ -2983,7 +3116,53 @@ export function App() {
       .catch(() => undefined);
   }
 
-  function handleSubmitTask(message: string) {
+  function handleCreateKnowledgeLibrary(name: string, description?: string) {
+    void createKnowledgeLibrary(name, description)
+      .then((inventory) => {
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            knowledge: {
+              importedFiles: inventory.importedFiles,
+              availableFiles: inventory.availableFiles,
+              activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+              activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+              libraries: inventory.libraries ?? current.knowledge.libraries
+            },
+            storage: {
+              ...current.storage,
+              knowledgeCount: inventory.indexedDocumentCount
+            }
+          }));
+        });
+      })
+      .catch(() => undefined);
+  }
+
+  function handleSelectKnowledgeLibrary(libraryId: string) {
+    void selectKnowledgeLibrary(libraryId)
+      .then((inventory) => {
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            knowledge: {
+              importedFiles: inventory.importedFiles,
+              availableFiles: inventory.availableFiles,
+              activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+              activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+              libraries: inventory.libraries ?? current.knowledge.libraries
+            },
+            storage: {
+              ...current.storage,
+              knowledgeCount: inventory.indexedDocumentCount
+            }
+          }));
+        });
+      })
+      .catch(() => undefined);
+  }
+
+  function handleSubmitTask(message: string, attachments: ChatAttachment[] = []) {
     startTransition(() => {
       setState((current) => {
         if (shouldStopTerminalPreviewContinuation(message, current)) {
@@ -3073,6 +3252,7 @@ export function App() {
 
         return createUserTaskSubmittedState(current, {
           message: message,
+          attachments,
           executionMessage: resolvedMessage === message ? undefined : resolvedMessage,
           executionKind: assistantPlan.kind,
           executionTitle: assistantPlan.title,
@@ -3087,34 +3267,103 @@ export function App() {
     });
   }
 
+  function handleAddComposerAttachments(attachments: ChatAttachment[]) {
+    if (attachments.length === 0) {
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      composer: {
+        draftAttachments: [...current.composer.draftAttachments, ...attachments]
+      }
+    }));
+  }
+
+  function handleRemoveComposerAttachment(attachmentId: string) {
+    setState((current) => ({
+      ...current,
+      composer: {
+        draftAttachments: current.composer.draftAttachments.filter((attachment) => attachment.id !== attachmentId)
+      }
+    }));
+  }
+
   return (
-    <Workbench
-      state={state}
-      onApproveDangerousAction={handleApproveDangerousAction}
-      onCancelDangerousAction={handleCancelDangerousAction}
-      onApprovePermissionRequest={handleApprovePermissionRequest}
-      onCancelPermissionRequest={handleCancelPermissionRequest}
-      onRetryOllamaCheck={handleRetryOllamaCheck}
-      onRecoverToolError={handleRecoverToolError}
-      onPreviewRollback={handlePreviewRollback}
-      onApplyRollback={handleApplyRollback}
-      onCancelRollback={handleCancelRollback}
-      onRetryLocalTask={handleRetryLocalTask}
-      onCancelActiveTask={handleCancelActiveTask}
-      onUpdateRollbackLimit={handleUpdateRollbackLimit}
-      onCleanupStorage={handleCleanupStorage}
-      onToggleRemoteApi={handleToggleRemoteApi}
-      onToggleSearch={handleToggleSearch}
-      onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
-      onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
-      onSelectModel={handleSelectModel}
-      onSelectNpcModel={handleSelectNpcModel}
-      onNewConversation={handleNewConversation}
-      onRestoreRecentConversation={handleRestoreRecentConversation}
-      onDeleteRecentConversation={handleDeleteRecentConversation}
-      onImportKnowledgeFile={handleImportKnowledgeFile}
-      onRemoveKnowledgeFile={handleRemoveKnowledgeFile}
-      onSubmitTask={handleSubmitTask}
-    />
+    <>
+      <Workbench
+        state={state}
+        onApproveDangerousAction={handleApproveDangerousAction}
+        onCancelDangerousAction={handleCancelDangerousAction}
+        onApprovePermissionRequest={handleApprovePermissionRequest}
+        onCancelPermissionRequest={handleCancelPermissionRequest}
+        onRetryOllamaCheck={handleRetryOllamaCheck}
+        onRecoverToolError={handleRecoverToolError}
+        onPreviewRollback={handlePreviewRollback}
+        onApplyRollback={handleApplyRollback}
+        onCancelRollback={handleCancelRollback}
+        onRetryLocalTask={handleRetryLocalTask}
+        onCancelActiveTask={handleCancelActiveTask}
+        onUpdateRollbackLimit={handleUpdateRollbackLimit}
+        onCleanupStorage={handleCleanupStorage}
+        onToggleRemoteApi={handleToggleRemoteApi}
+        onToggleSearch={handleToggleSearch}
+        onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
+        onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
+        onSelectModel={handleSelectModel}
+        onSelectNpcModel={handleSelectNpcModel}
+        onNewConversation={handleNewConversation}
+        onArchiveConversation={handleArchiveConversation}
+        onRestoreRecentConversation={handleRestoreRecentConversation}
+        onDeleteRecentConversation={handleDeleteRecentConversation}
+        onImportKnowledgeFile={handleImportKnowledgeFile}
+        onRemoveKnowledgeFile={handleRemoveKnowledgeFile}
+        knowledgeLibraryLabel={state.knowledge.activeLibraryLabel}
+        knowledgeLibraries={(state.knowledge.libraries ?? []).map((library) => ({
+          ...library,
+          active: library.id === state.knowledge.activeLibraryId
+        }))}
+        onCreateKnowledgeLibrary={handleCreateKnowledgeLibrary}
+        onSelectKnowledgeLibrary={handleSelectKnowledgeLibrary}
+        onSubmitTask={handleSubmitTask}
+        onAddComposerAttachments={handleAddComposerAttachments}
+        onRemoveComposerAttachment={handleRemoveComposerAttachment}
+        onRequestClose={() => setCloseDecision("exit")}
+        onMinimizeApp={() => setCloseDecision("minimize")}
+      />
+      {closeDecision ? (
+        <div className="app-close-overlay" role="dialog" aria-label="退出确认">
+          <div className="app-close-dialog">
+            <h2>关闭窗口</h2>
+            <p>请选择最小化到后台，还是退出并关闭进程。</p>
+            <div className="action-row">
+              <button
+                type="button"
+                className="action-button"
+                onClick={async () => {
+                  setCloseDecision(null);
+                  await getCurrentWindow().minimize();
+                }}
+              >
+                最小化
+              </button>
+              <button
+                type="button"
+                className="action-button"
+                onClick={async () => {
+                  setCloseDecision(null);
+                  await getCurrentWindow().destroy();
+                }}
+              >
+                退出
+              </button>
+              <button type="button" className="action-button" onClick={() => setCloseDecision(null)}>
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
