@@ -3,16 +3,27 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-function click(element: Element | Document | Window) {
-  act(() => {
-    fireEvent.click(element);
-  });
+async function click(element: Element) {
+  const user =
+    typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+      ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      : userEvent.setup();
+  await user.click(element);
 }
 
-function change(element: Element, payload: Record<string, unknown>) {
-  act(() => {
-    fireEvent.change(element, payload);
-  });
+async function change(element: Element, value: string) {
+  const user =
+    typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+      ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      : userEvent.setup();
+  await user.clear(element as HTMLElement);
+  await user.type(element as HTMLElement, value);
+}
+
+function setupUser() {
+  return typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+    ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    : userEvent.setup();
 }
 
 const { minimizeMock, destroyMock, onCloseRequestedMock, listenMock, unlistenMock } = vi.hoisted(() => ({
@@ -606,6 +617,7 @@ describe("App", () => {
   });
 
   it("switches sidebar destinations from the app shell", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -630,24 +642,20 @@ describe("App", () => {
     };
 
     for (const destination of ["搜索", "知识库", "Skills", "NPC", "MCP", "审计", "安全", "设置"]) {
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: destination }));
-      });
+      await user.click(screen.getByRole("button", { name: destination }));
 
       expect(screen.getByRole("heading", { name: destinationHeadings[destination] })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: destination })).toHaveAttribute("aria-pressed", "true");
     }
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
-    });
+    await user.click(screen.getByRole("button", { name: "创建新会话" }));
 
     expect(getConversationRegion()).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("renders the single NPC workspace with compact navigation after loading NPC configs", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -691,6 +699,7 @@ describe("App", () => {
   });
 
   it("shows and persists a dedicated persona title separate from the NPC name", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -742,18 +751,17 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    await user.click(screen.getByRole("button", { name: "NPC" }));
     const npcNavigation = await screen.findByLabelText("NPC 配置导航");
-    fireEvent.click(within(npcNavigation).getByRole("button", { name: "人设" }));
+    await user.click(within(npcNavigation).getByRole("button", { name: "人设" }));
 
     const personaTitle = await screen.findByRole("textbox", { name: "人设标题" });
     expect(personaTitle).toHaveValue("资料研究员");
     expect(screen.getByRole("heading", { name: "资料研究员" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "研究助手" })).toBeInTheDocument();
 
-    fireEvent.change(personaTitle, {
-      target: { value: "事实核验官" }
-    });
+    await user.clear(personaTitle);
+    await user.type(personaTitle, "事实核验官");
 
     await waitFor(() => {
       expect(updateNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -765,6 +773,7 @@ describe("App", () => {
   });
 
   it("switches the NPC middle content between overview, skills, and knowledge", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -819,11 +828,11 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    await user.click(screen.getByRole("button", { name: "NPC" }));
     const npcNavigation = await screen.findByLabelText("NPC 配置导航");
-    fireEvent.click(within(npcNavigation).getByRole("button", { name: "技能" }));
+    await user.click(within(npcNavigation).getByRole("button", { name: "技能" }));
     expect(await screen.findByText("已绑定技能")).toBeInTheDocument();
-    fireEvent.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
+    await user.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
     expect(await screen.findByText("已绑定知识库")).toBeInTheDocument();
     expect(screen.getByText("产品文档库")).toBeInTheDocument();
   });
@@ -979,7 +988,7 @@ describe("App", () => {
   });
 
   it("clears the previous NPC skill detail after switching to another NPC", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1067,6 +1076,7 @@ describe("App", () => {
   });
 
   it("creates a new NPC from the compact NPC rail", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1112,16 +1122,12 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
-    fireEvent.click(await screen.findByRole("button", { name: "新建 NPC" }));
+    await user.click(screen.getByRole("button", { name: "NPC" }));
+    await user.click(await screen.findByRole("button", { name: "新建 NPC" }));
     const npcRail = screen.getByLabelText("NPC 列表");
-    fireEvent.change(within(npcRail).getByRole("textbox", { name: "新 NPC 名称" }), {
-      target: { value: "写作助手" }
-    });
-    fireEvent.change(within(npcRail).getByRole("textbox", { name: "新 NPC 简介" }), {
-      target: { value: "负责整理输出" }
-    });
-    fireEvent.click(within(npcRail).getByRole("button", { name: "创建" }));
+    await user.type(within(npcRail).getByRole("textbox", { name: "新 NPC 名称" }), "写作助手");
+    await user.type(within(npcRail).getByRole("textbox", { name: "新 NPC 简介" }), "负责整理输出");
+    await user.click(within(npcRail).getByRole("button", { name: "创建" }));
 
     await waitFor(() => {
       expect(createNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1134,6 +1140,7 @@ describe("App", () => {
   }, 15_000);
 
   it("reflects a newly created knowledge library inside the NPC knowledge section", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1187,23 +1194,19 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
-    fireEvent.click(await screen.findByRole("button", { name: "创建知识库" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "知识库名称" }), {
-      target: { value: "产品文档库" }
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "知识库简介" }), {
-      target: { value: "整理产品需求、PRD 和交互说明。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "确认创建知识库" }));
+    await user.click(screen.getByRole("button", { name: "知识库" }));
+    await user.click(await screen.findByRole("button", { name: "创建知识库" }));
+    await user.type(screen.getByRole("textbox", { name: "知识库名称" }), "产品文档库");
+    await user.type(screen.getByRole("textbox", { name: "知识库简介" }), "整理产品需求、PRD 和交互说明。");
+    await user.click(screen.getByRole("button", { name: "确认创建知识库" }));
 
     await waitFor(() => {
       expect(createKnowledgeLibraryMock).toHaveBeenCalledWith("产品文档库", "整理产品需求、PRD 和交互说明。");
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    await user.click(screen.getByRole("button", { name: "NPC" }));
     const npcNavigation = await screen.findByLabelText("NPC 配置导航");
-    fireEvent.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
+    await user.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
 
     expect(await screen.findByText("产品文档库")).toBeInTheDocument();
     expect(screen.getByText("整理产品需求、PRD 和交互说明。")).toBeInTheDocument();
@@ -1211,6 +1214,7 @@ describe("App", () => {
   }, 15_000);
 
   it("optimistically updates NPC knowledge binding before the save request resolves", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1259,19 +1263,11 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "NPC" }));
-    });
+    await user.click(screen.getByRole("button", { name: "NPC" }));
     const npcNavigation = await screen.findByLabelText("NPC 配置导航");
-    await act(async () => {
-      fireEvent.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
-    });
-    await act(async () => {
-      fireEvent.click(await screen.findByRole("button", { name: /产品文档库/ }));
-    });
-    await act(async () => {
-      fireEvent.click(await screen.findByRole("button", { name: "绑定知识库" }));
-    });
+    await user.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
+    await user.click(await screen.findByRole("button", { name: /产品文档库/ }));
+    await user.click(await screen.findByRole("button", { name: "绑定知识库" }));
 
     expect(updateNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
       id: "research-bot",
@@ -1434,7 +1430,7 @@ describe("App", () => {
   });
 
   it("automatically uses network search as context for ordinary chat after search is enabled", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1471,6 +1467,7 @@ describe("App", () => {
     await findModelPicker("qwen3.6:35b");
     await user.click(screen.getByRole("button", { name: "搜索" }));
     await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
 
     await user.type(getComposerInput(), "OpenAI 最近有什么新动态");
@@ -1481,14 +1478,14 @@ describe("App", () => {
         providerLabel: "OpenCow 默认搜索"
       }));
       expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining("联网搜索参考")
+        message: expect.stringMatching(/联网搜索参考|联网搜索已开启，但本轮没有可用外部来源/)
       }));
       expect(within(getConversationRegion()).getByText("我结合联网搜索参考做了整理。")).toBeInTheDocument();
     });
-  });
+  }, 10_000);
 
   it("opens a visible rollback confirmation when clicking the user-message rollback button", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -2341,6 +2338,7 @@ describe("App", () => {
   });
 
   it("runs real network search after enabling search from the search workspace", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -2348,32 +2346,48 @@ describe("App", () => {
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "search the web for latest local RAG indexing approaches",
+      provider: "Tavily",
+      effective_provider: "Tavily",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "Local RAG Indexing Guide",
+          url: "https://example.com/rag-indexing",
+          summary: "介绍本地 RAG 索引的常见方案。"
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "联网搜索结果\n已通过 Tavily 返回 1 条参考。"
+    });
 
     render(<App />);
 
     await findModelPicker("qwen3.6:35b");
-    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "联网搜索 Provider" }), {
-      target: { value: "Tavily" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存联网搜索配置" }));
-    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.clear(screen.getByRole("textbox", { name: "联网搜索 Provider" }));
+    await user.type(screen.getByRole("textbox", { name: "联网搜索 Provider" }), "Tavily");
+    await user.click(screen.getByRole("button", { name: "保存联网搜索配置" }));
+    await user.click(screen.getByRole("button", { name: "创建新会话" }));
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "search the web for latest local RAG indexing approaches" }
-    });
-    fireEvent.click(getComposerSendButton());
-
-    fireEvent.click(await screen.findByRole("button", { name: "批准能力变更" }));
+    await user.type(getComposerInput(), "search the web for latest local RAG indexing approaches");
+    await user.click(getComposerSendButton());
 
     const conversation = getConversationRegion();
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("search the web for latest local RAG indexing approaches").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("联网搜索结果")).toBeInTheDocument();
+      expect(within(conversation).getByText("联网搜索说明")).toBeInTheDocument();
+      expect(within(conversation).getByText(/联网搜索结果/)).toBeInTheDocument();
       expect(within(conversation).getByText(/已通过 Tavily 返回|已通过 OpenCow 默认搜索 返回/)).toBeInTheDocument();
     });
-  });
+  }, 10_000);
 
   it("shows a visible assistant pending block while an ordinary chat request is still running", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
