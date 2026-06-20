@@ -4,6 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::{env, time::Duration};
 
 #[derive(Serialize)]
 pub struct WorkspaceOverview {
@@ -64,6 +65,40 @@ pub struct WorkspaceProjectRunResult {
     stdout_preview: String,
     summary: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct NetworkSearchResultItem {
+    title: String,
+    url: String,
+    summary: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NetworkSearchResult {
+    query: String,
+    provider: String,
+    effective_provider: String,
+    used_fallback: bool,
+    fallback_reason: Option<String>,
+    items: Vec<NetworkSearchResultItem>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkSearchPayload {
+    query: String,
+    provider_label: Option<String>,
+    base_url: Option<String>,
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WikipediaOpenSearchResponse(
+    String,
+    Vec<String>,
+    Vec<String>,
+    Vec<String>,
+);
 
 #[derive(Serialize)]
 pub struct WorkspaceProjectStatusResult {
@@ -128,6 +163,44 @@ pub struct NpcConfigWriteResult {
     summary: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NpcWorkspaceConfigRecord {
+    id: String,
+    name: String,
+    description: String,
+    default_model: String,
+    persona_title: String,
+    persona_prompt: String,
+    output_style: String,
+    agent_draft: String,
+    rules_draft: String,
+    enabled_skill_names: Vec<String>,
+    knowledge_library_ids: Vec<String>,
+    updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NpcWorkspaceResult {
+    summary: String,
+    selected_npc_id: Option<String>,
+    items: Vec<NpcWorkspaceConfigRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NpcWorkspaceConfigUpsertPayload {
+    id: String,
+    name: String,
+    description: String,
+    default_model: String,
+    persona_title: String,
+    persona_prompt: String,
+    output_style: String,
+    agent_draft: String,
+    rules_draft: String,
+    enabled_skill_names: Vec<String>,
+    knowledge_library_ids: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
     project_name: String,
@@ -187,6 +260,338 @@ pub fn workspace_npc_config_write(
     })
 }
 
+#[tauri::command]
+pub async fn network_search(payload: NetworkSearchPayload) -> Result<NetworkSearchResult, String> {
+    let query = payload.query.trim().to_string();
+
+    if query.is_empty() {
+        return Err("network search query cannot be empty".to_string());
+    }
+
+    let custom_provider = payload
+        .provider_label
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let custom_base_url = payload
+        .base_url
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let custom_api_key = payload
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+
+    if !custom_provider.is_empty() {
+        match run_custom_network_search(&query, &custom_provider, &custom_base_url, &custom_api_key).await {
+            Ok(items) if !items.is_empty() => {
+                return Ok(NetworkSearchResult {
+                    query,
+                    provider: custom_provider.clone(),
+                    effective_provider: custom_provider,
+                    used_fallback: false,
+                    fallback_reason: None,
+                    items,
+                });
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let fallback_items = run_default_network_search(&query).await?;
+                return Ok(NetworkSearchResult {
+                    query,
+                    provider: custom_provider,
+                    effective_provider: "OpenCow 默认搜索".to_string(),
+                    used_fallback: true,
+                    fallback_reason: Some(format!(
+                        "自定义搜索请求失败，已自动回退到 OpenCow 默认搜索。原因：{error}"
+                    )),
+                    items: fallback_items,
+                });
+            }
+        }
+    }
+
+    let items = run_default_network_search(&query).await?;
+    Ok(NetworkSearchResult {
+        query,
+        provider: "OpenCow 默认搜索".to_string(),
+        effective_provider: "OpenCow 默认搜索".to_string(),
+        used_fallback: false,
+        fallback_reason: None,
+        items,
+    })
+}
+
+async fn run_custom_network_search(
+    query: &str,
+    provider_label: &str,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Vec<NetworkSearchResultItem>, String> {
+    if provider_label.is_empty() || base_url.is_empty() || api_key.is_empty() {
+        return Err("自定义搜索配置不完整".to_string());
+    }
+
+    let provider = provider_label.to_lowercase();
+    if provider.contains("serpapi") {
+        return run_serpapi_search(query, base_url, api_key).await;
+    }
+
+    if provider.contains("tavily") {
+        return run_tavily_search(query, base_url, api_key).await;
+    }
+
+    Err(format!("暂不支持的自定义搜索提供方：{provider_label}"))
+}
+
+async fn run_default_network_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let direct_attempt = run_wikipedia_open_search(query, false).await;
+
+    match direct_attempt {
+        Ok(items) if !items.is_empty() => return Ok(items),
+        Ok(_) => {}
+        Err(_) => {}
+    }
+
+    let proxy_attempt = run_wikipedia_open_search(query, true).await;
+
+    match proxy_attempt {
+        Ok(items) if !items.is_empty() => Ok(items),
+        Ok(_) => Err("OpenCow 默认搜索没有返回可用来源。".to_string()),
+        Err(error) => Err(format!(
+            "OpenCow 默认搜索当前不可用，请检查网络或代理设置后重试。原因：{error}"
+        )),
+    }
+}
+
+async fn run_wikipedia_open_search(
+    query: &str,
+    use_system_proxy: bool,
+) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let encoded_query = urlencoding::encode(query);
+    let url = format!(
+        "https://en.wikipedia.org/w/api.php?action=opensearch&search={encoded_query}&limit=5&namespace=0&format=json"
+    );
+    let client = build_search_client(use_system_proxy)?;
+    let response = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let payload = response
+        .json::<WikipediaOpenSearchResponse>()
+        .await
+        .map_err(|error| format!("failed to parse default search response: {error}"))?;
+
+    let mut items = Vec::new();
+    for index in 0..payload.1.len().min(payload.2.len()).min(payload.3.len()) {
+      let title = payload.1.get(index).cloned().unwrap_or_default();
+      let summary = payload.2.get(index).cloned().unwrap_or_default();
+      let url = payload.3.get(index).cloned().unwrap_or_default();
+
+      if title.trim().is_empty() || url.trim().is_empty() {
+        continue;
+      }
+
+      items.push(NetworkSearchResultItem {
+        title,
+        url,
+        summary: if summary.trim().is_empty() {
+          "OpenCow 默认搜索返回了可用词条。".to_string()
+        } else {
+          summary
+        },
+      });
+    }
+
+    Ok(items)
+}
+
+async fn run_serpapi_search(
+    query: &str,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let client = build_search_client(false)?;
+    let mut url = base_url.trim().to_string();
+    if url.is_empty() {
+        url = "https://serpapi.com/search.json".to_string();
+    }
+
+    let response = client
+        .get(url)
+        .query(&[
+            ("q", query),
+            ("api_key", api_key),
+            ("engine", "google"),
+        ])
+        .send()
+        .await
+        .map_err(|error| format!("request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("failed to parse SerpAPI response: {error}"))?;
+    Ok(extract_json_search_items(
+        payload.get("organic_results").and_then(Value::as_array),
+        "title",
+        "link",
+        &["snippet"],
+    ))
+}
+
+async fn run_tavily_search(
+    query: &str,
+    base_url: &str,
+    api_key: &str,
+) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let client = build_search_client(false)?;
+    let mut url = base_url.trim().to_string();
+    if url.is_empty() {
+        url = "https://api.tavily.com/search".to_string();
+    }
+
+    let response = client
+        .post(url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "query": query,
+            "api_key": api_key,
+            "search_depth": "basic",
+            "max_results": 5,
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("failed to parse Tavily response: {error}"))?;
+    Ok(extract_json_search_items(
+        payload.get("results").and_then(Value::as_array),
+        "title",
+        "url",
+        &["content", "snippet"],
+    ))
+}
+
+fn extract_json_search_items(
+    array: Option<&Vec<Value>>,
+    title_key: &str,
+    url_key: &str,
+    summary_keys: &[&str],
+) -> Vec<NetworkSearchResultItem> {
+    array
+        .into_iter()
+        .flat_map(|items| items.iter())
+        .filter_map(|item| {
+            let title = item.get(title_key).and_then(Value::as_str)?.trim().to_string();
+            let url = item.get(url_key).and_then(Value::as_str)?.trim().to_string();
+            if title.is_empty() || url.is_empty() {
+                return None;
+            }
+            let summary = summary_keys
+                .iter()
+                .find_map(|key| item.get(*key).and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("搜索提供方返回了可用结果。")
+                .to_string();
+            Some(NetworkSearchResultItem { title, url, summary })
+        })
+        .take(5)
+        .collect()
+}
+
+fn build_search_client(use_system_proxy: bool) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent("OpenCowDesktop/0.1 network-search");
+
+    if use_system_proxy {
+        if let Some(proxy_url) = resolve_system_proxy_url() {
+            let proxy = reqwest::Proxy::all(&proxy_url)
+                .map_err(|error| format!("failed to configure proxy {proxy_url}: {error}"))?;
+            builder = builder.proxy(proxy);
+        }
+    } else {
+        builder = builder.no_proxy();
+    }
+
+    builder
+        .build()
+        .map_err(|error| format!("failed to build search client: {error}"))
+}
+
+fn resolve_system_proxy_url() -> Option<String> {
+    [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .into_iter()
+    .find_map(|key| env::var(key).ok())
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+    .or_else(|| Some("http://127.0.0.1:7897".to_string()))
+}
+
+#[tauri::command]
+pub fn workspace_npc_configs_list() -> Result<NpcWorkspaceResult, String> {
+    let root = resolve_workspace_root()?;
+    list_workspace_npc_configs(&root)
+}
+
+#[tauri::command]
+pub fn workspace_npc_config_read(npc_id: String) -> Result<NpcWorkspaceConfigRecord, String> {
+    let root = resolve_workspace_root()?;
+    read_workspace_npc_config(&root, &npc_id)
+}
+
+#[tauri::command]
+pub fn workspace_npc_config_create(
+    payload: NpcWorkspaceConfigUpsertPayload,
+) -> Result<NpcWorkspaceResult, String> {
+    let root = resolve_workspace_root()?;
+    let selected_npc_id = slugify_npc_config_name(&payload.id);
+    upsert_workspace_npc_config(&root, payload)?;
+    list_workspace_npc_configs_for_selection(&root, Some(selected_npc_id))
+}
+
+#[tauri::command]
+pub fn workspace_npc_config_update(
+    payload: NpcWorkspaceConfigUpsertPayload,
+) -> Result<NpcWorkspaceResult, String> {
+    let root = resolve_workspace_root()?;
+    let selected_npc_id = slugify_npc_config_name(&payload.id);
+    upsert_workspace_npc_config(&root, payload)?;
+    list_workspace_npc_configs_for_selection(&root, Some(selected_npc_id))
+}
+
 fn slugify_npc_config_name(name: &str) -> String {
     let mut slug = String::new();
 
@@ -206,6 +611,203 @@ fn slugify_npc_config_name(name: &str) -> String {
         "custom-npc".to_string()
     } else {
         trimmed
+    }
+}
+
+fn list_workspace_npc_configs(root: &Path) -> Result<NpcWorkspaceResult, String> {
+    list_workspace_npc_configs_for_selection(root, None)
+}
+
+fn read_workspace_npc_config(
+    root: &Path,
+    npc_id: &str,
+) -> Result<NpcWorkspaceConfigRecord, String> {
+    let normalized_id = slugify_npc_config_name(npc_id);
+    let config_path = root
+        .join(".opencow")
+        .join("npcs")
+        .join(format!("{normalized_id}.json"));
+    ensure_path_stays_in_workspace(root, &config_path)?;
+
+    let raw = fs::read_to_string(&config_path)
+        .map_err(|error| format!("failed to read {}: {error}", config_path.display()))?;
+    let value: Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", config_path.display()))?;
+
+    Ok(normalize_npc_workspace_record(&value, &config_path))
+}
+
+fn list_workspace_npc_configs_for_selection(
+    root: &Path,
+    selected_npc_id: Option<String>,
+) -> Result<NpcWorkspaceResult, String> {
+    let npc_directory = root.join(".opencow").join("npcs");
+
+    if !npc_directory.exists() {
+        return Ok(NpcWorkspaceResult {
+            summary: "NPC workspace loaded 0 configs.".to_string(),
+            selected_npc_id: None,
+            items: Vec::new(),
+        });
+    }
+
+    let mut items = Vec::new();
+    let entries = fs::read_dir(&npc_directory)
+        .map_err(|error| format!("failed to read {}: {error}", npc_directory.display()))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            format!(
+                "failed to read NPC workspace entry under {}: {error}",
+                npc_directory.display()
+            )
+        })?;
+        let path = entry.path();
+
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let value: Value = serde_json::from_str(&raw)
+            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        items.push(normalize_npc_workspace_record(&value, &path));
+    }
+
+    items.sort_by(|left, right| left.name.cmp(&right.name));
+
+    Ok(NpcWorkspaceResult {
+        summary: format!("NPC workspace loaded {} configs.", items.len()),
+        selected_npc_id: selected_npc_id
+            .filter(|target_id| items.iter().any(|item| item.id == *target_id))
+            .or_else(|| items.first().map(|item| item.id.clone())),
+        items,
+    })
+}
+
+fn upsert_workspace_npc_config(
+    root: &Path,
+    payload: NpcWorkspaceConfigUpsertPayload,
+) -> Result<(), String> {
+    let npc_directory = root.join(".opencow").join("npcs");
+    fs::create_dir_all(&npc_directory)
+        .map_err(|error| format!("failed to create {}: {error}", npc_directory.display()))?;
+
+    let id = slugify_npc_config_name(&payload.id);
+    let config_path = npc_directory.join(format!("{id}.json"));
+    ensure_path_stays_in_workspace(root, &config_path)?;
+
+    let record = NpcWorkspaceConfigRecord {
+        id,
+        name: payload.name.trim().to_string(),
+        description: payload.description.trim().to_string(),
+        default_model: payload.default_model.trim().to_string(),
+        persona_title: payload.persona_title.trim().to_string(),
+        persona_prompt: payload.persona_prompt,
+        output_style: payload.output_style,
+        agent_draft: payload.agent_draft,
+        rules_draft: payload.rules_draft,
+        enabled_skill_names: payload.enabled_skill_names,
+        knowledge_library_ids: payload.knowledge_library_ids,
+        updated_at: current_unix_timestamp_string(),
+    };
+    let serialized = serde_json::to_string_pretty(&record)
+        .map_err(|error| format!("failed to serialize NPC config: {error}"))?;
+    fs::write(&config_path, format!("{serialized}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", config_path.display()))?;
+
+    Ok(())
+}
+
+fn normalize_npc_workspace_record(value: &Value, path: &Path) -> NpcWorkspaceConfigRecord {
+    let fallback_name = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("custom-npc")
+        .to_string();
+
+    NpcWorkspaceConfigRecord {
+        id: value
+            .get("id")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| slugify_npc_config_name(&fallback_name)),
+        name: value
+            .get("name")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| fallback_name.clone()),
+        description: value
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        default_model: value
+            .get("default_model")
+            .or_else(|| value.get("local_model"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        persona_title: value
+            .get("persona_title")
+            .or_else(|| value.get("role"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        persona_prompt: value
+            .get("persona_prompt")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        output_style: value
+            .get("output_style")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        agent_draft: value
+            .get("agent_draft")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        rules_draft: value
+            .get("rules_draft")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        enabled_skill_names: value
+            .get("enabled_skill_names")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        knowledge_library_ids: value
+            .get("knowledge_library_ids")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| {
+                value
+                    .get("knowledge_library_id")
+                    .and_then(Value::as_str)
+                    .map(|value| vec![value.to_string()])
+                    .unwrap_or_default()
+            }),
+        updated_at: value
+            .get("updated_at")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
     }
 }
 
@@ -293,11 +895,15 @@ pub struct LocalMcpPluginScanResult {
 #[derive(Serialize)]
 pub struct LocalMcpPluginScanItem {
     id: String,
+    name: String,
     path: String,
     source: String,
+    description: String,
     activation: String,
     tool_count: usize,
     skill_count: usize,
+    status: String,
+    supported: bool,
 }
 
 #[derive(Serialize)]
@@ -352,6 +958,45 @@ pub struct LocalMcpPluginStartResult {
     working_directory: String,
     stdout_preview: String,
     line_count: usize,
+    summary: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct RecommendedMcpManifestItem {
+    id: String,
+    name: String,
+    description: String,
+    source: String,
+    install_query: String,
+    rationale: String,
+    supported: bool,
+}
+
+#[derive(Serialize)]
+pub struct RecommendedMcpManifestResult {
+    summary: String,
+    total_count: usize,
+    items: Vec<RecommendedMcpManifestItem>,
+}
+
+#[derive(Serialize)]
+pub struct LocalMcpPluginInstallResult {
+    query: String,
+    installed_plugin_id: String,
+    installed_plugin_name: String,
+    installed_plugin_path: String,
+    source_plugin_path: String,
+    status: String,
+    summary: String,
+}
+
+#[derive(Serialize)]
+pub struct LocalMcpPluginUninstallResult {
+    query: String,
+    removed_plugin_id: String,
+    removed_plugin_name: String,
+    removed_plugin_path: String,
+    status: String,
     summary: String,
 }
 
@@ -424,6 +1069,7 @@ pub struct KnowledgeInventoryLibraryItem {
     id: String,
     label: String,
     description: String,
+    document_count: usize,
 }
 
 #[derive(Serialize)]
@@ -441,6 +1087,22 @@ pub struct LocalSkillScanItem {
     source: String,
     description: String,
     enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct RecommendedSkillManifestResult {
+    summary: String,
+    total_count: usize,
+    items: Vec<RecommendedSkillManifestItem>,
+}
+
+#[derive(Serialize)]
+pub struct RecommendedSkillManifestItem {
+    name: String,
+    description: String,
+    source: String,
+    install_query: String,
+    rationale: String,
 }
 
 #[derive(Serialize)]
@@ -1463,8 +2125,8 @@ pub fn knowledge_library_select(library_id: String) -> Result<KnowledgeInventory
 #[tauri::command]
 pub fn local_mcp_plugin_scan() -> Result<LocalMcpPluginScanResult, String> {
     let root = resolve_workspace_root()?;
-    let plugin_files = collect_local_mcp_plugin_files(&root)?;
-    let scanned_root_count = count_existing_mcp_plugin_roots(&root);
+    let plugin_files = collect_installed_local_mcp_plugin_files()?;
+    let scanned_root_count = usize::from(opencow_installed_mcp_root()?.exists());
     let mut items = Vec::new();
 
     for path in plugin_files {
@@ -1472,12 +2134,15 @@ pub fn local_mcp_plugin_scan() -> Result<LocalMcpPluginScanResult, String> {
             .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
         let parsed: Value = serde_json::from_str(&raw)
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        let relative_path = to_workspace_relative_path(&root, &path);
         let id = parsed
             .get("id")
             .and_then(Value::as_str)
             .unwrap_or("plugin")
             .to_string();
+        let name = match id.as_str() {
+            "browser" => "浏览器控制".to_string(),
+            _ => id.clone(),
+        };
         let activation = if parsed
             .get("activation")
             .and_then(|value| value.get("onStartup"))
@@ -1499,21 +2164,37 @@ pub fn local_mcp_plugin_scan() -> Result<LocalMcpPluginScanResult, String> {
             .and_then(Value::as_array)
             .map(|value| value.len())
             .unwrap_or(0);
+        let description = parsed
+            .get("description")
+            .and_then(Value::as_str)
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| format!("{name} MCP 已安装。"));
 
         items.push(LocalMcpPluginScanItem {
             id,
-            path: relative_path,
+            name,
+            path: to_display_relative_path(&root, &path),
             source: classify_mcp_plugin_source(&root, &path),
+            description,
             activation,
             tool_count,
             skill_count,
+            status: "stopped".to_string(),
+            supported: parsed
+                .get("id")
+                .and_then(Value::as_str)
+                .map(|value| value == "browser")
+                .unwrap_or(false),
         });
     }
 
     items.sort_by(|left, right| left.id.cmp(&right.id).then(left.path.cmp(&right.path)));
     let total_count = items.len();
-    let summary =
-        format!("Local MCP plugin scan found {total_count} plugin entries across {scanned_root_count} scanned roots.");
+    let summary = if total_count > 0 {
+        format!("OpenCow 已安装 {total_count} 个 MCP。")
+    } else {
+        "OpenCow 还没有安装任何 MCP。".to_string()
+    };
 
     Ok(LocalMcpPluginScanResult {
         summary,
@@ -1526,8 +2207,8 @@ pub fn local_mcp_plugin_scan() -> Result<LocalMcpPluginScanResult, String> {
 #[tauri::command]
 pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectResult, String> {
     let root = resolve_workspace_root()?;
-    let plugin_files = collect_local_mcp_plugin_files(&root)?;
-    let scanned_root_count = count_existing_mcp_plugin_roots(&root);
+    let plugin_files = collect_installed_local_mcp_plugin_files()?;
+    let scanned_root_count = usize::from(opencow_installed_mcp_root()?.exists());
     let tokens = tokenize_query(&query);
     let mut items = Vec::new();
 
@@ -1536,7 +2217,7 @@ pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectRe
             .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
         let parsed: Value = serde_json::from_str(&raw)
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        let relative_path = to_workspace_relative_path(&root, &path);
+        let relative_path = to_display_relative_path(&root, &path);
         let id = parsed
             .get("id")
             .and_then(Value::as_str)
@@ -1616,9 +2297,9 @@ pub fn local_mcp_plugin_inspect(query: String) -> Result<LocalMcpPluginInspectRe
         .collect::<Vec<_>>();
     let match_count = items.len();
     let summary = if match_count > 0 {
-        format!("Local MCP plugin detail lookup found {match_count} matching plugin across {scanned_root_count} scanned roots.")
+        format!("找到 {match_count} 个已安装 MCP 详情。")
     } else {
-        format!("Local MCP plugin detail lookup found no matching plugins across {scanned_root_count} scanned roots.")
+        "没有找到匹配的已安装 MCP。".to_string()
     };
 
     Ok(LocalMcpPluginInspectResult {
@@ -1635,8 +2316,8 @@ pub fn local_mcp_plugin_start_preview(
     query: String,
 ) -> Result<LocalMcpPluginStartPreviewResult, String> {
     let root = resolve_workspace_root()?;
-    let plugin_files = collect_local_mcp_plugin_files(&root)?;
-    let scanned_root_count = count_existing_mcp_plugin_roots(&root);
+    let plugin_files = collect_installed_local_mcp_plugin_files()?;
+    let scanned_root_count = usize::from(opencow_installed_mcp_root()?.exists());
     let tokens = tokenize_query(&query);
     let mut items = Vec::new();
 
@@ -1645,7 +2326,7 @@ pub fn local_mcp_plugin_start_preview(
             .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
         let parsed: Value = serde_json::from_str(&raw)
             .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
-        let relative_path = to_workspace_relative_path(&root, &path);
+        let relative_path = to_display_relative_path(&root, &path);
         let id = parsed
             .get("id")
             .and_then(Value::as_str)
@@ -1701,11 +2382,25 @@ pub fn local_mcp_plugin_start_preview(
             continue;
         }
 
-        let working_directory = path
-            .parent()
-            .map(|value| to_workspace_relative_path(&root, value))
-            .unwrap_or_else(|| ".".to_string());
+        let working_directory = if id == "browser" {
+            "vendor/openclaw".to_string()
+        } else {
+            path.parent()
+                .map(|value| to_display_relative_path(&root, value))
+                .unwrap_or_else(|| ".".to_string())
+        };
         let (requires_config, config_hint) = analyze_mcp_plugin_config_schema(&parsed);
+        let startup_allowed = id == "browser";
+        let command_preview = if id == "browser" {
+            "node vendor/openclaw/openclaw.mjs browser start".to_string()
+        } else {
+            "当前版本尚未为这个 MCP 提供受支持的宿主命令".to_string()
+        };
+        let risk_summary = if id == "browser" {
+            "会尝试通过 OpenClaw browser CLI 启动浏览器控制服务；如果本地依赖缺失会返回明确诊断。".to_string()
+        } else {
+            "这个 MCP 已进入产品目录，但当前桌面端还没有为它开放受控启动宿主。".to_string()
+        };
 
         items.push((
             score,
@@ -1714,14 +2409,10 @@ pub fn local_mcp_plugin_start_preview(
                 path: relative_path,
                 source: classify_mcp_plugin_source(&root, &path),
                 activation: activation.clone(),
-                startup_allowed: false,
-                command_preview:
-                    "No resolved executable launcher for this local MCP plugin in the current desktop slice."
-                        .to_string(),
+                startup_allowed,
+                command_preview,
                 working_directory,
-                risk_summary:
-                    "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process."
-                        .to_string(),
+                risk_summary,
                 requires_config,
                 config_hint,
             },
@@ -1736,9 +2427,9 @@ pub fn local_mcp_plugin_start_preview(
         .collect::<Vec<_>>();
     let match_count = items.len();
     let summary = if match_count > 0 {
-        format!("Local MCP plugin start preview found {match_count} matching plugin across {scanned_root_count} scanned roots.")
+        format!("找到 {match_count} 个 MCP 启动预览。")
     } else {
-        format!("Local MCP plugin start preview found no matching plugins across {scanned_root_count} scanned roots.")
+        "没有找到可预览的 MCP。".to_string()
     };
 
     Ok(LocalMcpPluginStartPreviewResult {
@@ -1756,46 +2447,225 @@ pub fn local_mcp_plugin_start(query: String) -> Result<LocalMcpPluginStartResult
     let normalized = query.to_lowercase();
 
     if !normalized.contains("browser") {
-        return Err("only the browser MCP plugin start path is enabled in this slice".to_string());
+        return Err("当前只支持启动 browser MCP。".to_string());
     }
 
-    let plugin_manifest = root
-        .join("vendor")
-        .join("openclaw")
-        .join("extensions")
+    let plugin_manifest = opencow_installed_mcp_root()?
         .join("browser")
         .join("openclaw.plugin.json");
 
     if !plugin_manifest.exists() {
+        return Err("browser MCP 尚未安装到 OpenCow 产品目录。".to_string());
+    }
+
+    let vendor_root = root.join("vendor").join("openclaw");
+    let launcher = vendor_root.join("openclaw.mjs");
+
+    if !launcher.exists() {
         return Err(format!(
-            "failed to find browser MCP plugin manifest at {}",
-            plugin_manifest.display()
+            "未找到 browser MCP 启动入口：{}",
+            launcher.display()
         ));
     }
 
+    let output = Command::new("node")
+        .current_dir(&vendor_root)
+        .arg("openclaw.mjs")
+        .arg("browser")
+        .arg("start")
+        .output()
+        .map_err(|error| format!("启动 browser MCP 失败: {error}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = if !stdout.is_empty() && !stderr.is_empty() {
+        format!("{stdout}\n{stderr}")
+    } else if !stdout.is_empty() {
+        stdout
+    } else if !stderr.is_empty() {
+        stderr
+    } else {
+        "browser MCP 已执行启动命令，但没有输出。".to_string()
+    };
+    let line_count = combined.lines().count().max(1);
+    let summary = if output.status.success() {
+        "browser MCP 启动命令已执行。".to_string()
+    } else {
+        "browser MCP 启动失败，请检查输出诊断。".to_string()
+    };
+
     Ok(LocalMcpPluginStartResult {
         plugin_id: "browser".to_string(),
-        command_label: "No resolved executable launcher".to_string(),
-        working_directory: "vendor/openclaw/extensions/browser".to_string(),
-        stdout_preview:
-            "Execution blocked: the browser MCP plugin manifest exists, but this desktop slice does not yet know how to launch a real plugin host for it."
-                .to_string(),
-        line_count: 0,
-        summary: "Local MCP plugin start was not executed. The browser plugin is present, but no verified executable launcher has been implemented for it yet.".to_string(),
+        command_label: "openclaw browser start".to_string(),
+        working_directory: "vendor/openclaw".to_string(),
+        stdout_preview: combined,
+        line_count,
+        summary,
+    })
+}
+
+#[tauri::command]
+pub fn recommended_mcp_manifest() -> Result<RecommendedMcpManifestResult, String> {
+    let items = read_recommended_mcp_manifest_items()?;
+    let total_count = items.len();
+    let summary = if total_count > 0 {
+        format!("OpenCow 推荐 MCP 清单已加载，共 {total_count} 项。")
+    } else {
+        "OpenCow 推荐 MCP 清单当前为空。".to_string()
+    };
+
+    Ok(RecommendedMcpManifestResult {
+        summary,
+        total_count,
+        items,
+    })
+}
+
+#[tauri::command]
+pub fn local_mcp_plugin_install(query: String) -> Result<LocalMcpPluginInstallResult, String> {
+    let root = resolve_workspace_root()?;
+    let items = read_recommended_mcp_manifest_items()?;
+    let tokens = tokenize_query(&query);
+    let matched = items
+        .into_iter()
+        .filter(|item| item.supported)
+        .filter_map(|item| {
+            let score = score_mcp_plugin_match(
+                &query,
+                &tokens,
+                &item.id,
+                &item.description,
+                &[],
+                &[],
+                Path::new(&item.install_query),
+            );
+            if score == 0 {
+                None
+            } else {
+                Some((score, item))
+            }
+        })
+        .max_by(|left, right| left.0.cmp(&right.0))
+        .map(|(_, item)| item)
+        .ok_or_else(|| format!("没有匹配到可安装的 MCP：{query}"))?;
+
+    let source_path = root
+        .join("vendor")
+        .join("openclaw")
+        .join("extensions")
+        .join(&matched.id)
+        .join("openclaw.plugin.json");
+    if !source_path.exists() {
+        return Err(format!("未找到推荐 MCP 源文件：{}", source_path.display()));
+    }
+
+    let target_dir = opencow_installed_mcp_root()?.join(&matched.id);
+    let target_file = target_dir.join("openclaw.plugin.json");
+    fs::create_dir_all(&target_dir)
+        .map_err(|error| format!("failed to create {}: {error}", target_dir.display()))?;
+    let status = if target_file.exists() {
+        "already-installed".to_string()
+    } else {
+        fs::copy(&source_path, &target_file).map_err(|error| {
+            format!(
+                "failed to copy {} to {}: {error}",
+                source_path.display(),
+                target_file.display()
+            )
+        })?;
+        "installed".to_string()
+    };
+    let summary = if status == "already-installed" {
+        format!("{} 已存在于 OpenCow MCP 目录。", matched.name)
+    } else {
+        format!("{} 已安装到 OpenCow MCP 目录。", matched.name)
+    };
+
+    Ok(LocalMcpPluginInstallResult {
+        query,
+        installed_plugin_id: matched.id,
+        installed_plugin_name: matched.name,
+        installed_plugin_path: to_opencow_product_relative_path(&target_file),
+        source_plugin_path: to_workspace_relative_path(&root, &source_path),
+        status,
+        summary,
+    })
+}
+
+#[tauri::command]
+pub fn local_mcp_plugin_uninstall(query: String) -> Result<LocalMcpPluginUninstallResult, String> {
+    let root = resolve_workspace_root()?;
+    let plugin_files = collect_installed_local_mcp_plugin_files()?;
+    let tokens = tokenize_query(&query);
+    let mut best_match: Option<(usize, PathBuf, String)> = None;
+
+    for path in plugin_files {
+        let raw = fs::read_to_string(&path)
+            .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+        let parsed: Value = serde_json::from_str(&raw)
+            .map_err(|error| format!("failed to parse {}: {error}", path.display()))?;
+        let id = parsed
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("plugin")
+            .to_string();
+        let description = parsed
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let score = score_mcp_plugin_match(&query, &tokens, &id, &description, &[], &[], &path);
+        if score == 0 {
+            continue;
+        }
+        match &best_match {
+            Some((best_score, _, _)) if *best_score >= score => {}
+            _ => best_match = Some((score, path.clone(), id)),
+        }
+    }
+
+    let Some((_, matched_path, matched_id)) = best_match else {
+        return Err(format!("没有匹配到已安装 MCP：{query}"));
+    };
+
+    let removed_path = to_display_relative_path(&root, &matched_path);
+    let removed_name = if matched_id == "browser" {
+        "浏览器控制".to_string()
+    } else {
+        matched_id.clone()
+    };
+    let status = if matched_path.exists() {
+        let parent = matched_path
+            .parent()
+            .ok_or_else(|| format!("failed to resolve parent for {}", matched_path.display()))?;
+        fs::remove_dir_all(parent)
+            .map_err(|error| format!("failed to remove {}: {error}", parent.display()))?;
+        "removed".to_string()
+    } else {
+        "not-installed".to_string()
+    };
+    let summary = if status == "removed" {
+        format!("{removed_name} 已从 OpenCow MCP 目录删除。")
+    } else {
+        format!("{removed_name} 当前并未安装。")
+    };
+
+    Ok(LocalMcpPluginUninstallResult {
+        query,
+        removed_plugin_id: matched_id,
+        removed_plugin_name: removed_name,
+        removed_plugin_path: removed_path,
+        status,
+        summary,
     })
 }
 
 #[tauri::command]
 pub fn local_skill_scan() -> Result<LocalSkillScanResult, String> {
     let root = resolve_workspace_root()?;
-    let skill_files = collect_local_skill_files(&root)?;
+    let skill_files = collect_opencow_installed_skill_files()?;
     let scanned_root_count = count_existing_skill_roots(&root);
-    let enabled_skills = read_enabled_skill_registry(
-        &root
-            .join(".opencow")
-            .join("skills")
-            .join("enabled-skills.json"),
-    )?;
+    let enabled_skills = read_enabled_skill_registry(&opencow_enabled_skills_registry_path()?)?;
     let mut items = Vec::new();
 
     for path in skill_files {
@@ -1806,18 +2676,14 @@ pub fn local_skill_scan() -> Result<LocalSkillScanResult, String> {
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
             format!(
                 "Local skill discovered at {}.",
-                to_workspace_relative_path(&root, &path)
+                to_display_relative_path(&root, &path)
             )
         });
 
         items.push(LocalSkillScanItem {
-            enabled: is_skill_enabled(
-                &enabled_skills,
-                &name,
-                &to_workspace_relative_path(&root, &path),
-            ),
+            enabled: is_skill_enabled(&enabled_skills, &name, &to_display_relative_path(&root, &path)),
             name,
-            path: to_workspace_relative_path(&root, &path),
+            path: to_display_relative_path(&root, &path),
             source: classify_skill_source(&root, &path),
             description,
         });
@@ -1840,14 +2706,9 @@ pub fn local_skill_scan() -> Result<LocalSkillScanResult, String> {
 #[tauri::command]
 pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, String> {
     let root = resolve_workspace_root()?;
-    let skill_files = collect_local_skill_files(&root)?;
+    let skill_files = collect_opencow_installed_skill_files()?;
     let scanned_root_count = count_existing_skill_roots(&root);
-    let enabled_skills = read_enabled_skill_registry(
-        &root
-            .join(".opencow")
-            .join("skills")
-            .join("enabled-skills.json"),
-    )?;
+    let enabled_skills = read_enabled_skill_registry(&opencow_enabled_skills_registry_path()?)?;
     let tokens = tokenize_query(&query);
     let mut items = Vec::new();
 
@@ -1859,7 +2720,7 @@ pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, Str
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
             format!(
                 "Local skill discovered at {}.",
-                to_workspace_relative_path(&root, &path)
+                to_display_relative_path(&root, &path)
             )
         });
         let content_preview = extract_skill_content_preview(&raw);
@@ -1876,7 +2737,7 @@ pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, Str
             continue;
         }
 
-        let relative_path = to_workspace_relative_path(&root, &path);
+        let relative_path = to_display_relative_path(&root, &path);
 
         items.push((
             score,
@@ -1916,7 +2777,7 @@ pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, Str
 #[tauri::command]
 pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, String> {
     let root = resolve_workspace_root()?;
-    let skill_files = collect_local_skill_files(&root)?;
+    let skill_files = collect_opencow_installed_skill_files()?;
     let tokens = tokenize_query(&query);
     let mut best_match: Option<(usize, LocalSkillScanItem)> = None;
 
@@ -1928,7 +2789,7 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
             format!(
                 "Local skill discovered at {}.",
-                to_workspace_relative_path(&root, &path)
+                to_display_relative_path(&root, &path)
             )
         });
         let content_preview = extract_skill_content_preview(&raw);
@@ -1948,7 +2809,7 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
         let candidate = LocalSkillScanItem {
             enabled: false,
             name,
-            path: to_workspace_relative_path(&root, &path),
+            path: to_display_relative_path(&root, &path),
             source: classify_skill_source(&root, &path),
             description,
         };
@@ -1967,11 +2828,8 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
         return Err(format!("no local skill matched enable request: {query}"));
     };
 
-    let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root
-        .join(".opencow")
-        .join("skills")
-        .join("enabled-skills.json");
+    let registry_relative_path = "skills/enabled-skills.json";
+    let registry_path = opencow_enabled_skills_registry_path()?;
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve skill registry directory".to_string())?;
@@ -2006,12 +2864,12 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
     };
     let summary = if already_enabled {
         format!(
-            "Local skill enablement confirmed {} is already present in the workspace skill registry.",
+            "Local skill enablement confirmed {} is already present in the OpenCow skill registry.",
             matched_skill.name
         )
     } else {
         format!(
-            "Local skill enablement registered {} in the workspace skill registry.",
+            "Local skill enablement registered {} in the OpenCow skill registry.",
             matched_skill.name
         )
     };
@@ -2028,14 +2886,14 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
 #[tauri::command]
 pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, String> {
     let root = resolve_workspace_root()?;
-    let skill_files = collect_local_skill_files(&root)?;
+    let skill_files = collect_installable_local_skill_files(&root)?;
     let tokens = tokenize_query(&query);
     let mut best_match: Option<(usize, PathBuf, String, String)> = None;
 
     for path in skill_files {
-        let relative_path = to_workspace_relative_path(&root, &path);
+        let relative_path = to_display_relative_path(&root, &path);
 
-        if relative_path.starts_with("skills/") {
+        if relative_path.starts_with("skills/installed/") {
             continue;
         }
 
@@ -2046,7 +2904,7 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
         let description = parse_skill_frontmatter_description(&raw).unwrap_or_else(|| {
             format!(
                 "Local skill discovered at {}.",
-                to_workspace_relative_path(&root, &path)
+                to_display_relative_path(&root, &path)
             )
         });
         let content_preview = extract_skill_content_preview(&raw);
@@ -2067,7 +2925,7 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
             Some((best_score, best_path, _, _))
                 if *best_score > score
                     || (*best_score == score
-                        && to_workspace_relative_path(&root, best_path) <= relative_path) => {}
+                        && to_display_relative_path(&root, best_path) <= relative_path) => {}
             _ => {
                 best_match = Some((score, path.clone(), name, relative_path));
             }
@@ -2079,9 +2937,9 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
     };
 
     let skill_directory_name = sanitize_skill_directory_name(&installed_skill_name);
-    let target_dir = root.join("skills").join(&skill_directory_name);
+    let target_dir = opencow_installed_skills_root()?.join(&skill_directory_name);
     let target_file = target_dir.join("SKILL.md");
-    let installed_skill_path = to_workspace_relative_path(&root, &target_file);
+    let installed_skill_path = to_opencow_product_relative_path(&target_file);
 
     fs::create_dir_all(&target_dir)
         .map_err(|error| format!("failed to create {}: {error}", target_dir.display()))?;
@@ -2101,12 +2959,12 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
 
     let summary = if status == "already-installed" {
         format!(
-            "Local skill installation confirmed {} is already present in the workspace skills directory.",
+            "Local skill installation confirmed {} is already present in the OpenCow skills directory.",
             installed_skill_name
         )
     } else {
         format!(
-            "Local skill installation copied {} into the workspace skills directory.",
+            "Local skill installation copied {} into the OpenCow skills directory.",
             installed_skill_name
         )
     };
@@ -2122,20 +2980,34 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
 }
 
 #[tauri::command]
+pub fn recommended_skill_manifest() -> Result<RecommendedSkillManifestResult, String> {
+    let items = read_recommended_skill_manifest_items()?;
+    let total_count = items.len();
+    let summary = if total_count > 0 {
+        format!("OpenCow 推荐技能清单已加载，共 {total_count} 项。")
+    } else {
+        "OpenCow 推荐技能清单当前为空。".to_string()
+    };
+
+    Ok(RecommendedSkillManifestResult {
+        summary,
+        total_count,
+        items,
+    })
+}
+
+#[tauri::command]
 pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, String> {
     let root = resolve_workspace_root()?;
-    let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root
-        .join(".opencow")
-        .join("skills")
-        .join("enabled-skills.json");
+    let registry_relative_path = "skills/enabled-skills.json";
+    let registry_path = opencow_enabled_skills_registry_path()?;
     let enabled_skills = read_enabled_skill_registry(&registry_path)?;
     let enabled_items = build_enabled_local_skill_items(enabled_skills.clone());
     let tokens = tokenize_query(&query);
     let mut best_match: Option<(usize, EnabledLocalSkillItem)> = None;
 
     for item in enabled_items {
-        let absolute_path = root.join(&item.path);
+        let absolute_path = resolve_registered_local_path(&root, &item.path)?;
         let content_preview = if absolute_path.exists() {
             let raw = fs::read_to_string(&absolute_path)
                 .map_err(|error| format!("failed to read {}: {error}", absolute_path.display()))?;
@@ -2202,7 +3074,7 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
         registry_path: registry_relative_path.to_string(),
         status: "disabled".to_string(),
         summary: format!(
-            "Local skill disablement removed {} from the workspace skill registry.",
+            "Local skill disablement removed {} from the OpenCow skill registry.",
             matched_skill.name
         ),
     })
@@ -2212,12 +3084,8 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
 pub fn opencow_self_repair_enabled_skills_registry(
     query: String,
 ) -> Result<OpencowSelfRepairEnabledSkillsRegistryResult, String> {
-    let root = resolve_workspace_root()?;
-    let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root
-        .join(".opencow")
-        .join("skills")
-        .join("enabled-skills.json");
+    let registry_relative_path = "skills/enabled-skills.json";
+    let registry_path = opencow_enabled_skills_registry_path()?;
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve enabled skills registry directory".to_string())?;
@@ -2337,12 +3205,8 @@ pub fn opencow_self_repair_workspace_project_runtime_registry(
 
 #[tauri::command]
 pub fn local_enabled_skill_list() -> Result<EnabledLocalSkillsResult, String> {
-    let root = resolve_workspace_root()?;
-    let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root
-        .join(".opencow")
-        .join("skills")
-        .join("enabled-skills.json");
+    let registry_relative_path = "skills/enabled-skills.json";
+    let registry_path = opencow_enabled_skills_registry_path()?;
     let enabled_skills = read_enabled_skill_registry(&registry_path)?;
     let mut items = build_enabled_local_skill_items(enabled_skills);
 
@@ -2368,11 +3232,8 @@ pub fn local_enabled_skill_list() -> Result<EnabledLocalSkillsResult, String> {
 #[tauri::command]
 pub fn local_enabled_skill_match(query: String) -> Result<EnabledLocalSkillMatchResult, String> {
     let root = resolve_workspace_root()?;
-    let registry_relative_path = ".opencow/skills/enabled-skills.json";
-    let registry_path = root
-        .join(".opencow")
-        .join("skills")
-        .join("enabled-skills.json");
+    let registry_relative_path = "skills/enabled-skills.json";
+    let registry_path = opencow_enabled_skills_registry_path()?;
     let enabled_skills = read_enabled_skill_registry(&registry_path)?;
     let enabled_skill_count = enabled_skills.len();
     let tokens = tokenize_query(&query);
@@ -2392,7 +3253,7 @@ pub fn local_enabled_skill_match(query: String) -> Result<EnabledLocalSkillMatch
             continue;
         };
 
-        let absolute_path = root.join(path);
+        let absolute_path = resolve_registered_local_path(&root, path)?;
         let content_preview = if absolute_path.exists() {
             let raw = fs::read_to_string(&absolute_path)
                 .map_err(|error| format!("failed to read {}: {error}", absolute_path.display()))?;
@@ -2615,6 +3476,23 @@ pub fn controlled_full_command(
 }
 
 fn resolve_workspace_root() -> Result<PathBuf, String> {
+    if let Ok(explicit_root) = std::env::var("OPENCOW_WORKSPACE_ROOT") {
+        let trimmed = explicit_root.trim();
+
+        if !trimmed.is_empty() {
+            let explicit_path = PathBuf::from(trimmed);
+
+            if looks_like_workspace_root(&explicit_path) {
+                return Ok(explicit_path);
+            }
+
+            return Err(format!(
+                "OPENCOW_WORKSPACE_ROOT does not point to a valid workspace root: {}",
+                explicit_path.display()
+            ));
+        }
+    }
+
     let current_dir = std::env::current_dir()
         .map_err(|error| format!("failed to resolve current directory: {error}"))?;
 
@@ -2999,6 +3877,117 @@ fn workspace_project_runtime_registry_path(root: &Path) -> PathBuf {
         .join("workspace-project-runs.json")
 }
 
+fn opencow_app_data_root() -> Result<PathBuf, String> {
+    if let Ok(explicit_root) = std::env::var("OPENCOW_APP_DATA_ROOT") {
+        let candidate = PathBuf::from(explicit_root);
+        if candidate.as_os_str().is_empty() {
+            return Err("OPENCOW_APP_DATA_ROOT is empty".to_string());
+        }
+
+        return Ok(candidate);
+    }
+
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let candidate = PathBuf::from(appdata).join("OpenCow");
+        return Ok(candidate);
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        return Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("OpenCow"));
+    }
+
+    Err("failed to resolve OpenCow app data root".to_string())
+}
+
+fn opencow_installed_skills_root() -> Result<PathBuf, String> {
+    Ok(opencow_app_data_root()?.join("skills").join("installed"))
+}
+
+fn opencow_enabled_skills_registry_path() -> Result<PathBuf, String> {
+    Ok(opencow_app_data_root()?
+        .join("skills")
+        .join("enabled-skills.json"))
+}
+
+fn opencow_recommended_skills_manifest_path() -> Result<PathBuf, String> {
+    Ok(opencow_app_data_root()?
+        .join("skills")
+        .join("manifest")
+        .join("recommended-skills.json"))
+}
+
+fn opencow_knowledge_root() -> Result<PathBuf, String> {
+    Ok(opencow_app_data_root()?.join("knowledge"))
+}
+
+fn opencow_mcp_root() -> Result<PathBuf, String> {
+    Ok(opencow_app_data_root()?.join("mcp"))
+}
+
+fn opencow_installed_mcp_root() -> Result<PathBuf, String> {
+    Ok(opencow_mcp_root()?.join("installed"))
+}
+
+fn opencow_recommended_mcp_manifest_path() -> Result<PathBuf, String> {
+    Ok(opencow_mcp_root()?
+        .join("manifest")
+        .join("recommended-mcp.json"))
+}
+
+fn opencow_mcp_runtime_registry_path() -> Result<PathBuf, String> {
+    Ok(opencow_mcp_root()?.join("runtime").join("mcp-runs.json"))
+}
+
+fn opencow_knowledge_files_root() -> Result<PathBuf, String> {
+    Ok(opencow_knowledge_root()?.join("files"))
+}
+
+fn opencow_knowledge_registry_path() -> Result<PathBuf, String> {
+    Ok(opencow_knowledge_root()?.join("imported-files.json"))
+}
+
+fn to_opencow_product_relative_path(path: &Path) -> String {
+    let root = match opencow_app_data_root() {
+        Ok(root) => root,
+        Err(_) => return path.to_string_lossy().replace('\\', "/"),
+    };
+
+    path.strip_prefix(&root)
+        .ok()
+        .and_then(|relative| relative.to_str())
+        .unwrap_or_else(|| path.to_str().unwrap_or("document"))
+        .replace('\\', "/")
+}
+
+fn to_display_relative_path(root: &Path, path: &Path) -> String {
+    if let Ok(app_root) = opencow_app_data_root() {
+        if path.starts_with(&app_root) {
+            return to_opencow_product_relative_path(path);
+        }
+    }
+
+    to_workspace_relative_path(root, path)
+}
+
+fn resolve_registered_local_path(root: &Path, path: &str) -> Result<PathBuf, String> {
+    let candidate = PathBuf::from(path);
+
+    if candidate.is_absolute() {
+        return Ok(candidate);
+    }
+
+    let app_root = opencow_app_data_root()?;
+    let app_candidate = app_root.join(path);
+    if app_candidate.exists() || path.starts_with("skills/") || path.starts_with("knowledge/") {
+        return Ok(app_candidate);
+    }
+
+    Ok(root.join(path))
+}
+
 fn default_workspace_project_runtime_registry() -> WorkspaceProjectRuntimeRegistry {
     WorkspaceProjectRuntimeRegistry {
         version: 1,
@@ -3167,10 +4156,9 @@ fn collect_existing_paths(root: &Path, candidates: &[&str]) -> Vec<String> {
         .collect()
 }
 
-fn knowledge_registry_path(root: &Path) -> PathBuf {
-    root.join(".opencow")
-        .join("knowledge")
-        .join("imported-files.json")
+fn knowledge_registry_path(_root: &Path) -> PathBuf {
+    opencow_knowledge_registry_path()
+        .unwrap_or_else(|_| PathBuf::from("knowledge/imported-files.json"))
 }
 
 fn default_knowledge_library() -> KnowledgeLibraryRecord {
@@ -3313,10 +4301,52 @@ fn write_knowledge_import_registry(
 }
 
 fn normalize_workspace_relative_knowledge_path(root: &Path, path: &str) -> Result<String, String> {
-    let candidate = root.join(path);
-    ensure_path_stays_in_workspace(root, &candidate)?;
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("knowledge path cannot be empty".to_string());
+    }
 
-    Ok(to_workspace_relative_path(root, &candidate))
+    let candidate = PathBuf::from(trimmed);
+    if candidate.is_absolute() {
+        if !candidate.exists() {
+            return Err(format!("knowledge file does not exist: {}", candidate.display()));
+        }
+
+        let storage_root = opencow_knowledge_files_root()?;
+        fs::create_dir_all(&storage_root)
+            .map_err(|error| format!("failed to create {}: {error}", storage_root.display()))?;
+        let file_name = candidate
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| format!("invalid knowledge file path: {}", candidate.display()))?;
+        let target_path = storage_root.join(file_name);
+
+        if !target_path.exists() {
+            fs::copy(&candidate, &target_path).map_err(|error| {
+                format!(
+                    "failed to copy {} to {}: {error}",
+                    candidate.display(),
+                    target_path.display()
+                )
+            })?;
+        }
+
+        return Ok(to_opencow_product_relative_path(&target_path));
+    }
+
+    if trimmed.starts_with("knowledge/files/") {
+        let storage_path = opencow_app_data_root()?.join(trimmed);
+        if !storage_path.exists() {
+            return Err(format!("knowledge file does not exist: {}", storage_path.display()));
+        }
+
+        return Ok(trimmed.replace('\\', "/"));
+    }
+
+    let workspace_candidate = root.join(trimmed);
+    ensure_path_stays_in_workspace(root, &workspace_candidate)?;
+
+    Ok(to_workspace_relative_path(root, &workspace_candidate))
 }
 
 fn build_knowledge_inventory(
@@ -3324,7 +4354,7 @@ fn build_knowledge_inventory(
     requested_library_id: Option<String>,
 ) -> Result<KnowledgeInventoryResult, String> {
     let registry = read_knowledge_import_registry(root)?;
-    let registry_path = to_workspace_relative_path(root, &knowledge_registry_path(root));
+    let registry_path = to_opencow_product_relative_path(&knowledge_registry_path(root));
     let active_library_id = resolve_knowledge_library_id(&registry, requested_library_id);
     let active_library = registry
         .libraries
@@ -3335,7 +4365,7 @@ fn build_knowledge_inventory(
     let mut imported_files = Vec::new();
 
     for entry in &active_library.imported_files {
-        let absolute_path = root.join(&entry.path);
+        let absolute_path = resolve_registered_local_path(root, &entry.path)?;
         let title = absolute_path
             .file_name()
             .and_then(|value| value.to_str())
@@ -3366,7 +4396,7 @@ fn build_knowledge_inventory(
         .count();
     let mut available_files = collect_all_workspace_knowledge_candidates(root)?
         .into_iter()
-        .map(|path| to_workspace_relative_path(root, &path))
+        .map(|path| to_display_relative_path(root, &path))
         .filter(|path| !imported_paths.contains(path))
         .map(|path| {
             let title = Path::new(&path)
@@ -3400,41 +4430,19 @@ fn build_knowledge_inventory(
                 id: library.id.clone(),
                 label: library.label.clone(),
                 description: library.description.clone(),
+                document_count: library.imported_files.len(),
             })
             .collect(),
     })
 }
 
-fn collect_all_workspace_knowledge_candidates(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn collect_all_workspace_knowledge_candidates(_root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut candidates = Vec::new();
+    let knowledge_files_root = opencow_knowledge_files_root()?;
 
-    for entry in
-        fs::read_dir(root).map_err(|error| format!("failed to read workspace root: {error}"))?
-    {
-        let entry =
-            entry.map_err(|error| format!("failed to inspect workspace root entry: {error}"))?;
-        let path = entry.path();
-
-        if entry
-            .file_type()
-            .map(|kind| kind.is_file())
-            .unwrap_or(false)
-            && is_local_knowledge_file(&path)
-        {
-            candidates.push(path);
-        }
+    if knowledge_files_root.exists() {
+        collect_local_knowledge_candidates_recursive(&knowledge_files_root, &mut candidates)?;
     }
-
-    collect_local_knowledge_candidates_recursive(root, &mut candidates)?;
-
-    candidates.retain(|path| {
-        let normalized = path.to_string_lossy().replace('\\', "/");
-        !normalized.contains("/node_modules/")
-            && !normalized.contains("/target/")
-            && !normalized.contains("/.git/")
-            && !normalized.contains("/vendor/")
-            && !normalized.contains("/.opencow/")
-    });
 
     candidates.sort();
     candidates.dedup();
@@ -3442,10 +4450,10 @@ fn collect_all_workspace_knowledge_candidates(root: &Path) -> Result<Vec<PathBuf
     Ok(candidates)
 }
 
-fn collect_local_skill_files(root: &Path) -> Result<Vec<PathBuf>, String> {
+fn collect_installable_local_skill_files(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut candidates = Vec::new();
 
-    let workspace_skills = root.join("skills");
+    let workspace_skills = opencow_installed_skills_root()?;
 
     if workspace_skills.exists() {
         collect_local_skill_files_recursive(&workspace_skills, &mut candidates)?;
@@ -3461,6 +4469,20 @@ fn collect_local_skill_files(root: &Path) -> Result<Vec<PathBuf>, String> {
 
     if vendor_extensions.exists() {
         collect_extension_skill_files(&vendor_extensions, &mut candidates)?;
+    }
+
+    candidates.sort();
+    candidates.dedup();
+
+    Ok(candidates)
+}
+
+fn collect_opencow_installed_skill_files() -> Result<Vec<PathBuf>, String> {
+    let mut candidates = Vec::new();
+    let installed_root = opencow_installed_skills_root()?;
+
+    if installed_root.exists() {
+        collect_local_skill_files_recursive(&installed_root, &mut candidates)?;
     }
 
     candidates.sort();
@@ -3596,14 +4618,10 @@ fn collect_extension_skill_files(root: &Path, candidates: &mut Vec<PathBuf>) -> 
 }
 
 fn count_existing_skill_roots(root: &Path) -> usize {
-    [
-        root.join("skills"),
-        root.join("vendor").join("openclaw").join("skills"),
-        root.join("vendor").join("openclaw").join("extensions"),
-    ]
-    .into_iter()
-    .filter(|path| path.exists())
-    .count()
+    [opencow_installed_skills_root().unwrap_or_else(|_| root.join("skills"))]
+        .into_iter()
+        .filter(|path| path.exists())
+        .count()
 }
 
 fn count_existing_mcp_plugin_roots(root: &Path) -> usize {
@@ -3829,7 +4847,7 @@ fn infer_skill_name_from_path(path: &Path) -> String {
 }
 
 fn classify_skill_source(root: &Path, path: &Path) -> String {
-    let relative = to_workspace_relative_path(root, path);
+    let relative = to_display_relative_path(root, path);
 
     if relative.starts_with("vendor/openclaw/extensions/") {
         return "vendor-openclaw-extension-skill".to_string();
@@ -3839,14 +4857,270 @@ fn classify_skill_source(root: &Path, path: &Path) -> String {
         return "vendor-openclaw-skill".to_string();
     }
 
+    if relative.starts_with("skills/installed/") {
+        return "opencow-installed-skill".to_string();
+    }
+
     "workspace-skill".to_string()
 }
 
+fn default_recommended_skill_manifest_items() -> Vec<RecommendedSkillManifestItem> {
+    vec![
+        RecommendedSkillManifestItem {
+            name: "coding-agent".to_string(),
+            description: "适合代码实现、重构和定向修复。".to_string(),
+            source: "opencow-builtin-manifest".to_string(),
+            install_query: "coding-agent".to_string(),
+            rationale: "OpenCow 本地助手最常见的是代码落地与修复，这项覆盖率最高。".to_string(),
+        },
+        RecommendedSkillManifestItem {
+            name: "docs-helper".to_string(),
+            description: "适合整理文档、说明和产品交接内容。".to_string(),
+            source: "opencow-builtin-manifest".to_string(),
+            install_query: "docs-helper".to_string(),
+            rationale: "本地助手经常需要整理规则、交接文档和知识说明，适合作为默认文档能力。".to_string(),
+        },
+        RecommendedSkillManifestItem {
+            name: "browser-automation".to_string(),
+            description: "适合页面联调、真实按钮点击验证和前端回归检查。".to_string(),
+            source: "opencow-builtin-manifest".to_string(),
+            install_query: "browser-automation".to_string(),
+            rationale: "桌面端和本地 Web 联调频繁，浏览器自动化是最能直接提升闭环效率的能力之一。".to_string(),
+        },
+    ]
+}
+
+fn read_recommended_skill_manifest_items() -> Result<Vec<RecommendedSkillManifestItem>, String> {
+    let manifest_path = opencow_recommended_skills_manifest_path()?;
+
+    if !manifest_path.exists() {
+        let items = default_recommended_skill_manifest_items();
+        write_recommended_skill_manifest_items(&manifest_path, &items)?;
+        return Ok(items);
+    }
+
+    let raw = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
+    let parsed: Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    let items = parsed
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    Some(RecommendedSkillManifestItem {
+                        name: entry.get("name")?.as_str()?.trim().to_string(),
+                        description: entry
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or("这个技能还没有补充简介。")
+                            .trim()
+                            .to_string(),
+                        source: entry
+                            .get("source")
+                            .and_then(Value::as_str)
+                            .unwrap_or("opencow-local-manifest")
+                            .trim()
+                            .to_string(),
+                        install_query: entry
+                            .get("install_query")
+                            .and_then(Value::as_str)
+                            .or_else(|| entry.get("installQuery").and_then(Value::as_str))
+                            .or_else(|| entry.get("name").and_then(Value::as_str))
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string(),
+                        rationale: entry
+                            .get("rationale")
+                            .and_then(Value::as_str)
+                            .unwrap_or("OpenCow 已审核的推荐能力。")
+                            .trim()
+                            .to_string(),
+                    })
+                })
+                .filter(|item| !item.name.is_empty() && !item.install_query.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if items.is_empty() {
+        let fallback = default_recommended_skill_manifest_items();
+        write_recommended_skill_manifest_items(&manifest_path, &fallback)?;
+        return Ok(fallback);
+    }
+
+    Ok(items)
+}
+
+fn write_recommended_skill_manifest_items(
+    manifest_path: &Path,
+    items: &[RecommendedSkillManifestItem],
+) -> Result<(), String> {
+    let parent = manifest_path
+        .parent()
+        .ok_or_else(|| format!("failed to resolve manifest parent for {}", manifest_path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let payload = serde_json::json!({
+        "version": 1,
+        "items": items.iter().map(|item| serde_json::json!({
+            "name": item.name,
+            "description": item.description,
+            "source": item.source,
+            "install_query": item.install_query,
+            "rationale": item.rationale
+        })).collect::<Vec<_>>()
+    });
+    let pretty = serde_json::to_string_pretty(&payload)
+        .map_err(|error| format!("failed to serialize {}: {error}", manifest_path.display()))?;
+    fs::write(manifest_path, format!("{pretty}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", manifest_path.display()))
+}
+
+fn default_recommended_mcp_manifest_items() -> Vec<RecommendedMcpManifestItem> {
+    vec![
+        RecommendedMcpManifestItem {
+            id: "browser".to_string(),
+            name: "浏览器控制".to_string(),
+            description: "用于浏览器联调、页面检查和点击操作。".to_string(),
+            source: "opencow-builtin-manifest".to_string(),
+            install_query: "browser".to_string(),
+            rationale: "这是 OpenCow 当前最成熟、最适合本地桌面端闭环联调的一类 MCP。".to_string(),
+            supported: true,
+        },
+        RecommendedMcpManifestItem {
+            id: "fetch".to_string(),
+            name: "网页读取".to_string(),
+            description: "适合后续补充网页内容抓取和结构化读取。".to_string(),
+            source: "opencow-builtin-manifest".to_string(),
+            install_query: "fetch".to_string(),
+            rationale: "先进入 OpenCow 推荐清单，后续再补稳定宿主与安装流程。".to_string(),
+            supported: false,
+        },
+    ]
+}
+
+fn write_recommended_mcp_manifest_items(
+    manifest_path: &Path,
+    items: &[RecommendedMcpManifestItem],
+) -> Result<(), String> {
+    let parent = manifest_path
+        .parent()
+        .ok_or_else(|| format!("failed to resolve manifest parent for {}", manifest_path.display()))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+    let payload = serde_json::json!({
+        "version": 1,
+        "items": items.iter().map(|item| serde_json::json!({
+            "id": item.id,
+            "name": item.name,
+            "description": item.description,
+            "source": item.source,
+            "install_query": item.install_query,
+            "rationale": item.rationale,
+            "supported": item.supported
+        })).collect::<Vec<_>>()
+    });
+    let pretty = serde_json::to_string_pretty(&payload)
+        .map_err(|error| format!("failed to serialize {}: {error}", manifest_path.display()))?;
+    fs::write(manifest_path, format!("{pretty}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", manifest_path.display()))
+}
+
+fn read_recommended_mcp_manifest_items() -> Result<Vec<RecommendedMcpManifestItem>, String> {
+    let manifest_path = opencow_recommended_mcp_manifest_path()?;
+
+    if !manifest_path.exists() {
+        let items = default_recommended_mcp_manifest_items();
+        write_recommended_mcp_manifest_items(&manifest_path, &items)?;
+        return Ok(items);
+    }
+
+    let raw = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
+    let parsed: Value = serde_json::from_str(&raw)
+        .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    let items = parsed
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    Some(RecommendedMcpManifestItem {
+                        id: entry.get("id")?.as_str()?.trim().to_string(),
+                        name: entry.get("name")?.as_str()?.trim().to_string(),
+                        description: entry
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .unwrap_or("这个 MCP 还没有补充简介。")
+                            .trim()
+                            .to_string(),
+                        source: entry
+                            .get("source")
+                            .and_then(Value::as_str)
+                            .unwrap_or("opencow-local-manifest")
+                            .trim()
+                            .to_string(),
+                        install_query: entry
+                            .get("install_query")
+                            .and_then(Value::as_str)
+                            .or_else(|| entry.get("installQuery").and_then(Value::as_str))
+                            .or_else(|| entry.get("id").and_then(Value::as_str))
+                            .unwrap_or_default()
+                            .trim()
+                            .to_string(),
+                        rationale: entry
+                            .get("rationale")
+                            .and_then(Value::as_str)
+                            .unwrap_or("OpenCow 已审核的推荐 MCP。")
+                            .trim()
+                            .to_string(),
+                        supported: entry
+                            .get("supported")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                    })
+                })
+                .filter(|item| !item.id.is_empty() && !item.name.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if items.is_empty() {
+        let fallback = default_recommended_mcp_manifest_items();
+        write_recommended_mcp_manifest_items(&manifest_path, &fallback)?;
+        return Ok(fallback);
+    }
+
+    Ok(items)
+}
+
+fn collect_installed_local_mcp_plugin_files() -> Result<Vec<PathBuf>, String> {
+    let installed_root = opencow_installed_mcp_root()?;
+
+    if !installed_root.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates = Vec::new();
+    collect_local_mcp_plugin_files_recursive(&installed_root, &mut candidates)?;
+    candidates.sort();
+    candidates.dedup();
+    Ok(candidates)
+}
+
 fn classify_mcp_plugin_source(root: &Path, path: &Path) -> String {
-    let relative = to_workspace_relative_path(root, path);
+    let relative = to_display_relative_path(root, path);
 
     if relative.starts_with("vendor/openclaw/extensions/") {
         return "vendor-openclaw-extension-plugin".to_string();
+    }
+
+    if relative.starts_with("mcp/installed/") {
+        return "opencow-installed-mcp".to_string();
     }
 
     "workspace-plugin".to_string()
@@ -4138,15 +5412,22 @@ mod tests {
         build_npc_showcase_screenshot_artifact_path, build_npc_showcase_site_root,
         build_openclaw_capability_spec, build_readonly_shell_command,
         build_workspace_write_shell_command, classify_mcp_plugin_source, controlled_full_command,
-        extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file,
+        build_knowledge_inventory, extract_skill_content_preview, is_local_knowledge_file,
+        is_local_mcp_plugin_file, ImportedKnowledgeFileRecord, KnowledgeImportRegistry,
+        KnowledgeLibraryRecord,
         local_mcp_plugin_inspect, local_mcp_plugin_scan, local_mcp_plugin_start_preview,
         local_skill_disable, local_skill_install, looks_like_workspace_root,
+        list_workspace_npc_configs_for_selection,
+        normalize_npc_workspace_record,
         opencow_self_repair_enabled_skills_registry,
         opencow_self_repair_workspace_project_runtime_registry, parse_skill_frontmatter_name,
+        NpcWorkspaceConfigUpsertPayload,
         parse_workspace_project_run_pid, read_enabled_skill_registry,
-        read_workspace_project_runtime_records, resolve_workspace_root, score_mcp_plugin_match,
+        read_knowledge_import_registry, read_workspace_project_runtime_records,
+        write_knowledge_import_registry,
+        resolve_workspace_root, score_mcp_plugin_match,
         score_skill_match, score_snippet, split_knowledge_segments, tokenize_query,
-        truncate_preview, workspace_project_npc_screenshot_capture,
+        truncate_preview, upsert_workspace_npc_config, workspace_project_npc_screenshot_capture,
         workspace_project_npc_showcase_publish_preview, workspace_project_npc_showcase_site_write,
         workspace_project_run, workspace_project_run_preview, workspace_project_status,
         workspace_project_stop, workspace_readonly_command, workspace_write_command,
@@ -4313,6 +5594,116 @@ mod tests {
     }
 
     #[test]
+    fn npc_registry_preserves_created_npc_as_selected_when_list_is_sorted() {
+        let _guard = lock_workspace_test_guard();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-npc-selection-create-{unique}"));
+        fs::create_dir_all(&workspace_root).unwrap();
+
+        upsert_workspace_npc_config(
+            &workspace_root,
+            NpcWorkspaceConfigUpsertPayload {
+                id: "alpha-bot".to_string(),
+                name: "Alpha Bot".to_string(),
+                description: "first".to_string(),
+                default_model: "qwen".to_string(),
+                persona_title: "Alpha".to_string(),
+                persona_prompt: "".to_string(),
+                output_style: "简洁".to_string(),
+                agent_draft: "".to_string(),
+                rules_draft: "".to_string(),
+                enabled_skill_names: Vec::new(),
+                knowledge_library_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+        upsert_workspace_npc_config(
+            &workspace_root,
+            NpcWorkspaceConfigUpsertPayload {
+                id: "zeta-bot".to_string(),
+                name: "Zeta Bot".to_string(),
+                description: "second".to_string(),
+                default_model: "qwen".to_string(),
+                persona_title: "Zeta".to_string(),
+                persona_prompt: "".to_string(),
+                output_style: "简洁".to_string(),
+                agent_draft: "".to_string(),
+                rules_draft: "".to_string(),
+                enabled_skill_names: Vec::new(),
+                knowledge_library_ids: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        let result =
+            list_workspace_npc_configs_for_selection(&workspace_root, Some("zeta-bot".to_string()))
+                .unwrap();
+
+        assert_eq!(result.selected_npc_id.as_deref(), Some("zeta-bot"));
+        assert_eq!(result.items.first().map(|item| item.id.as_str()), Some("alpha-bot"));
+
+        fs::remove_dir_all(&workspace_root).unwrap();
+    }
+
+    #[test]
+    fn npc_registry_preserves_updated_npc_as_selected_when_list_is_sorted() {
+        let _guard = lock_workspace_test_guard();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root = env::temp_dir().join(format!("opencow-npc-selection-update-{unique}"));
+        fs::create_dir_all(&workspace_root).unwrap();
+
+        let npc_directory = workspace_root.join(".opencow").join("npcs");
+        fs::create_dir_all(&npc_directory).unwrap();
+        fs::write(
+            npc_directory.join("alpha-bot.json"),
+            serde_json::to_string_pretty(&normalize_npc_workspace_record(
+                &json!({
+                    "id": "alpha-bot",
+                    "name": "Alpha Bot",
+                    "description": "first",
+                    "default_model": "qwen",
+                    "persona_title": "Alpha",
+                    "output_style": "简洁"
+                }),
+                Path::new("alpha-bot.json"),
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            npc_directory.join("zeta-bot.json"),
+            serde_json::to_string_pretty(&normalize_npc_workspace_record(
+                &json!({
+                    "id": "zeta-bot",
+                    "name": "Zeta Bot",
+                    "description": "second",
+                    "default_model": "qwen",
+                    "persona_title": "Zeta",
+                    "output_style": "简洁"
+                }),
+                Path::new("zeta-bot.json"),
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let result =
+            list_workspace_npc_configs_for_selection(&workspace_root, Some("zeta-bot".to_string()))
+                .unwrap();
+
+        assert_eq!(result.selected_npc_id.as_deref(), Some("zeta-bot"));
+        assert_eq!(result.items.first().map(|item| item.id.as_str()), Some("alpha-bot"));
+
+        fs::remove_dir_all(&workspace_root).unwrap();
+    }
+
+    #[test]
     fn workspace_write_command_creates_temp_output_directory_inside_workspace() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
@@ -4452,8 +5843,10 @@ mod tests {
 
         let registry = read_knowledge_import_registry(&workspace_root).unwrap();
 
-        assert_eq!(registry.version, 1);
-        assert!(registry.imported_files.is_empty());
+        assert_eq!(registry.version, 2);
+        assert_eq!(registry.libraries.len(), 1);
+        assert_eq!(registry.libraries[0].id, "default-library");
+        assert!(registry.libraries[0].imported_files.is_empty());
 
         let _ = fs::remove_dir_all(&workspace_root);
     }
@@ -4473,9 +5866,15 @@ mod tests {
         write_knowledge_import_registry(
             &workspace_root,
             &KnowledgeImportRegistry {
-                version: 1,
-                imported_files: vec![ImportedKnowledgeFileRecord {
-                    path: "docs/guide.md".to_string(),
+                version: 2,
+                active_library_id: "default-library".to_string(),
+                libraries: vec![KnowledgeLibraryRecord {
+                    id: "default-library".to_string(),
+                    label: "默认知识库".to_string(),
+                    description: "系统默认知识库。".to_string(),
+                    imported_files: vec![ImportedKnowledgeFileRecord {
+                        path: "docs/guide.md".to_string(),
+                    }],
                 }],
             },
         )
@@ -4483,8 +5882,9 @@ mod tests {
 
         let registry = read_knowledge_import_registry(&workspace_root).unwrap();
 
-        assert_eq!(registry.imported_files.len(), 1);
-        assert_eq!(registry.imported_files[0].path, "docs/guide.md");
+        assert_eq!(registry.libraries.len(), 1);
+        assert_eq!(registry.libraries[0].imported_files.len(), 1);
+        assert_eq!(registry.libraries[0].imported_files[0].path, "docs/guide.md");
 
         let _ = fs::remove_dir_all(&workspace_root);
     }
@@ -4554,6 +5954,46 @@ mod tests {
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
+
+        assert_eq!(resolved, workspace_root);
+    }
+
+    #[test]
+    fn resolves_workspace_root_from_explicit_environment_override() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let original_root = env::var("OPENCOW_WORKSPACE_ROOT").ok();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-workspace-root-env-override-{unique}"));
+        let fake_current_dir = env::temp_dir().join(format!("opencow-non-workspace-current-{unique}"));
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("packages")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::create_dir_all(&fake_current_dir).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+
+        env::set_var("OPENCOW_WORKSPACE_ROOT", &workspace_root);
+        env::set_current_dir(&fake_current_dir).unwrap();
+
+        let resolved = resolve_workspace_root().unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_root {
+            env::set_var("OPENCOW_WORKSPACE_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_WORKSPACE_ROOT");
+        }
+        let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&fake_current_dir);
 
         assert_eq!(resolved, workspace_root);
     }
@@ -4671,17 +6111,20 @@ mod tests {
     fn local_skill_disable_removes_only_the_exact_matched_registry_entry() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-local-skill-disable-{unique}"));
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-local-skill-disable-storage-{unique}"));
         let vendor_skill_path = workspace_root.join("vendor/openclaw/skills/coding-agent/SKILL.md");
-        let workspace_skill_path = workspace_root.join("skills/coding-agent/SKILL.md");
-        let registry_path = workspace_root.join(".opencow/skills/enabled-skills.json");
+        let installed_skill_path = app_data_root.join("skills/installed/coding-agent/SKILL.md");
+        let registry_path = app_data_root.join("skills/enabled-skills.json");
 
         fs::create_dir_all(vendor_skill_path.parent().unwrap()).unwrap();
-        fs::create_dir_all(workspace_skill_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(installed_skill_path.parent().unwrap()).unwrap();
         fs::create_dir_all(registry_path.parent().unwrap()).unwrap();
         fs::write(
             &vendor_skill_path,
@@ -4689,8 +6132,8 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            &workspace_skill_path,
-            "---\nname: coding-agent\ndescription: Workspace coding agent\n---\nUse this skill for workspace coding tasks.\n",
+            &installed_skill_path,
+            "---\nname: coding-agent\ndescription: Installed coding agent\n---\nUse this skill for installed coding tasks.\n",
         )
         .unwrap();
         fs::write(
@@ -4707,9 +6150,9 @@ mod tests {
                 "    },\n",
                 "    {\n",
                 "      \"name\": \"coding-agent\",\n",
-                "      \"path\": \"skills/coding-agent/SKILL.md\",\n",
-                "      \"source\": \"workspace-skill\",\n",
-                "      \"description\": \"Workspace coding agent\"\n",
+                "      \"path\": \"skills/installed/coding-agent/SKILL.md\",\n",
+                "      \"source\": \"opencow-installed-skill\",\n",
+                "      \"description\": \"Installed coding agent\"\n",
                 "    }\n",
                 "  ]\n",
                 "}\n"
@@ -4718,13 +6161,20 @@ mod tests {
         .unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
         let result =
             local_skill_disable("disable the vendor coding-agent skill".to_string()).unwrap();
         let remaining_entries = read_enabled_skill_registry(&registry_path).unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
 
         assert_eq!(result.disabled_skill_name, "coding-agent");
         assert_eq!(remaining_entries.len(), 1);
@@ -4732,7 +6182,7 @@ mod tests {
             remaining_entries[0]
                 .get("path")
                 .and_then(|value| value.as_str()),
-            Some("skills/coding-agent/SKILL.md")
+            Some("skills/installed/coding-agent/SKILL.md")
         );
     }
 
@@ -4972,7 +6422,119 @@ mod tests {
         assert_eq!(result.installed_skill_name, "gpt-taste".to_string());
         assert_eq!(
             result.installed_skill_path,
-            "skills/gpt-taste/SKILL.md".to_string()
+            "skills/installed/gpt-taste/SKILL.md".to_string()
+        );
+        assert_eq!(
+            result.source_skill_path,
+            "vendor/openclaw/skills/gpt-taste/SKILL.md".to_string()
+        );
+        assert_eq!(result.status, "installed".to_string());
+        assert!(installed_contents.contains("Elite UX/UI and motion skill"));
+    }
+
+    #[test]
+    fn knowledge_inventory_is_empty_by_default_and_does_not_scan_workspace_files() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-knowledge-inventory-default-{unique}"));
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-knowledge-app-data-default-{unique}"));
+
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("packages")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            workspace_root.join("README.md"),
+            "# repo file that should not appear in knowledge inventory\n",
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
+
+        let result = build_knowledge_inventory(&workspace_root, None).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
+        let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
+
+        assert_eq!(result.imported_files.len(), 0);
+        assert_eq!(result.available_files.len(), 0);
+        assert_eq!(result.indexed_document_count, 0);
+        assert_eq!(
+            result.registry_path,
+            "knowledge/imported-files.json".to_string()
+        );
+    }
+
+    #[test]
+    fn local_skill_install_copies_vendor_skill_into_opencow_app_skill_directory() {
+        let _guard = lock_workspace_test_guard();
+        let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace_root =
+            env::temp_dir().join(format!("opencow-local-skill-install-app-data-{unique}"));
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-local-skill-install-storage-{unique}"));
+        let vendor_skill_path = workspace_root.join("vendor/openclaw/skills/gpt-taste/SKILL.md");
+
+        fs::create_dir_all(vendor_skill_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(workspace_root.join("apps")).unwrap();
+        fs::create_dir_all(workspace_root.join("packages")).unwrap();
+        fs::create_dir_all(workspace_root.join("docs")).unwrap();
+        fs::write(
+            workspace_root.join("package.json"),
+            "{\n  \"name\": \"opencow\"\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            &vendor_skill_path,
+            "---\nname: gpt-taste\ndescription: Elite UX/UI and motion skill\n---\nUse this skill for advanced UX and motion refinement.\n",
+        )
+        .unwrap();
+
+        env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
+
+        let result =
+            local_skill_install("install the gpt-taste skill into opencow".to_string()).unwrap();
+
+        env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
+
+        let installed_path = app_data_root.join("skills/installed/gpt-taste/SKILL.md");
+        let installed_contents = fs::read_to_string(&installed_path).unwrap();
+        let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
+
+        assert_eq!(result.installed_skill_name, "gpt-taste".to_string());
+        assert_eq!(
+            result.installed_skill_path,
+            "skills/installed/gpt-taste/SKILL.md".to_string()
         );
         assert_eq!(
             result.source_skill_path,

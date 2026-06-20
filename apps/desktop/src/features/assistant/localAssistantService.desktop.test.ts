@@ -2,12 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import {
   clearKnowledgeImports,
+  createNpcWorkspaceConfig,
   createKnowledgeLibrary,
   importKnowledgeFile,
+  loadRecommendedSkillManifest,
+  loadNpcWorkspaceConfig,
+  loadNpcWorkspace,
   loadKnowledgeInventory,
   loadOpenClawCapabilityOverview,
   removeKnowledgeFile,
-  selectKnowledgeLibrary
+  searchNetwork,
+  selectKnowledgeLibrary,
+  updateNpcWorkspaceConfig
 } from "./localAssistantService";
 import {
   runControlledFullShellCommand,
@@ -52,7 +58,8 @@ describe("localAssistantService desktop knowledge inventory", () => {
             {
               id: "default-library",
               label: "默认知识库",
-              description: "系统默认知识库"
+              description: "系统默认知识库",
+              document_count: 1
             }
           ]
         };
@@ -86,7 +93,8 @@ describe("localAssistantService desktop knowledge inventory", () => {
         {
           id: "default-library",
           label: "默认知识库",
-          description: "系统默认知识库"
+          description: "系统默认知识库",
+          documentCount: 1
         }
       ]
     });
@@ -182,6 +190,60 @@ describe("localAssistantService desktop knowledge inventory", () => {
       title: "guide.txt"
     });
     expect(result.indexedDocumentCount).toBe(0);
+  });
+
+  it("routes network search through the desktop command and keeps the normalized result shape", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "network_search") {
+        capturedPayload = payload;
+        return {
+          query: "OpenAI 最新动态",
+          provider: "OpenCow 默认搜索",
+          effective_provider: "OpenCow 默认搜索",
+          used_fallback: false,
+          fallback_reason: null,
+          items: [
+            {
+              title: "OpenAI News",
+              url: "https://openai.com/news/",
+              summary: "OpenAI 官方新闻页。"
+            }
+          ]
+        };
+      }
+
+      return null;
+    });
+
+    const result = await searchNetwork("OpenAI 最新动态", {
+      providerLabel: "OpenCow 默认搜索"
+    });
+
+    expect(capturedPayload).toEqual({
+      payload: {
+        query: "OpenAI 最新动态",
+        providerLabel: "OpenCow 默认搜索",
+        baseUrl: undefined,
+        apiKey: undefined
+      }
+    });
+    expect(result).toEqual({
+      query: "OpenAI 最新动态",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "OpenAI News",
+          url: "https://openai.com/news/",
+          summary: "OpenAI 官方新闻页。"
+        }
+      ]
+    });
   });
 
   it("normalizes desktop knowledge clear responses into the frontend inventory shape", async () => {
@@ -379,6 +441,58 @@ describe("localAssistantService desktop knowledge inventory", () => {
     });
   });
 
+  it("loads the desktop recommended skill manifest as-is", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+
+    mockIPC((cmd) => {
+      if (cmd === "recommended_skill_manifest") {
+        return {
+          summary: "OpenCow 推荐技能清单已加载，共 2 项。",
+          total_count: 2,
+          items: [
+            {
+              name: "coding-agent",
+              description: "代码代理",
+              source: "opencow-builtin-manifest",
+              install_query: "coding-agent",
+              rationale: "OpenCow 本地助手最常见的是代码落地与修复，这项覆盖率最高。"
+            },
+            {
+              name: "docs-helper",
+              description: "文档助手",
+              source: "opencow-builtin-manifest",
+              install_query: "docs-helper",
+              rationale: "本地助手经常需要整理规则、交接文档和知识说明，适合作为默认文档能力。"
+            }
+          ]
+        };
+      }
+
+      return null;
+    });
+
+    await expect(loadRecommendedSkillManifest()).resolves.toEqual({
+      summary: "OpenCow 推荐技能清单已加载，共 2 项。",
+      total_count: 2,
+      items: [
+        {
+          name: "coding-agent",
+          description: "代码代理",
+          source: "opencow-builtin-manifest",
+          install_query: "coding-agent",
+          rationale: "OpenCow 本地助手最常见的是代码落地与修复，这项覆盖率最高。"
+        },
+        {
+          name: "docs-helper",
+          description: "文档助手",
+          source: "opencow-builtin-manifest",
+          install_query: "docs-helper",
+          rationale: "本地助手经常需要整理规则、交接文档和知识说明，适合作为默认文档能力。"
+        }
+      ]
+    });
+  });
+
   it("sends snake_case payload keys for desktop shell commands", async () => {
     (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
     const capturedPayloads: Record<string, unknown> = {};
@@ -432,6 +546,197 @@ describe("localAssistantService desktop knowledge inventory", () => {
     });
     expect(capturedPayloads.full).toEqual({
       command_id: "remove-temp-output-dir"
+    });
+  });
+
+  it("loads the desktop NPC workspace registry and normalizes snake_case fields", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+
+    mockIPC((cmd) => {
+      if (cmd === "workspace_npc_configs_list") {
+        return {
+          summary: "NPC workspace loaded.",
+          selected_npc_id: "research-bot",
+          items: [
+            {
+              id: "research-bot",
+              name: "研究助手",
+              description: "负责资料整理",
+              default_model: "qwen2.5-coder:7b",
+              persona_title: "资料研究员",
+              persona_prompt: "你负责整理资料",
+              output_style: "简洁",
+              agent_draft: "",
+              rules_draft: "",
+              enabled_skill_names: ["本地检索增强"],
+              knowledge_library_ids: ["product-docs"],
+              updated_at: "2026-06-19T10:00:00.000Z"
+            }
+          ]
+        };
+      }
+
+      return null;
+    });
+
+    await expect(loadNpcWorkspace()).resolves.toEqual({
+      summary: "NPC workspace loaded.",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "资料研究员",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+  });
+
+  it("loads a single desktop NPC config and normalizes snake_case fields", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "workspace_npc_config_read") {
+        expect(payload).toEqual({
+          npcId: "research-bot"
+        });
+        return {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          default_model: "qwen2.5-coder:7b",
+          persona_title: "资料研究员",
+          persona_prompt: "你负责整理资料",
+          output_style: "简洁",
+          agent_draft: "",
+          rules_draft: "",
+          enabled_skill_names: ["本地检索增强"],
+          knowledge_library_ids: ["product-docs"],
+          updated_at: "2026-06-19T10:00:00.000Z"
+        };
+      }
+
+      return null;
+    });
+
+    await expect(loadNpcWorkspaceConfig("research-bot")).resolves.toEqual({
+      id: "research-bot",
+      name: "研究助手",
+      description: "负责资料整理",
+      defaultModel: "qwen2.5-coder:7b",
+      personaTitle: "资料研究员",
+      personaPrompt: "你负责整理资料",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: ["本地检索增强"],
+      knowledgeLibraryIds: ["product-docs"],
+      updatedAt: "2026-06-19T10:00:00.000Z"
+    });
+  });
+
+  it("sends camelCase NPC create payload as snake_case over tauri invoke", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "workspace_npc_config_create") {
+        capturedPayload = payload;
+        return {
+          summary: "NPC created.",
+          selected_npc_id: "research-bot",
+          items: []
+        };
+      }
+
+      return null;
+    });
+
+    await createNpcWorkspaceConfig({
+      id: "research-bot",
+      name: "研究助手",
+      description: "负责资料整理",
+      defaultModel: "qwen2.5-coder:7b",
+      personaTitle: "资料研究员",
+      personaPrompt: "你负责整理资料",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: ["本地检索增强"],
+      knowledgeLibraryIds: ["product-docs"]
+    });
+
+    expect(capturedPayload).toEqual({
+      payload: {
+        id: "research-bot",
+        name: "研究助手",
+        description: "负责资料整理",
+        default_model: "qwen2.5-coder:7b",
+        persona_title: "资料研究员",
+        persona_prompt: "你负责整理资料",
+        output_style: "简洁",
+        agent_draft: "",
+        rules_draft: "",
+        enabled_skill_names: ["本地检索增强"],
+        knowledge_library_ids: ["product-docs"]
+      }
+    });
+  });
+
+  it("sends camelCase NPC update payload as snake_case over tauri invoke", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      if (cmd === "workspace_npc_config_update") {
+        capturedPayload = payload;
+        return {
+          summary: "NPC updated.",
+          selected_npc_id: "research-bot",
+          items: []
+        };
+      }
+
+      return null;
+    });
+
+    await updateNpcWorkspaceConfig({
+      id: "research-bot",
+      name: "研究助手",
+      description: "负责资料整理",
+      defaultModel: "qwen2.5-coder:7b",
+      personaTitle: "事实核验官",
+      personaPrompt: "你负责整理资料",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "必须引用来源",
+      enabledSkillNames: ["本地检索增强"],
+      knowledgeLibraryIds: ["product-docs"]
+    });
+
+    expect(capturedPayload).toEqual({
+      payload: {
+        id: "research-bot",
+        name: "研究助手",
+        description: "负责资料整理",
+        default_model: "qwen2.5-coder:7b",
+        persona_title: "事实核验官",
+        persona_prompt: "你负责整理资料",
+        output_style: "简洁",
+        agent_draft: "",
+        rules_draft: "必须引用来源",
+        enabled_skill_names: ["本地检索增强"],
+        knowledge_library_ids: ["product-docs"]
+      }
     });
   });
 });

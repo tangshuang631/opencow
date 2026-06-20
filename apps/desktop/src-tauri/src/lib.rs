@@ -1,8 +1,11 @@
+mod chat_attachments;
 mod ollama;
 mod workbench_state;
 mod workspace;
 
-use tauri::Manager;
+#[cfg(not(target_os = "macos"))]
+use tauri::Emitter;
+use tauri::{Manager, WindowEvent};
 
 #[tauri::command]
 fn health() -> &'static str {
@@ -31,6 +34,29 @@ fn create_main_window(app: &mut tauri::App) -> tauri::Result<()> {
         .data_directory(webview_data_directory)
         .build()?;
 
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        {
+            let app_handle = app.handle().clone();
+            window.on_window_event(move |event| {
+                if matches!(event, WindowEvent::CloseRequested { .. }) {
+                    app_handle.exit(0);
+                }
+            });
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let emit_window = window.clone();
+            window.on_window_event(move |event| {
+                if let WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = emit_window.emit("app_close_requested", ());
+                }
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -42,20 +68,29 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             health,
+            chat_attachments::chat_attachments_pick,
+            chat_attachments::chat_attachment_open,
             workspace::knowledge_file_import,
             workspace::knowledge_file_remove,
             workspace::knowledge_imports_clear,
+            workspace::knowledge_library_create,
+            workspace::knowledge_library_select,
             workspace::knowledge_inventory,
+            workspace::network_search,
             workspace::local_knowledge_search,
             workspace::local_mcp_plugin_inspect,
+            workspace::local_mcp_plugin_install,
             workspace::local_mcp_plugin_start,
             workspace::local_mcp_plugin_start_preview,
             workspace::local_mcp_plugin_scan,
+            workspace::local_mcp_plugin_uninstall,
             workspace::local_enabled_skill_list,
             workspace::local_enabled_skill_match,
             workspace::local_skill_disable,
             workspace::local_skill_enable,
             workspace::local_skill_install,
+            workspace::recommended_mcp_manifest,
+            workspace::recommended_skill_manifest,
             workspace::opencow_self_repair_enabled_skills_registry,
             workspace::opencow_self_repair_workspace_project_runtime_registry,
             workspace::local_skill_scan,
@@ -76,6 +111,10 @@ pub fn run() {
             workspace::workspace_write_command,
             workspace::workspace_packages_overview,
             workspace::workspace_config_overview,
+            workspace::workspace_npc_configs_list,
+            workspace::workspace_npc_config_read,
+            workspace::workspace_npc_config_create,
+            workspace::workspace_npc_config_update,
             workspace::workspace_npc_config_write,
             workspace::workspace_readonly_command,
             workbench_state::workbench_state_load,

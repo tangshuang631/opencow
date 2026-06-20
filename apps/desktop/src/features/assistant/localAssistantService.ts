@@ -56,6 +56,27 @@ export type NpcConfigWriteResult = {
   summary: string;
 };
 
+export type NpcWorkspaceConfig = {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel: string;
+  personaTitle?: string;
+  personaPrompt: string;
+  outputStyle: string;
+  agentDraft: string;
+  rulesDraft: string;
+  enabledSkillNames: string[];
+  knowledgeLibraryIds: string[];
+  updatedAt?: string;
+};
+
+export type NpcWorkspaceResult = {
+  summary: string;
+  selectedNpcId: string | null;
+  items: NpcWorkspaceConfig[];
+};
+
 export type OpenClawCapabilityId = "rag" | "skills" | "npc" | "mcp";
 
 export type OpenClawCapabilityOverview = {
@@ -71,11 +92,29 @@ export type OpenClawCapabilityOverview = {
 
 export type LocalMcpPluginScanItem = {
   id: string;
+  name: string;
   path: string;
   source: string;
+  description: string;
   activation: string;
   tool_count: number;
   skill_count: number;
+  status: "installed" | "running" | "stopped";
+  supported: boolean;
+};
+
+export type RecommendedMcpManifestResult = {
+  summary: string;
+  total_count: number;
+  items: Array<{
+    id: string;
+    name: string;
+    description: string;
+    source: string;
+    install_query: string;
+    rationale?: string;
+    supported: boolean;
+  }>;
 };
 
 export type LocalKnowledgeSearchResult = {
@@ -90,6 +129,19 @@ export type LocalKnowledgeSearchResult = {
     title: string;
     snippet: string;
     score: number;
+  }>;
+};
+
+export type LocalNetworkSearchResult = {
+  query: string;
+  provider: string;
+  effective_provider: string;
+  used_fallback: boolean;
+  fallback_reason?: string | null;
+  items: Array<{
+    title: string;
+    url: string;
+    summary: string;
   }>;
 };
 
@@ -112,6 +164,7 @@ export type KnowledgeInventoryResult = {
     id: string;
     label: string;
     description?: string;
+    documentCount?: number;
   }>;
 };
 
@@ -134,7 +187,29 @@ type DesktopKnowledgeInventoryResult = {
     id: string;
     label: string;
     description?: string;
+    document_count?: number;
   }>;
+};
+
+type DesktopNpcWorkspaceConfig = {
+  id: string;
+  name: string;
+  description?: string;
+  default_model?: string;
+  persona_title?: string;
+  persona_prompt?: string;
+  output_style?: string;
+  agent_draft?: string;
+  rules_draft?: string;
+  enabled_skill_names?: string[];
+  knowledge_library_ids?: string[];
+  updated_at?: string;
+};
+
+type DesktopNpcWorkspaceResult = {
+  summary: string;
+  selected_npc_id?: string | null;
+  items: DesktopNpcWorkspaceConfig[];
 };
 
 export type LocalSkillScanResult = {
@@ -147,6 +222,18 @@ export type LocalSkillScanResult = {
     source: string;
     description: string;
     enabled: boolean;
+  }>;
+};
+
+export type RecommendedSkillManifestResult = {
+  summary: string;
+  total_count: number;
+  items: Array<{
+    name: string;
+    description: string;
+    source: string;
+    install_query: string;
+    rationale?: string;
   }>;
 };
 
@@ -292,6 +379,25 @@ export type LocalMcpPluginStartResult = {
   summary: string;
 };
 
+export type LocalMcpPluginInstallResult = {
+  query: string;
+  installed_plugin_id: string;
+  installed_plugin_name: string;
+  installed_plugin_path: string;
+  source_plugin_path: string;
+  status: "installed" | "already-installed";
+  summary: string;
+};
+
+export type LocalMcpPluginUninstallResult = {
+  query: string;
+  removed_plugin_id: string;
+  removed_plugin_name: string;
+  removed_plugin_path: string;
+  status: "removed" | "not-installed";
+  summary: string;
+};
+
 export type ReadonlyShellCommandId = "git-status" | "workspace-root-list" | "packages-dir-list";
 export type WorkspaceWriteShellCommandId = "create-temp-output-dir";
 export type ControlledFullShellCommandId = "remove-temp-output-dir";
@@ -419,6 +525,29 @@ export async function searchLocalKnowledge(
   });
 }
 
+export async function searchNetwork(
+  query: string,
+  options?: {
+    providerLabel?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    suppressFallbackNotice?: boolean;
+  }
+): Promise<LocalNetworkSearchResult> {
+  if (hasTauriInvoke()) {
+    return invoke<LocalNetworkSearchResult>("network_search", {
+      payload: {
+        query,
+        providerLabel: options?.providerLabel,
+        baseUrl: options?.baseUrl,
+        apiKey: options?.apiKey
+      }
+    });
+  }
+
+  return createBrowserPreviewNetworkSearch(query, options);
+}
+
 export async function loadKnowledgeInventory(
   options?: {
     libraryId?: string;
@@ -486,12 +615,84 @@ export async function selectKnowledgeLibrary(libraryId: string): Promise<Knowled
   }));
 }
 
+export async function loadNpcWorkspace(): Promise<NpcWorkspaceResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcWorkspace();
+  }
+
+  return normalizeDesktopNpcWorkspace(await invoke<DesktopNpcWorkspaceResult>("workspace_npc_configs_list"));
+}
+
+export async function loadNpcWorkspaceConfig(npcId: string): Promise<NpcWorkspaceConfig> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcWorkspace({
+      id: npcId
+    }).items[0];
+  }
+
+  return normalizeDesktopNpcWorkspaceConfig(await invoke<DesktopNpcWorkspaceConfig>("workspace_npc_config_read", {
+    npcId
+  }));
+}
+
+export async function createNpcWorkspaceConfig(payload: NpcWorkspaceConfig): Promise<NpcWorkspaceResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcWorkspace(payload);
+  }
+
+  return normalizeDesktopNpcWorkspace(await invoke<DesktopNpcWorkspaceResult>("workspace_npc_config_create", {
+    payload: {
+      id: payload.id,
+      name: payload.name,
+      description: payload.description,
+      default_model: payload.defaultModel,
+      persona_title: payload.personaTitle ?? "",
+      persona_prompt: payload.personaPrompt,
+      output_style: payload.outputStyle,
+      agent_draft: payload.agentDraft,
+      rules_draft: payload.rulesDraft,
+      enabled_skill_names: payload.enabledSkillNames,
+      knowledge_library_ids: payload.knowledgeLibraryIds
+    }
+  }));
+}
+
+export async function updateNpcWorkspaceConfig(payload: NpcWorkspaceConfig): Promise<NpcWorkspaceResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewNpcWorkspace(payload);
+  }
+
+  return normalizeDesktopNpcWorkspace(await invoke<DesktopNpcWorkspaceResult>("workspace_npc_config_update", {
+    payload: {
+      id: payload.id,
+      name: payload.name,
+      description: payload.description,
+      default_model: payload.defaultModel,
+      persona_title: payload.personaTitle ?? "",
+      persona_prompt: payload.personaPrompt,
+      output_style: payload.outputStyle,
+      agent_draft: payload.agentDraft,
+      rules_draft: payload.rulesDraft,
+      enabled_skill_names: payload.enabledSkillNames,
+      knowledge_library_ids: payload.knowledgeLibraryIds
+    }
+  }));
+}
+
 export async function scanLocalSkills(): Promise<LocalSkillScanResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalSkillScan();
   }
 
   return invoke<LocalSkillScanResult>("local_skill_scan");
+}
+
+export async function loadRecommendedSkillManifest(): Promise<RecommendedSkillManifestResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewRecommendedSkillManifest();
+  }
+
+  return invoke<RecommendedSkillManifestResult>("recommended_skill_manifest");
 }
 
 export async function inspectLocalSkill(query: string): Promise<LocalSkillInspectResult> {
@@ -587,6 +788,14 @@ export async function scanLocalMcpPlugins(): Promise<LocalMcpPluginScanResult> {
   return invoke<LocalMcpPluginScanResult>("local_mcp_plugin_scan");
 }
 
+export async function loadRecommendedMcpManifest(): Promise<RecommendedMcpManifestResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewRecommendedMcpManifest();
+  }
+
+  return invoke<RecommendedMcpManifestResult>("recommended_mcp_manifest");
+}
+
 export async function inspectLocalMcpPlugin(query: string): Promise<LocalMcpPluginInspectResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalMcpPluginInspect(query);
@@ -613,6 +822,26 @@ export async function startLocalMcpPlugin(query: string): Promise<LocalMcpPlugin
   }
 
   return invoke<LocalMcpPluginStartResult>("local_mcp_plugin_start", {
+    query
+  });
+}
+
+export async function installLocalMcpPlugin(query: string): Promise<LocalMcpPluginInstallResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewLocalMcpPluginInstall(query);
+  }
+
+  return invoke<LocalMcpPluginInstallResult>("local_mcp_plugin_install", {
+    query
+  });
+}
+
+export async function uninstallLocalMcpPlugin(query: string): Promise<LocalMcpPluginUninstallResult> {
+  if (!hasTauriInvoke()) {
+    return createBrowserPreviewLocalMcpPluginUninstall(query);
+  }
+
+  return invoke<LocalMcpPluginUninstallResult>("local_mcp_plugin_uninstall", {
     query
   });
 }
@@ -908,7 +1137,87 @@ function normalizeDesktopKnowledgeInventory(
     summary: result.summary,
     activeLibraryId: result.active_library_id,
     activeLibraryLabel: result.active_library_label,
-    libraries: result.libraries
+    libraries: result.libraries?.map((library) => ({
+      id: library.id,
+      label: library.label,
+      description: library.description,
+      documentCount: library.document_count
+    }))
+  };
+}
+
+function normalizeDesktopNpcWorkspace(
+  result: DesktopNpcWorkspaceResult | NpcWorkspaceResult
+): NpcWorkspaceResult {
+  if ("selectedNpcId" in result) {
+    return result;
+  }
+
+  return {
+    summary: result.summary,
+    selectedNpcId: result.selected_npc_id ?? null,
+    items: (result.items ?? []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description ?? "",
+      defaultModel: item.default_model ?? "",
+      personaTitle: item.persona_title ?? "",
+      personaPrompt: item.persona_prompt ?? "",
+      outputStyle: item.output_style ?? "",
+      agentDraft: item.agent_draft ?? "",
+      rulesDraft: item.rules_draft ?? "",
+      enabledSkillNames: item.enabled_skill_names ?? [],
+      knowledgeLibraryIds: item.knowledge_library_ids ?? [],
+      updatedAt: item.updated_at
+    }))
+  };
+}
+
+function normalizeDesktopNpcWorkspaceConfig(
+  item: DesktopNpcWorkspaceConfig | NpcWorkspaceConfig
+): NpcWorkspaceConfig {
+  if ("defaultModel" in item) {
+    return item;
+  }
+
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description ?? "",
+    defaultModel: item.default_model ?? "",
+    personaTitle: item.persona_title ?? "",
+    personaPrompt: item.persona_prompt ?? "",
+    outputStyle: item.output_style ?? "",
+    agentDraft: item.agent_draft ?? "",
+    rulesDraft: item.rules_draft ?? "",
+    enabledSkillNames: item.enabled_skill_names ?? [],
+    knowledgeLibraryIds: item.knowledge_library_ids ?? [],
+    updatedAt: item.updated_at
+  };
+}
+
+function createBrowserPreviewNpcWorkspace(
+  overrideItem?: Partial<NpcWorkspaceConfig>
+): NpcWorkspaceResult {
+  const item: NpcWorkspaceConfig = {
+    id: overrideItem?.id ?? "research-bot",
+    name: overrideItem?.name ?? "研究助手",
+    description: overrideItem?.description ?? "负责资料整理",
+    defaultModel: overrideItem?.defaultModel ?? "qwen2.5-coder:7b",
+    personaTitle: overrideItem?.personaTitle ?? "资料研究员",
+    personaPrompt: overrideItem?.personaPrompt ?? "你负责整理资料",
+    outputStyle: overrideItem?.outputStyle ?? "简洁",
+    agentDraft: overrideItem?.agentDraft ?? "",
+    rulesDraft: overrideItem?.rulesDraft ?? "",
+    enabledSkillNames: overrideItem?.enabledSkillNames ?? ["本地检索增强"],
+    knowledgeLibraryIds: overrideItem?.knowledgeLibraryIds ?? ["default-library"],
+    updatedAt: overrideItem?.updatedAt ?? "2026-06-19T10:00:00.000Z"
+  };
+
+  return {
+    summary: "Browser preview NPC workspace loaded.",
+    selectedNpcId: item.id,
+    items: [item]
   };
 }
 
@@ -1203,32 +1512,71 @@ function createBrowserPreviewLocalKnowledgeSearch(query: string): LocalKnowledge
   };
 }
 
-function createBrowserPreviewLocalSkillScan(): LocalSkillScanResult {
+function createBrowserPreviewNetworkSearch(
+  query: string,
+  options?: {
+    providerLabel?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    suppressFallbackNotice?: boolean;
+  }
+): LocalNetworkSearchResult {
+  const customProvider = options?.providerLabel?.trim() || "";
+  const shouldFallback = Boolean(customProvider && /fail|invalid|broken/i.test(customProvider));
+  const provider = shouldFallback ? "OpenCow 默认搜索" : (customProvider || "OpenCow 默认搜索");
+
   return {
-    summary: "Browser preview mode found 3 local skills across 2 scanned roots.",
-    total_count: 3,
-    scanned_root_count: 2,
+    query,
+    provider,
+    effective_provider: provider,
+    used_fallback: shouldFallback,
+    fallback_reason: shouldFallback ? "自定义搜索请求失败，已自动回退到 OpenCow 默认搜索。" : null,
     items: [
       {
-        name: "coding-agent",
-        path: "vendor/openclaw/skills/coding-agent/SKILL.md",
-        source: "vendor-openclaw-skill",
-        description: "OpenClaw coding agent workflow",
-        enabled: true
+        title: `${provider} 搜索结果 1`,
+        url: "https://example.com/opencow-search-1",
+        summary: `OpenCow 已为“${query}”返回默认网页搜索结果。`
       },
       {
-        name: "browser-automation",
-        path: "vendor/openclaw/extensions/browser/skills/browser-automation/SKILL.md",
-        source: "vendor-openclaw-extension-skill",
-        description: "OpenClaw browser automation skill",
-        enabled: false
+        title: `${provider} 搜索结果 2`,
+        url: "https://example.com/opencow-search-2",
+        summary: "默认搜索零配置可用；如用户已保存自定义 API，会优先尝试用户配置。"
+      }
+    ]
+  };
+}
+
+function createBrowserPreviewLocalSkillScan(): LocalSkillScanResult {
+  return {
+    summary: "Browser preview mode found 0 installed OpenCow skills.",
+    total_count: 0,
+    scanned_root_count: 1,
+    items: []
+  };
+}
+
+function createBrowserPreviewRecommendedSkillManifest(): RecommendedSkillManifestResult {
+  return {
+    summary: "Browser preview mode loaded 3 recommended skills from the local OpenCow manifest.",
+    total_count: 3,
+    items: [
+      {
+        name: "网页自动化",
+        description: "适合网页操作、登录检查和多步流程。",
+        source: "opencow-manifest",
+        install_query: "browser-automation"
       },
       {
-        name: "diffs",
-        path: "vendor/openclaw/extensions/diffs/skills/diffs/SKILL.md",
-        source: "vendor-openclaw-extension-skill",
-        description: "OpenClaw diffs review skill",
-        enabled: false
+        name: "文档整理",
+        description: "适合整理说明文档、规则和知识条目。",
+        source: "opencow-manifest",
+        install_query: "docs-helper"
+      },
+      {
+        name: "代码执行",
+        description: "适合本地代码分析、修改和命令执行。",
+        source: "opencow-manifest",
+        install_query: "coding-agent"
       }
     ]
   };
@@ -1257,9 +1605,9 @@ function createBrowserPreviewLocalSkillEnable(query: string): LocalSkillEnableRe
   return {
     query,
     enabled_skill_name: "coding-agent",
-    registry_path: ".opencow/skills/enabled-skills.json",
+    registry_path: "skills/enabled-skills.json",
     status: "enabled",
-    summary: "Browser preview mode registered coding-agent in the workspace skill registry."
+    summary: "Browser preview mode registered coding-agent in the OpenCow skill registry."
   };
 }
 
@@ -1267,10 +1615,10 @@ function createBrowserPreviewLocalSkillInstall(query: string): LocalSkillInstall
   return {
     query,
     installed_skill_name: "gpt-taste",
-    installed_skill_path: "skills/gpt-taste/SKILL.md",
+    installed_skill_path: "skills/installed/gpt-taste/SKILL.md",
     source_skill_path: "vendor/openclaw/skills/gpt-taste/SKILL.md",
     status: "installed",
-    summary: "Browser preview mode copied gpt-taste into the workspace skills directory."
+    summary: "Browser preview mode copied gpt-taste into the OpenCow skills directory."
   };
 }
 
@@ -1278,9 +1626,9 @@ function createBrowserPreviewLocalSkillDisable(query: string): LocalSkillDisable
   return {
     query,
     disabled_skill_name: "coding-agent",
-    registry_path: ".opencow/skills/enabled-skills.json",
+    registry_path: "skills/enabled-skills.json",
     status: "disabled",
-    summary: "Browser preview mode removed coding-agent from the workspace skill registry."
+    summary: "Browser preview mode removed coding-agent from the OpenCow skill registry."
   };
 }
 
@@ -1290,12 +1638,12 @@ function createBrowserPreviewOpencowEnabledSkillsRegistryRepair(
   return {
     query,
     repair_target: "enabled-skills-registry",
-    repaired_path: ".opencow/skills/enabled-skills.json",
+    repaired_path: "skills/enabled-skills.json",
     status: "repaired",
     preserved_entry_count: 0,
     verified_version: 1,
     verified_entry_count: 0,
-    summary: "Browser preview mode rewrote the workspace enabled skills registry to the default verified schema."
+    summary: "Browser preview mode rewrote the OpenCow enabled skills registry to the default verified schema."
   };
 }
 
@@ -1316,17 +1664,10 @@ function createBrowserPreviewOpencowWorkspaceProjectRuntimeRegistryRepair(
 
 function createBrowserPreviewEnabledLocalSkills(): EnabledLocalSkillsResult {
   return {
-    summary: "Browser preview mode found 1 enabled local skill entry in the workspace registry.",
-    total_count: 1,
-    registry_path: ".opencow/skills/enabled-skills.json",
-    items: [
-      {
-        name: "coding-agent",
-        path: "vendor/openclaw/skills/coding-agent/SKILL.md",
-        source: "vendor-openclaw-skill",
-        description: "OpenClaw coding agent workflow"
-      }
-    ]
+    summary: "Browser preview mode found 0 enabled OpenCow skills.",
+    total_count: 0,
+    registry_path: "skills/enabled-skills.json",
+    items: []
   };
 }
 
@@ -1378,25 +1719,48 @@ function createBrowserPreviewEnabledLocalSkillMatch(query: string): EnabledLocal
 
 function createBrowserPreviewLocalMcpPluginScan(): LocalMcpPluginScanResult {
   return {
-    summary: "Browser preview mode found 2 local MCP-adjacent plugin entries across 2 scanned roots.",
-    total_count: 2,
-    scanned_root_count: 2,
+    summary: "Browser preview mode found 1 installed MCP entry in the OpenCow product directory.",
+    total_count: 1,
+    scanned_root_count: 1,
     items: [
       {
         id: "browser",
-        path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
-        source: "vendor-openclaw-extension-plugin",
+        name: "浏览器控制",
+        path: "mcp/installed/browser/openclaw.plugin.json",
+        source: "opencow-installed-mcp",
+        description: "用于浏览器联调、页面检查和点击操作。",
         activation: "startup",
         tool_count: 1,
-        skill_count: 1
+        skill_count: 1,
+        status: "stopped",
+        supported: true
+      }
+    ]
+  };
+}
+
+function createBrowserPreviewRecommendedMcpManifest(): RecommendedMcpManifestResult {
+  return {
+    summary: "Browser preview mode loaded 2 recommended MCP entries.",
+    total_count: 2,
+    items: [
+      {
+        id: "browser",
+        name: "浏览器控制",
+        description: "最适合 OpenCow 本地桌面端做页面联调、按钮点击和回归验证。",
+        source: "opencow-builtin-manifest",
+        install_query: "browser",
+        rationale: "这是 OpenCow 当前最成熟、最常用的 MCP 类型之一。",
+        supported: true
       },
       {
-        id: "codex-supervisor",
-        path: "vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json",
-        source: "vendor-openclaw-extension-plugin",
-        activation: "manual",
-        tool_count: 5,
-        skill_count: 0
+        id: "fetch",
+        name: "网页读取",
+        description: "适合后续补充网页内容抓取和结构化读取。",
+        source: "opencow-builtin-manifest",
+        install_query: "fetch",
+        rationale: "先进入推荐清单，后续再补稳定宿主。",
+        supported: false
       }
     ]
   };
@@ -1412,11 +1776,11 @@ function createBrowserPreviewLocalMcpPluginInspect(query: string): LocalMcpPlugi
       {
         id: "browser",
         path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
-        source: "vendor-openclaw-extension-plugin",
+        source: "opencow-installed-mcp",
         activation: "startup",
         tool_count: 1,
         skill_count: 1,
-        description: "Browser automation plugin entry.",
+        description: "用于浏览器联调、页面检查和点击操作。",
         tool_names: ["browser"],
         skill_paths: ["./skills"]
       }
@@ -1433,16 +1797,15 @@ function createBrowserPreviewLocalMcpPluginStartPreview(query: string): LocalMcp
     items: [
       {
         id: "browser",
-        path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
-        source: "vendor-openclaw-extension-plugin",
+        path: "mcp/installed/browser/openclaw.plugin.json",
+        source: "opencow-installed-mcp",
         activation: "startup",
-        startup_allowed: false,
-        command_preview: "No resolved executable launcher for this local MCP plugin in the current desktop slice.",
-        working_directory: "vendor/openclaw/extensions/browser",
-        risk_summary:
-          "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process.",
+        startup_allowed: true,
+        command_preview: "node vendor/openclaw/openclaw.mjs browser start",
+        working_directory: "vendor/openclaw",
+        risk_summary: "会尝试通过 OpenClaw browser CLI 启动浏览器控制服务；如果本地依赖缺失会返回明确诊断。",
         requires_config: false,
-        config_hint: "No required config schema fields were detected."
+        config_hint: "建议先保证 OpenClaw browser 运行依赖完整。"
       }
     ]
   };
@@ -1451,12 +1814,33 @@ function createBrowserPreviewLocalMcpPluginStartPreview(query: string): LocalMcp
 function createBrowserPreviewLocalMcpPluginStart(query: string): LocalMcpPluginStartResult {
   return {
     plugin_id: query.toLowerCase().includes("browser") ? "browser" : "plugin",
-    command_label: "No resolved executable launcher",
-    working_directory: "vendor/openclaw/extensions/browser",
-    stdout_preview:
-      "Execution blocked: the browser MCP plugin manifest exists, but this desktop slice does not yet know how to launch a real plugin host for it.",
+    command_label: "openclaw browser start",
+    working_directory: "vendor/openclaw",
+    stdout_preview: "Browser preview mode cannot launch native MCP processes, but the desktop command path is now wired.",
     line_count: 0,
-    summary:
-      "Browser preview mode did not execute a local MCP plugin start because no verified executable launcher has been implemented for it yet."
+    summary: "Browser preview mode only verifies the OpenCow MCP product flow."
+  };
+}
+
+function createBrowserPreviewLocalMcpPluginInstall(query: string): LocalMcpPluginInstallResult {
+  return {
+    query,
+    installed_plugin_id: "browser",
+    installed_plugin_name: "浏览器控制",
+    installed_plugin_path: "mcp/installed/browser/openclaw.plugin.json",
+    source_plugin_path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+    status: "installed",
+    summary: "Browser preview mode installed the browser MCP into the OpenCow product directory."
+  };
+}
+
+function createBrowserPreviewLocalMcpPluginUninstall(query: string): LocalMcpPluginUninstallResult {
+  return {
+    query,
+    removed_plugin_id: "browser",
+    removed_plugin_name: "浏览器控制",
+    removed_plugin_path: "mcp/installed/browser/openclaw.plugin.json",
+    status: "removed",
+    summary: "Browser preview mode removed the browser MCP from the OpenCow product directory."
   };
 }

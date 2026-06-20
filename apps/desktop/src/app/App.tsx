@@ -10,15 +10,22 @@ import { cancelOllamaChat, chatWithOllamaModel, loadOllamaOverview } from "../fe
 import type { OllamaOverview } from "../features/ollama/ollamaService";
 import { resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { Workbench } from "../features/workbench/Workbench";
+import { pickChatAttachments } from "../features/workbench/chatAttachments";
 import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapability";
-import { inspectLocalSkill, writeNpcConfig } from "../features/assistant/localAssistantService";
 import {
   clearKnowledgeImports,
+  createNpcWorkspaceConfig,
   createKnowledgeLibrary,
   importKnowledgeFile,
+  inspectLocalSkill,
   loadKnowledgeInventory,
+  loadNpcWorkspaceConfig,
+  loadNpcWorkspace,
   removeKnowledgeFile,
-  selectKnowledgeLibrary
+  searchNetwork,
+  selectKnowledgeLibrary,
+  updateNpcWorkspaceConfig,
+  writeNpcConfig
 } from "../features/assistant/localAssistantService";
 import type { ChatAttachment } from "../features/workbench/workbenchState";
 import type { AppCloseDecision } from "../features/appClose";
@@ -220,6 +227,16 @@ function isRepeatedApprovedDangerousConfirmation(
     && pending.requiredMode === next.requiredMode
     && pending.safetySummary === next.safetySummary
     && pending.queuedMessage === next.queuedMessage;
+}
+
+function slugifyNpcId(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return slug || "custom-npc";
 }
 
 function isOpencowSelfRepairExecutionKind(kind: string | undefined): boolean {
@@ -850,6 +867,9 @@ async function executeLocalModelChatTask(payload: {
   attachments?: ChatAttachment[];
   searchEnabled: boolean;
   searchProviderLabel: string;
+  searchBaseUrl?: string;
+  searchApiKey?: string;
+  suppressFallbackNotice?: boolean;
   sources: WorkbenchState["sources"]["items"];
   requestId?: string;
   signal?: AbortSignal;
@@ -863,14 +883,43 @@ async function executeLocalModelChatTask(payload: {
     );
   }
 
-  const visibleSources = payload.searchEnabled
+  let visibleSources = payload.searchEnabled
     ? payload.sources.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS)
     : [];
+  let effectiveSearchProvider = payload.searchProviderLabel.trim();
+  let searchFallbackReason: string | null = null;
+  let usedSearchFallback = false;
+
+  if (payload.searchEnabled) {
+    try {
+      const networkResult = await searchNetwork(payload.message, {
+        providerLabel: payload.searchProviderLabel,
+        baseUrl: payload.searchBaseUrl,
+        apiKey: payload.searchApiKey,
+        suppressFallbackNotice: payload.suppressFallbackNotice
+      });
+      visibleSources = networkResult.items.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS).map((item) => ({
+        title: item.title,
+        url: item.url,
+        provider: networkResult.effective_provider,
+        query: payload.message,
+        summary: item.summary,
+        usedFallback: networkResult.used_fallback
+      }));
+      effectiveSearchProvider = networkResult.effective_provider;
+      searchFallbackReason = networkResult.fallback_reason ?? null;
+      usedSearchFallback = networkResult.used_fallback;
+    } catch (error) {
+      visibleSources = payload.sources.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS);
+      searchFallbackReason = error instanceof Error ? error.message : "联网搜索失败";
+    }
+  }
+
   const searchProviders = Array.from(
     new Set([
       ...visibleSources.map((source) => source.provider.trim()).filter(Boolean),
-      ...(payload.searchEnabled && visibleSources.length === 0 && payload.searchProviderLabel.trim()
-        ? [payload.searchProviderLabel.trim()]
+      ...(payload.searchEnabled && visibleSources.length === 0 && effectiveSearchProvider
+        ? [effectiveSearchProvider]
         : [])
     ])
   );
@@ -904,6 +953,19 @@ async function executeLocalModelChatTask(payload: {
   return {
     resultTitle: "本地模型答复",
     resultSummary: [result.message, ...lengthLimitRecoveryLines].join("\n"),
+    searchSources: visibleSources,
+    searchStatePatch: payload.searchEnabled
+      ? {
+          effectiveProvider: effectiveSearchProvider || "OpenCow 默认搜索",
+          lastFallbackReason: searchFallbackReason
+        }
+      : undefined,
+    searchFallbackNotice: payload.searchEnabled && usedSearchFallback && searchFallbackReason
+      ? {
+          visible: !payload.suppressFallbackNotice,
+          summary: searchFallbackReason
+        }
+      : undefined,
     auditDetailLines: [
       `Ollama model: ${result.model || selectedModel}`,
       `Ollama done reason: ${result.doneReason || "complete"}`,
@@ -1901,6 +1963,8 @@ export function App() {
   const [hasHydratedPersistedState, setHasHydratedPersistedState] = useState(!shouldHydrateNativeState);
   const stateRef = useRef(state);
   const hasLoadedOllamaOverviewRef = useRef(false);
+  const hasNpcWorkspaceLocalChangesRef = useRef(false);
+  const npcWorkspaceLoadVersionRef = useRef(0);
   const pendingPersistedStateRef = useRef<WorkbenchState | null>(null);
   const lastExecutedTaskAttemptRef = useRef<string | null>(null);
   const activeLocalModelAbortControllerRef = useRef<AbortController | null>(null);
@@ -1998,6 +2062,134 @@ export function App() {
             }
           }));
         });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasHydratedPersistedState]);
+
+  useEffect(() => {
+    const status = state.npcWorkspace.saveStatus;
+
+    if (!status) {
+      return;
+    }
+
+    if (!status.includes("已保存") && !status.includes("已创建")) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setState((current) => {
+        if (current.npcWorkspace.saveStatus !== status) {
+          return current;
+        }
+
+        return {
+          ...current,
+          npcWorkspace: {
+            ...current.npcWorkspace,
+            saveStatus: null
+          }
+        };
+      });
+    }, 2000);
+
+    return () => window.clearTimeout(timeout);
+  }, [state.npcWorkspace.saveStatus]);
+
+  useEffect(() => {
+    if (!hasHydratedPersistedState) {
+      return;
+    }
+
+    if (hasNpcWorkspaceLocalChangesRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+    const loadVersion = npcWorkspaceLoadVersionRef.current;
+
+    void loadNpcWorkspace()
+      .then(async (workspace) => {
+        if (
+          cancelled
+          || hasNpcWorkspaceLocalChangesRef.current
+          || npcWorkspaceLoadVersionRef.current !== loadVersion
+        ) {
+          return;
+        }
+
+        const nextSelectedNpcId = workspace.selectedNpcId ?? workspace.items[0]?.id ?? null;
+
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            npcWorkspace: {
+              ...current.npcWorkspace,
+              items: workspace.items,
+              selectedNpcId: nextSelectedNpcId
+            }
+          }));
+        });
+
+        if (!nextSelectedNpcId) {
+          return;
+        }
+
+        try {
+          const config = await loadNpcWorkspaceConfig(nextSelectedNpcId);
+
+          if (
+            cancelled
+            || hasNpcWorkspaceLocalChangesRef.current
+            || npcWorkspaceLoadVersionRef.current !== loadVersion
+          ) {
+            return;
+          }
+
+          startTransition(() => {
+            setState((current) => {
+              if (current.npcWorkspace.selectedNpcId !== nextSelectedNpcId) {
+                return current;
+              }
+
+              return {
+                ...current,
+                npcWorkspace: {
+                  ...current.npcWorkspace,
+                  items: current.npcWorkspace.items.map((item) => item.id === nextSelectedNpcId ? config : item)
+                }
+              };
+            });
+          });
+        } catch {
+          if (
+            cancelled
+            || hasNpcWorkspaceLocalChangesRef.current
+            || npcWorkspaceLoadVersionRef.current !== loadVersion
+          ) {
+            return;
+          }
+
+          startTransition(() => {
+            setState((current) => {
+              if (current.npcWorkspace.selectedNpcId !== nextSelectedNpcId) {
+                return current;
+              }
+
+              return {
+                ...current,
+                npcWorkspace: {
+                  ...current.npcWorkspace,
+                  saveStatus: "NPC 配置读取失败。"
+                }
+              };
+            });
+          });
+        }
       })
       .catch(() => undefined);
 
@@ -2228,6 +2420,9 @@ export function App() {
               attachments: activeTask.attachments,
               searchEnabled: stateRef.current.search.enabled,
               searchProviderLabel: stateRef.current.search.providerLabel,
+              searchBaseUrl: stateRef.current.search.customBaseUrl,
+              searchApiKey: stateRef.current.search.customApiKey,
+              suppressFallbackNotice: stateRef.current.search.suppressFallbackNotice,
               sources: stateRef.current.sources.items,
               requestId: localModelRequestId,
               signal: localModelAbortController.signal,
@@ -2349,6 +2544,13 @@ export function App() {
       const executeAssistantTaskWithOptionalExplanation = async () => {
         const result = await executeAssistantTask(executionPlan, {
           snapshotAvailable: stateRef.current.storage.snapshotCount > 0,
+          searchConfig: {
+            enabled: stateRef.current.search.enabled,
+            customProviderLabel: stateRef.current.search.customProviderLabel,
+            customBaseUrl: stateRef.current.search.customBaseUrl,
+            customApiKey: stateRef.current.search.customApiKey,
+            suppressFallbackNotice: stateRef.current.search.suppressFallbackNotice
+          },
           signal: currentAssistantTaskAbortController.signal
         });
         const validResult = assertValidAssistantTaskExecutionResult(result, activeTask.executionKind);
@@ -3010,7 +3212,7 @@ export function App() {
       setState((current) =>
         createSearchToggleState(current, {
           enabled,
-          providerLabel: current.search.providerLabel
+          providerLabel: current.search.customProviderLabel
         })
       );
     });
@@ -3022,7 +3224,13 @@ export function App() {
     });
   }
 
-  function handleSaveSearchProviderConfig(payload: { providerLabel: string }) {
+  function handleSaveSearchProviderConfig(payload: {
+    providerLabel: string;
+    baseUrl?: string;
+    apiKey?: string;
+    suppressFallbackNotice?: boolean;
+    clearFallbackNotice?: boolean;
+  }) {
     startTransition(() => {
       setState((current) => createSearchProviderConfigState(current, payload));
     });
@@ -3088,6 +3296,53 @@ export function App() {
               knowledgeCount: inventory.indexedDocumentCount
             }
           }));
+        });
+      })
+      .catch(() => undefined);
+  }
+
+  function handleImportLocalKnowledgeFiles() {
+    void pickChatAttachments()
+      .then((attachments) => {
+        const candidatePaths = attachments
+          .map((attachment) => attachment.filePath)
+          .filter((filePath): filePath is string => {
+            if (!filePath) {
+              return false;
+            }
+
+            return /\.(md|txt)$/i.test(filePath);
+          });
+
+        if (candidatePaths.length === 0) {
+          return Promise.resolve();
+        }
+
+        return Promise.all(
+          candidatePaths.map((path) => importKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId))
+        ).then((inventories) => {
+          const inventory = inventories[inventories.length - 1];
+
+          if (!inventory) {
+            return;
+          }
+
+          startTransition(() => {
+            setState((current) => ({
+              ...current,
+              knowledge: {
+                importedFiles: inventory.importedFiles,
+                availableFiles: inventory.availableFiles,
+                activeLibraryId: inventory.activeLibraryId ?? current.knowledge.activeLibraryId,
+                activeLibraryLabel: inventory.activeLibraryLabel ?? current.knowledge.activeLibraryLabel,
+                libraries: inventory.libraries ?? current.knowledge.libraries
+              },
+              storage: {
+                ...current.storage,
+                knowledgeCount: inventory.indexedDocumentCount
+              }
+            }));
+          });
         });
       })
       .catch(() => undefined);
@@ -3160,6 +3415,302 @@ export function App() {
         });
       })
       .catch(() => undefined);
+  }
+
+  function handleCreateNpcWorkspace(name: string, description?: string) {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      return;
+    }
+
+    const npcId = slugifyNpcId(trimmedName);
+    const trimmedDescription = description?.trim() ?? "";
+    const previousNpcWorkspace = stateRef.current.npcWorkspace;
+    const optimisticNpc = {
+      id: npcId,
+      name: trimmedName,
+      description: trimmedDescription,
+      defaultModel: stateRef.current.settings.npc.localModel || stateRef.current.model.activeModel,
+      personaTitle: "",
+      personaPrompt: "",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: [],
+      knowledgeLibraryIds: stateRef.current.knowledge.activeLibraryId ? [stateRef.current.knowledge.activeLibraryId] : [],
+      updatedAt: new Date().toISOString()
+    };
+
+    hasNpcWorkspaceLocalChangesRef.current = true;
+    npcWorkspaceLoadVersionRef.current += 1;
+
+    setState((current) => ({
+      ...current,
+      npcWorkspace: {
+        ...current.npcWorkspace,
+        items: [
+          ...current.npcWorkspace.items.filter((item) => item.id !== npcId),
+          optimisticNpc
+        ],
+        selectedNpcId: npcId,
+        saveStatus: "NPC 创建中..."
+      }
+    }));
+
+    void createNpcWorkspaceConfig({
+      id: npcId,
+      name: trimmedName,
+      description: trimmedDescription,
+      defaultModel: optimisticNpc.defaultModel,
+      personaTitle: "",
+      personaPrompt: "",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: [],
+      knowledgeLibraryIds: optimisticNpc.knowledgeLibraryIds
+    }).then((workspace) => {
+      startTransition(() => {
+        setState((current) => ({
+          ...current,
+          npcWorkspace: {
+            ...current.npcWorkspace,
+            items: workspace.items,
+            selectedNpcId: workspace.selectedNpcId ?? workspace.items[0]?.id ?? null,
+            saveStatus: "NPC 已创建。"
+          }
+        }));
+      });
+    }).catch(() => {
+      setState((current) => ({
+        ...current,
+        npcWorkspace: {
+          ...current.npcWorkspace,
+          items: previousNpcWorkspace.items,
+          selectedNpcId: previousNpcWorkspace.selectedNpcId,
+          saveStatus: "NPC 创建失败。"
+        }
+      }));
+    });
+  }
+
+  function handleSelectNpcWorkspace(npcId: string) {
+    hasNpcWorkspaceLocalChangesRef.current = true;
+    npcWorkspaceLoadVersionRef.current += 1;
+
+    setState((current) => ({
+      ...current,
+      npcWorkspace: {
+        ...current.npcWorkspace,
+        selectedNpcId: npcId,
+        selectedSkillName: null,
+        selectedSkillPreview: null,
+        selectedKnowledgeLibraryId: null,
+        saveStatus: null
+      }
+    }));
+
+    void loadNpcWorkspaceConfig(npcId)
+      .then((config) => {
+        setState((current) => {
+          if (current.npcWorkspace.selectedNpcId !== npcId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            npcWorkspace: {
+              ...current.npcWorkspace,
+              items: current.npcWorkspace.items.map((item) => item.id === npcId ? config : item)
+            }
+          };
+        });
+      })
+      .catch(() => {
+        setState((current) => {
+          if (current.npcWorkspace.selectedNpcId !== npcId) {
+            return current;
+          }
+
+          return {
+            ...current,
+            npcWorkspace: {
+              ...current.npcWorkspace,
+              saveStatus: "NPC 配置读取失败。"
+            }
+          };
+        });
+      });
+  }
+
+  function handleSelectNpcWorkspaceSection(section: WorkbenchState["npcWorkspace"]["activeSection"]) {
+    setState((current) => ({
+      ...current,
+      npcWorkspace: {
+        ...current.npcWorkspace,
+        activeSection: section,
+        saveStatus: null
+      }
+    }));
+  }
+
+  function handleSelectNpcWorkspaceKnowledgeLibrary(libraryId: string | null) {
+    setState((current) => ({
+      ...current,
+      npcWorkspace: {
+        ...current.npcWorkspace,
+        selectedKnowledgeLibraryId: libraryId
+      }
+    }));
+  }
+
+  function handleSelectNpcWorkspaceSkill(skillName: string) {
+    setState((current) => ({
+      ...current,
+      npcWorkspace: {
+        ...current.npcWorkspace,
+        selectedSkillName: skillName,
+        selectedSkillPreview: null
+      }
+    }));
+
+    void inspectLocalSkill(skillName)
+      .then((result) => {
+        const detail = result.items[0];
+
+        if (!detail) {
+          return;
+        }
+
+        setState((current) => {
+          if (current.npcWorkspace.selectedSkillName !== skillName) {
+            return current;
+          }
+
+          return {
+            ...current,
+            npcWorkspace: {
+              ...current.npcWorkspace,
+              selectedSkillPreview: {
+                name: detail.name,
+                description: detail.description,
+                contentPreview: detail.content_preview,
+                path: detail.path,
+                source: detail.source
+              }
+            }
+          };
+        });
+      })
+      .catch(() => undefined);
+  }
+
+  function persistNpcWorkspaceUpdate(
+    npcId: string,
+    buildNextNpc: (currentNpc: WorkbenchState["npcWorkspace"]["items"][number]) => WorkbenchState["npcWorkspace"]["items"][number]
+  ) {
+    const currentNpc = stateRef.current.npcWorkspace.items.find((item) => item.id === npcId);
+
+    if (!currentNpc) {
+      return;
+    }
+
+    const nextNpc = buildNextNpc(currentNpc);
+    const previousNpcWorkspace = stateRef.current.npcWorkspace;
+
+    hasNpcWorkspaceLocalChangesRef.current = true;
+    npcWorkspaceLoadVersionRef.current += 1;
+
+    setState((current) => ({
+      ...current,
+      npcWorkspace: {
+        ...current.npcWorkspace,
+        items: current.npcWorkspace.items.map((item) => item.id === npcId ? nextNpc : item),
+        selectedNpcId: current.npcWorkspace.selectedNpcId ?? npcId,
+        saveStatus: "NPC 配置保存中..."
+      }
+    }));
+
+    void updateNpcWorkspaceConfig(nextNpc)
+      .then((workspace) => {
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            npcWorkspace: {
+              ...current.npcWorkspace,
+              items: workspace.items,
+              selectedNpcId: workspace.selectedNpcId ?? npcId,
+              saveStatus: "NPC 配置已保存。"
+            }
+          }));
+        });
+      })
+      .catch(() => {
+        setState((current) => ({
+          ...current,
+          npcWorkspace: {
+            ...current.npcWorkspace,
+            items: previousNpcWorkspace.items,
+            selectedNpcId: previousNpcWorkspace.selectedNpcId,
+            saveStatus: "NPC 配置保存失败。"
+          }
+        }));
+      });
+  }
+
+  function handleUpdateNpcWorkspaceOverview(
+    npcId: string,
+    payload: {
+      name: string;
+      description: string;
+      defaultModel: string;
+    }
+  ) {
+    persistNpcWorkspaceUpdate(npcId, (currentNpc) => ({
+      ...currentNpc,
+      name: payload.name.trim() || currentNpc.name,
+      description: payload.description.trim(),
+      defaultModel: payload.defaultModel
+    }));
+  }
+
+  function handleUpdateNpcWorkspacePersona(
+    npcId: string,
+    payload: {
+      personaTitle?: string;
+      personaPrompt: string;
+      outputStyle: string;
+      agentDraft: string;
+      rulesDraft: string;
+    }
+  ) {
+    persistNpcWorkspaceUpdate(npcId, (currentNpc) => ({
+      ...currentNpc,
+      personaTitle: payload.personaTitle?.trim() ?? "",
+      personaPrompt: payload.personaPrompt,
+      outputStyle: payload.outputStyle,
+      agentDraft: payload.agentDraft,
+      rulesDraft: payload.rulesDraft
+    }));
+  }
+
+  function handleToggleNpcWorkspaceSkill(npcId: string, skillName: string) {
+    persistNpcWorkspaceUpdate(npcId, (currentNpc) => ({
+      ...currentNpc,
+      enabledSkillNames: currentNpc.enabledSkillNames.includes(skillName)
+        ? currentNpc.enabledSkillNames.filter((name) => name !== skillName)
+        : [...currentNpc.enabledSkillNames, skillName]
+    }));
+  }
+
+  function handleToggleNpcWorkspaceKnowledgeLibrary(npcId: string, libraryId: string) {
+    persistNpcWorkspaceUpdate(npcId, (currentNpc) => ({
+      ...currentNpc,
+      knowledgeLibraryIds: currentNpc.knowledgeLibraryIds.includes(libraryId)
+        ? currentNpc.knowledgeLibraryIds.filter((id) => id !== libraryId)
+        : [...currentNpc.knowledgeLibraryIds, libraryId]
+    }));
   }
 
   function handleSubmitTask(message: string, attachments: ChatAttachment[] = []) {
@@ -3317,6 +3868,7 @@ export function App() {
         onRestoreRecentConversation={handleRestoreRecentConversation}
         onDeleteRecentConversation={handleDeleteRecentConversation}
         onImportKnowledgeFile={handleImportKnowledgeFile}
+        onImportLocalKnowledgeFiles={handleImportLocalKnowledgeFiles}
         onRemoveKnowledgeFile={handleRemoveKnowledgeFile}
         knowledgeLibraryLabel={state.knowledge.activeLibraryLabel}
         knowledgeLibraries={(state.knowledge.libraries ?? []).map((library) => ({
@@ -3325,6 +3877,15 @@ export function App() {
         }))}
         onCreateKnowledgeLibrary={handleCreateKnowledgeLibrary}
         onSelectKnowledgeLibrary={handleSelectKnowledgeLibrary}
+        onCreateNpcWorkspace={handleCreateNpcWorkspace}
+        onSelectNpcWorkspace={handleSelectNpcWorkspace}
+        onSelectNpcWorkspaceSection={handleSelectNpcWorkspaceSection}
+        onUpdateNpcWorkspaceOverview={handleUpdateNpcWorkspaceOverview}
+        onUpdateNpcWorkspacePersona={handleUpdateNpcWorkspacePersona}
+        onToggleNpcWorkspaceSkill={handleToggleNpcWorkspaceSkill}
+        onToggleNpcWorkspaceKnowledgeLibrary={handleToggleNpcWorkspaceKnowledgeLibrary}
+        onSelectNpcWorkspaceKnowledgeLibrary={handleSelectNpcWorkspaceKnowledgeLibrary}
+        onSelectNpcWorkspaceSkill={handleSelectNpcWorkspaceSkill}
         onSubmitTask={handleSubmitTask}
         onAddComposerAttachments={handleAddComposerAttachments}
         onRemoveComposerAttachment={handleRemoveComposerAttachment}

@@ -1,16 +1,40 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+function click(element: Element | Document | Window) {
+  act(() => {
+    fireEvent.click(element);
+  });
+}
+
+function change(element: Element, payload: Record<string, unknown>) {
+  act(() => {
+    fireEvent.change(element, payload);
+  });
+}
+
+const { minimizeMock, destroyMock, onCloseRequestedMock, listenMock, unlistenMock } = vi.hoisted(() => ({
+  minimizeMock: vi.fn(),
+  destroyMock: vi.fn(),
+  onCloseRequestedMock: vi.fn(),
+  listenMock: vi.fn(),
+  unlistenMock: vi.fn()
+}));
+
 const {
+  pickChatAttachmentsMock,
   cancelOllamaChatMock,
   chatWithOllamaModelMock,
   loadOllamaOverviewMock,
   loadKnowledgeInventoryMock,
   loadOpenClawCapabilityOverviewMock,
+  loadWorkspaceOverviewMock,
   loadWorkspacePackagesOverviewMock,
   loadWorkspaceConfigOverviewMock,
   searchLocalKnowledgeMock,
+  searchNetworkMock,
   scanLocalSkillsMock,
   inspectLocalSkillMock,
   scanLocalMcpPluginsMock,
@@ -18,6 +42,7 @@ const {
   previewLocalMcpPluginStartMock,
   enableLocalSkillMock,
   installLocalSkillMock,
+  createKnowledgeLibraryMock,
   importKnowledgeFileMock,
   listEnabledLocalSkillsMock,
   removeKnowledgeFileMock,
@@ -27,16 +52,23 @@ const {
   runReadonlyShellCommandMock,
   runWorkspaceWriteShellCommandMock,
   runControlledFullShellCommandMock,
-  writeNpcConfigMock
+  writeNpcConfigMock,
+  loadNpcWorkspaceMock,
+  loadNpcWorkspaceConfigMock,
+  createNpcWorkspaceConfigMock,
+  updateNpcWorkspaceConfigMock
 } = vi.hoisted(() => ({
+  pickChatAttachmentsMock: vi.fn(),
   cancelOllamaChatMock: vi.fn(),
   chatWithOllamaModelMock: vi.fn(),
   loadOllamaOverviewMock: vi.fn(),
   loadKnowledgeInventoryMock: vi.fn(),
   loadOpenClawCapabilityOverviewMock: vi.fn(),
+  loadWorkspaceOverviewMock: vi.fn(),
   loadWorkspacePackagesOverviewMock: vi.fn(),
   loadWorkspaceConfigOverviewMock: vi.fn(),
   searchLocalKnowledgeMock: vi.fn(),
+  searchNetworkMock: vi.fn(),
   scanLocalSkillsMock: vi.fn(),
   inspectLocalSkillMock: vi.fn(),
   scanLocalMcpPluginsMock: vi.fn(),
@@ -44,6 +76,7 @@ const {
   previewLocalMcpPluginStartMock: vi.fn(),
   enableLocalSkillMock: vi.fn(),
   installLocalSkillMock: vi.fn(),
+  createKnowledgeLibraryMock: vi.fn(),
   importKnowledgeFileMock: vi.fn(),
   listEnabledLocalSkillsMock: vi.fn(),
   removeKnowledgeFileMock: vi.fn(),
@@ -53,7 +86,31 @@ const {
   runReadonlyShellCommandMock: vi.fn(),
   runWorkspaceWriteShellCommandMock: vi.fn(),
   runControlledFullShellCommandMock: vi.fn(),
-  writeNpcConfigMock: vi.fn()
+  writeNpcConfigMock: vi.fn(),
+  loadNpcWorkspaceMock: vi.fn(),
+  loadNpcWorkspaceConfigMock: vi.fn(),
+  createNpcWorkspaceConfigMock: vi.fn(),
+  updateNpcWorkspaceConfigMock: vi.fn()
+}));
+
+vi.mock("../features/workbench/chatAttachments", async () => {
+  const actual = await vi.importActual<typeof import("../features/workbench/chatAttachments")>(
+    "../features/workbench/chatAttachments"
+  );
+
+  return {
+    ...actual,
+    pickChatAttachments: pickChatAttachmentsMock
+  };
+});
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    onCloseRequested: onCloseRequestedMock,
+    listen: listenMock,
+    minimize: minimizeMock,
+    destroy: destroyMock
+  })
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
@@ -71,9 +128,11 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     ...actual,
     loadKnowledgeInventory: loadKnowledgeInventoryMock,
     loadOpenClawCapabilityOverview: loadOpenClawCapabilityOverviewMock,
+    loadWorkspaceOverview: loadWorkspaceOverviewMock,
     loadWorkspacePackagesOverview: loadWorkspacePackagesOverviewMock,
     loadWorkspaceConfigOverview: loadWorkspaceConfigOverviewMock,
     searchLocalKnowledge: searchLocalKnowledgeMock,
+    searchNetwork: searchNetworkMock,
     scanLocalSkills: scanLocalSkillsMock,
     inspectLocalSkill: inspectLocalSkillMock,
     scanLocalMcpPlugins: scanLocalMcpPluginsMock,
@@ -81,6 +140,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     previewLocalMcpPluginStart: previewLocalMcpPluginStartMock,
     enableLocalSkill: enableLocalSkillMock,
     installLocalSkill: installLocalSkillMock,
+    createKnowledgeLibrary: createKnowledgeLibraryMock,
     importKnowledgeFile: importKnowledgeFileMock,
     listEnabledLocalSkills: listEnabledLocalSkillsMock,
     removeKnowledgeFile: removeKnowledgeFileMock,
@@ -90,7 +150,11 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     runReadonlyShellCommand: runReadonlyShellCommandMock,
     runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock,
     runControlledFullShellCommand: runControlledFullShellCommandMock,
-    writeNpcConfig: writeNpcConfigMock
+    writeNpcConfig: writeNpcConfigMock,
+    loadNpcWorkspace: loadNpcWorkspaceMock,
+    loadNpcWorkspaceConfig: loadNpcWorkspaceConfigMock,
+    createNpcWorkspaceConfig: createNpcWorkspaceConfigMock,
+    updateNpcWorkspaceConfig: updateNpcWorkspaceConfigMock
   };
 });
 
@@ -112,11 +176,20 @@ function findModelPicker(modelName: string) {
 
 describe("App", () => {
   beforeEach(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {
+        metadata: { currentWindow: { label: "main" } },
+        invoke: vi.fn()
+      }
+    });
     cancelOllamaChatMock.mockReset();
     chatWithOllamaModelMock.mockReset();
     loadOllamaOverviewMock.mockReset();
     loadKnowledgeInventoryMock.mockReset();
+    pickChatAttachmentsMock.mockReset();
     loadOpenClawCapabilityOverviewMock.mockReset();
+    loadWorkspaceOverviewMock.mockReset();
     loadWorkspacePackagesOverviewMock.mockReset();
     loadWorkspaceConfigOverviewMock.mockReset();
     searchLocalKnowledgeMock.mockReset();
@@ -127,6 +200,7 @@ describe("App", () => {
     previewLocalMcpPluginStartMock.mockReset();
     enableLocalSkillMock.mockReset();
     installLocalSkillMock.mockReset();
+    createKnowledgeLibraryMock.mockReset();
     importKnowledgeFileMock.mockReset();
     listEnabledLocalSkillsMock.mockReset();
     removeKnowledgeFileMock.mockReset();
@@ -137,6 +211,17 @@ describe("App", () => {
     runWorkspaceWriteShellCommandMock.mockReset();
     runControlledFullShellCommandMock.mockReset();
     writeNpcConfigMock.mockReset();
+    loadNpcWorkspaceMock.mockReset();
+    loadNpcWorkspaceConfigMock.mockReset();
+    createNpcWorkspaceConfigMock.mockReset();
+    updateNpcWorkspaceConfigMock.mockReset();
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
     loadKnowledgeInventoryMock.mockResolvedValue({
       importedFiles: [],
       availableFiles: [],
@@ -144,6 +229,44 @@ describe("App", () => {
       registryPath: ".opencow/knowledge/imported-files.json",
       summary: "empty"
     });
+    loadWorkspaceOverviewMock.mockResolvedValue({
+      root_name: "opencow",
+      root_path: "/workspace/opencow",
+      entry_count: 12,
+      package_count: 3,
+      package_names: ["openclaw-adapter", "permission-engine", "shell-runtime"],
+      summary: "Workspace overview found a desktop-first local assistant workspace with 3 packages."
+    });
+    loadNpcWorkspaceMock.mockResolvedValue({
+      summary: "empty",
+      selectedNpcId: null,
+      items: []
+    });
+    loadNpcWorkspaceConfigMock.mockImplementation(async (npcId: string) => ({
+      id: npcId,
+      name: npcId === "writer-bot" ? "写作助手" : "研究助手",
+      description: npcId === "writer-bot" ? "负责整理输出" : "负责资料整理",
+      defaultModel: "qwen2.5-coder:7b",
+      personaTitle: npcId === "writer-bot" ? "写作助手" : "资料研究员",
+      personaPrompt: npcId === "writer-bot" ? "你负责整理输出" : "你负责整理资料",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: [],
+      knowledgeLibraryIds: [],
+      updatedAt: npcId === "writer-bot" ? "2026-06-19T11:00:00.000Z" : "2026-06-19T10:00:00.000Z"
+    }));
+    minimizeMock.mockReset();
+    destroyMock.mockReset();
+    onCloseRequestedMock.mockReset();
+    onCloseRequestedMock.mockResolvedValue(() => undefined);
+    listenMock.mockReset();
+    unlistenMock.mockReset();
+    listenMock.mockResolvedValue(unlistenMock);
+  });
+
+  afterEach(() => {
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
   it("renders the desktop workbench shell after loading Ollama", async () => {
@@ -162,6 +285,326 @@ describe("App", () => {
     expect(getComposerInput()).toBeInTheDocument();
   });
 
+  it("shows a close confirmation overlay and can minimize or exit the desktop window", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    expect(onCloseRequestedMock).not.toHaveBeenCalled();
+
+    expect(listenMock).toHaveBeenCalledWith("app_close_requested", expect.any(Function));
+    const closeListener = listenMock.mock.calls.find((call) => call[0] === "app_close_requested")?.[1] as
+      | (() => void)
+      | undefined;
+    expect(closeListener).toBeDefined();
+
+    await act(async () => {
+      closeListener?.();
+    });
+
+    expect(await screen.findByRole("dialog", { name: "退出确认" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "最小化" }));
+    await waitFor(() => {
+      expect(minimizeMock).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      closeListener?.();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "退出" }));
+    await waitFor(() => {
+      expect(destroyMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("loads the selected NPC from the dedicated config read path when switching cards", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "列表摘要",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "列表人设",
+          personaPrompt: "列表提示词",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        },
+        {
+          id: "writer-bot",
+          name: "写作助手",
+          description: "列表里只有短摘要",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "列表标签",
+          personaPrompt: "",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T11:00:00.000Z"
+        }
+      ]
+    });
+    loadNpcWorkspaceConfigMock.mockImplementation(async (npcId: string) => {
+      if (npcId === "writer-bot") {
+        return {
+          id: "writer-bot",
+          name: "写作助手",
+          description: "真实详情说明",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "成稿编辑",
+          personaPrompt: "你负责整理输出",
+          outputStyle: "简洁",
+          agentDraft: "writer agent draft",
+          rulesDraft: "writer rules draft",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T11:00:00.000Z"
+        };
+      }
+
+      return {
+        id: "research-bot",
+        name: "研究助手",
+        description: "负责资料整理",
+        defaultModel: "qwen2.5-coder:7b",
+        personaTitle: "资料研究员",
+        personaPrompt: "你负责整理资料",
+        outputStyle: "简洁",
+        agentDraft: "",
+        rulesDraft: "",
+        enabledSkillNames: [],
+        knowledgeLibraryIds: [],
+        updatedAt: "2026-06-19T10:00:00.000Z"
+      };
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: "写作助手" }));
+
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("writer-bot");
+    });
+
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    expect(within(npcNavigation).getByText("成稿编辑")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "NPC 简介" })).toHaveValue("真实详情说明");
+  });
+
+  it("keeps the selected NPC workspace visible when the dedicated config read fails", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "资料研究员",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        },
+        {
+          id: "writer-bot",
+          name: "写作助手",
+          description: "列表里只有短摘要",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "列表标签",
+          personaPrompt: "",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T11:00:00.000Z"
+        }
+      ]
+    });
+    loadNpcWorkspaceConfigMock.mockImplementation(async (npcId: string) => {
+      if (npcId === "writer-bot") {
+        throw new Error("npc read failed");
+      }
+
+      return {
+        id: "research-bot",
+        name: "研究助手",
+        description: "负责资料整理",
+        defaultModel: "qwen2.5-coder:7b",
+        personaTitle: "资料研究员",
+        personaPrompt: "你负责整理资料",
+        outputStyle: "简洁",
+        agentDraft: "",
+        rulesDraft: "",
+        enabledSkillNames: [],
+        knowledgeLibraryIds: [],
+        updatedAt: "2026-06-19T10:00:00.000Z"
+      };
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: "写作助手" }));
+
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("writer-bot");
+    });
+
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    expect(within(npcNavigation).getByText("列表标签")).toBeInTheDocument();
+    expect(screen.getByText("列表里只有短摘要")).toBeInTheDocument();
+    expect(screen.getByText("NPC 配置读取失败。")).toBeInTheDocument();
+  });
+
+  it("loads the initially selected NPC from the dedicated config read path after workspace load", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "列表摘要",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "列表人设",
+          personaPrompt: "列表提示词",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    loadNpcWorkspaceConfigMock.mockResolvedValueOnce({
+      id: "research-bot",
+      name: "研究助手",
+      description: "真实详情说明",
+      defaultModel: "qwen2.5-coder:7b",
+      personaTitle: "资料研究员",
+      personaPrompt: "你负责整理资料",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: ["本地检索增强"],
+      knowledgeLibraryIds: ["product-docs"],
+      updatedAt: "2026-06-19T10:00:00.000Z"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("research-bot");
+    });
+
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    expect(within(npcNavigation).getByText("资料研究员")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "NPC 简介" })).toHaveValue("真实详情说明");
+  });
+
+  it("shows the close confirmation overlay when the native desktop close event is emitted", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    expect(listenMock).toHaveBeenCalledWith("app_close_requested", expect.any(Function));
+
+    const closeListener = listenMock.mock.calls.find((call) => call[0] === "app_close_requested")?.[1] as
+      | (() => void)
+      | undefined;
+    expect(closeListener).toBeDefined();
+
+    await act(async () => {
+      closeListener?.();
+    });
+
+    expect(await screen.findByRole("dialog", { name: "退出确认" })).toBeInTheDocument();
+  });
+
+  it("still registers desktop close listeners when tauri internals exist without currentWindow metadata", async () => {
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {
+        invoke: vi.fn(),
+        metadata: {}
+      }
+    });
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+
+    expect(onCloseRequestedMock).not.toHaveBeenCalled();
+    expect(listenMock).toHaveBeenCalledWith("app_close_requested", expect.any(Function));
+  });
+
   it("switches sidebar destinations from the app shell", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -175,18 +618,671 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    for (const destination of ["搜索", "知识库", "Skills", "NPC", "MCP", "审计", "安全", "设置"]) {
-      fireEvent.click(screen.getByRole("button", { name: destination }));
+    const destinationHeadings: Record<string, string> = {
+      "搜索": "搜索",
+      "知识库": "知识库",
+      "Skills": "技能",
+      "NPC": "NPC",
+      "MCP": "MCP",
+      "审计": "审计",
+      "安全": "安全",
+      "设置": "设置"
+    };
 
-      expect(screen.getByRole("heading", { name: destination })).toBeInTheDocument();
+    for (const destination of ["搜索", "知识库", "Skills", "NPC", "MCP", "审计", "安全", "设置"]) {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: destination }));
+      });
+
+      expect(screen.getByRole("heading", { name: destinationHeadings[destination] })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: destination })).toHaveAttribute("aria-pressed", "true");
     }
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+    });
 
     expect(getConversationRegion()).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新对话" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("renders the single NPC workspace with compact navigation after loading NPC configs", async () => {
+    const user = userEvent.setup();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "资料研究员",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    await user.click(screen.getByRole("button", { name: "NPC" }));
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+
+    expect(await screen.findByRole("button", { name: "新建 NPC" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "研究助手" })).toBeInTheDocument();
+    expect(within(npcNavigation).getByRole("button", { name: "概览" })).toBeInTheDocument();
+    expect(within(npcNavigation).getByRole("button", { name: "人设" })).toBeInTheDocument();
+    expect(within(npcNavigation).getByRole("button", { name: "技能" })).toBeInTheDocument();
+    expect(within(npcNavigation).getByRole("button", { name: "知识库" })).toBeInTheDocument();
+  });
+
+  it("shows and persists a dedicated persona title separate from the NPC name", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "资料研究员",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    updateNpcWorkspaceConfigMock.mockResolvedValueOnce({
+      summary: "updated",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "事实核验官",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    fireEvent.click(within(npcNavigation).getByRole("button", { name: "人设" }));
+
+    const personaTitle = await screen.findByRole("textbox", { name: "人设标题" });
+    expect(personaTitle).toHaveValue("资料研究员");
+    expect(screen.getByRole("heading", { name: "资料研究员" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "研究助手" })).toBeInTheDocument();
+
+    fireEvent.change(personaTitle, {
+      target: { value: "事实核验官" }
+    });
+
+    await waitFor(() => {
+      expect(updateNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        id: "research-bot",
+        name: "研究助手",
+        personaTitle: "事实核验官"
+      }));
+    }, { timeout: 1500 });
+  });
+
+  it("switches the NPC middle content between overview, skills, and knowledge", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    loadKnowledgeInventoryMock.mockResolvedValueOnce({
+      importedFiles: [],
+      availableFiles: [],
+      indexedDocumentCount: 0,
+      registryPath: ".opencow/knowledge/imported-files.json",
+      summary: "loaded",
+      activeLibraryId: "product-docs",
+      activeLibraryLabel: "产品文档库",
+      libraries: [{ id: "product-docs", label: "产品文档库", description: "PRD 与说明" }]
+    });
+    scanLocalSkillsMock.mockResolvedValueOnce({
+      summary: "loaded",
+      total_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          enabled: true
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    fireEvent.click(within(npcNavigation).getByRole("button", { name: "技能" }));
+    expect(await screen.findByText("已绑定技能")).toBeInTheDocument();
+    fireEvent.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
+    expect(await screen.findByText("已绑定知识库")).toBeInTheDocument();
+    expect(screen.getByText("产品文档库")).toBeInTheDocument();
+  });
+
+  it("shows local skills as compact rows in the NPC skills section and opens detail text on selection", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    scanLocalSkillsMock.mockResolvedValueOnce({
+      summary: "loaded",
+      total_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          enabled: true
+        }
+      ]
+    });
+    inspectLocalSkillMock.mockResolvedValueOnce({
+      query: "本地检索增强",
+      summary: "loaded",
+      match_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          content_preview: "用于本地知识检索。",
+          enabled: true
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    });
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    await act(async () => {
+      fireEvent.click(within(npcNavigation).getByRole("button", { name: "技能" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /本地检索增强/ }));
+    });
+    expect(await screen.findByText("用于本地知识检索。")).toBeInTheDocument();
+  });
+
+  it("keeps the selected NPC skill detail after leaving and reopening the NPC workspace", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    scanLocalSkillsMock.mockResolvedValueOnce({
+      summary: "loaded",
+      total_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          enabled: true
+        }
+      ]
+    });
+    inspectLocalSkillMock.mockResolvedValueOnce({
+      query: "本地检索增强",
+      summary: "loaded",
+      match_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          content_preview: "用于本地知识检索。",
+          enabled: true
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    fireEvent.click(within(npcNavigation).getByRole("button", { name: "技能" }));
+    fireEvent.click(await screen.findByRole("button", { name: /本地检索增强/ }));
+
+    expect(await screen.findByText("用于本地知识检索。")).toBeInTheDocument();
+    expect(inspectLocalSkillMock).toHaveBeenCalledWith("本地检索增强");
+
+    fireEvent.click(screen.getByRole("button", { name: "会话" }));
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: "技能" }));
+
+    expect(screen.getByText("用于本地知识检索。")).toBeInTheDocument();
+  });
+
+  it("clears the previous NPC skill detail after switching to another NPC", async () => {
+    const user = userEvent.setup();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: ["本地检索增强"],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        },
+        {
+          id: "writer-bot",
+          name: "写作助手",
+          description: "负责整理输出",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理输出",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T11:00:00.000Z"
+        }
+      ]
+    });
+    scanLocalSkillsMock.mockResolvedValueOnce({
+      summary: "loaded",
+      total_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          enabled: true
+        }
+      ]
+    });
+    inspectLocalSkillMock.mockResolvedValueOnce({
+      query: "本地检索增强",
+      summary: "loaded",
+      match_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档",
+          content_preview: "用于本地知识检索。",
+          enabled: true
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    await user.click(screen.getByRole("button", { name: "NPC" }));
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    await user.click(within(npcNavigation).getByRole("button", { name: "技能" }));
+    await user.click(await screen.findByRole("button", { name: /本地检索增强/ }));
+
+    expect(await screen.findByText("用于本地知识检索。")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "写作助手" }));
+
+    expect(screen.queryByText("用于本地知识检索。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "移除绑定" })).not.toBeInTheDocument();
+  });
+
+  it("creates a new NPC from the compact NPC rail", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    createNpcWorkspaceConfigMock.mockResolvedValueOnce({
+      summary: "created",
+      selectedNpcId: "writer-bot",
+      items: [
+        {
+          id: "alpha-bot",
+          name: "Alpha 助手",
+          description: "已存在的 NPC",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "Alpha",
+          personaPrompt: "",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T09:00:00.000Z"
+        },
+        {
+          id: "writer-bot",
+          name: "写作助手",
+          description: "负责整理输出",
+          defaultModel: "qwen2.5-coder:7b",
+          personaTitle: "写作助手",
+          personaPrompt: "",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: "新建 NPC" }));
+    const npcRail = screen.getByLabelText("NPC 列表");
+    fireEvent.change(within(npcRail).getByRole("textbox", { name: "新 NPC 名称" }), {
+      target: { value: "写作助手" }
+    });
+    fireEvent.change(within(npcRail).getByRole("textbox", { name: "新 NPC 简介" }), {
+      target: { value: "负责整理输出" }
+    });
+    fireEvent.click(within(npcRail).getByRole("button", { name: "创建" }));
+
+    await waitFor(() => {
+      expect(createNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+        name: "写作助手",
+        description: "负责整理输出"
+      }));
+    });
+    expect(await screen.findByRole("button", { name: "写作助手" }, { timeout: 12_000 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "写作助手" }).closest(".npc-card-item")).toHaveClass("active");
+  }, 15_000);
+
+  it("reflects a newly created knowledge library inside the NPC knowledge section", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: ["product-docs"],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    createKnowledgeLibraryMock.mockResolvedValueOnce({
+      importedFiles: [],
+      availableFiles: [],
+      indexedDocumentCount: 0,
+      registryPath: ".opencow/knowledge/imported-files.json",
+      summary: "loaded",
+      activeLibraryId: "product-docs",
+      activeLibraryLabel: "产品文档库",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库",
+          description: "通用知识入口",
+          documentCount: 0
+        },
+        {
+          id: "product-docs",
+          label: "产品文档库",
+          description: "整理产品需求、PRD 和交互说明。",
+          documentCount: 2
+        }
+      ]
+    } as any);
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建知识库" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "知识库名称" }), {
+      target: { value: "产品文档库" }
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "知识库简介" }), {
+      target: { value: "整理产品需求、PRD 和交互说明。" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认创建知识库" }));
+
+    await waitFor(() => {
+      expect(createKnowledgeLibraryMock).toHaveBeenCalledWith("产品文档库", "整理产品需求、PRD 和交互说明。");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    fireEvent.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
+
+    expect(await screen.findByText("产品文档库")).toBeInTheDocument();
+    expect(screen.getByText("整理产品需求、PRD 和交互说明。")).toBeInTheDocument();
+    expect(screen.getByText("2 篇文件")).toBeInTheDocument();
+  }, 15_000);
+
+  it("optimistically updates NPC knowledge binding before the save request resolves", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen2.5-coder:7b",
+      diagnostic: "",
+      models: [{ name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" }]
+    });
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [
+        {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          defaultModel: "qwen2.5-coder:7b",
+          personaPrompt: "你负责整理资料",
+          outputStyle: "简洁",
+          agentDraft: "",
+          rulesDraft: "",
+          enabledSkillNames: [],
+          knowledgeLibraryIds: [],
+          updatedAt: "2026-06-19T10:00:00.000Z"
+        }
+      ]
+    });
+    loadKnowledgeInventoryMock.mockResolvedValueOnce({
+      importedFiles: [],
+      availableFiles: [],
+      indexedDocumentCount: 0,
+      registryPath: ".opencow/knowledge/imported-files.json",
+      summary: "loaded",
+      activeLibraryId: "product-docs",
+      activeLibraryLabel: "产品文档库",
+      libraries: [
+        {
+          id: "product-docs",
+          label: "产品文档库",
+          description: "整理产品需求、PRD 和交互说明。",
+          documentCount: 2
+        }
+      ]
+    } as any);
+    updateNpcWorkspaceConfigMock.mockImplementationOnce(() => new Promise(() => undefined));
+
+    render(<App />);
+
+    await findModelPicker("qwen2.5-coder:7b");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    });
+    const npcNavigation = await screen.findByLabelText("NPC 配置导航");
+    await act(async () => {
+      fireEvent.click(within(npcNavigation).getByRole("button", { name: "知识库" }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: /产品文档库/ }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "绑定知识库" }));
+    });
+
+    expect(updateNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
+      id: "research-bot",
+      knowledgeLibraryIds: ["product-docs"]
+    }));
+    expect(screen.getByText("1 项")).toBeInTheDocument();
+    expect(screen.getByText("已绑定")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消绑定" })).toBeInTheDocument();
+  });
+
+
 
   it("loads knowledge inventory into the knowledge workspace after startup", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
@@ -335,6 +1431,91 @@ describe("App", () => {
     expect(within(conversation).queryByText(/本地助手能力说明|Workspace overview|本地助手答复/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/本地任务开始执行/)).not.toBeInTheDocument();
+  });
+
+  it("automatically uses network search as context for ordinary chat after search is enabled", async () => {
+    const user = userEvent.setup();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "OpenAI 最近有什么新动态",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "OpenAI News",
+          url: "https://openai.com/news/",
+          summary: "OpenAI 官方新闻页。"
+        },
+        {
+          title: "OpenAI Safety",
+          url: "https://openai.com/safety/",
+          summary: "OpenAI 安全相关页面。"
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "我结合联网搜索参考做了整理。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await user.click(screen.getByRole("button", { name: "会话" }));
+
+    await user.type(getComposerInput(), "OpenAI 最近有什么新动态");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(searchNetworkMock).toHaveBeenCalledWith("OpenAI 最近有什么新动态", expect.objectContaining({
+        providerLabel: "OpenCow 默认搜索"
+      }));
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining("联网搜索参考")
+      }));
+      expect(within(getConversationRegion()).getByText("我结合联网搜索参考做了整理。")).toBeInTheDocument();
+    });
+  });
+
+  it("opens a visible rollback confirmation when clicking the user-message rollback button", async () => {
+    const user = userEvent.setup();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "第一轮回答。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    await user.type(getComposerInput(), "第一轮普通对话");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("第一轮回答。")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "回退到这条消息之前" }));
+
+    expect(await screen.findByText(/目标回退点:/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认回退" })).toBeInTheDocument();
   });
 
   it("uses the local model to generate and save a requested NPC config after permission approval", async () => {
@@ -686,7 +1867,7 @@ describe("App", () => {
 
     const request = chatWithOllamaModelMock.mock.calls.at(-1)?.[0] as { requestId?: string; signal?: AbortSignal };
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
 
     await waitFor(() => {
       expect(request.signal?.aborted).toBe(true);
@@ -1159,7 +2340,7 @@ describe("App", () => {
     }));
   });
 
-  it("explains disabled network search guidance through the local model without claiming a web search ran", async () => {
+  it("runs real network search after enabling search from the search workspace", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1167,20 +2348,16 @@ describe("App", () => {
       diagnostic: "",
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
-    chatWithOllamaModelMock.mockResolvedValueOnce({
-      model: "qwen3.6:35b",
-      message: "本轮没有执行外部联网搜索，因为搜索 provider 还未配置；如果你需要最新资料，需要先在高级设置里配置并批准联网搜索，也可以先用本地 RAG 查工作区资料。"
-    });
 
     render(<App />);
 
     await findModelPicker("qwen3.6:35b");
-    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
     fireEvent.change(screen.getByRole("textbox", { name: "联网搜索 Provider" }), {
       target: { value: "Tavily" }
     });
     fireEvent.click(screen.getByRole("button", { name: "保存联网搜索配置" }));
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
 
     fireEvent.change(getComposerInput(), {
       target: { value: "search the web for latest local RAG indexing approaches" }
@@ -1193,14 +2370,9 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("search the web for latest local RAG indexing approaches").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("联网搜索说明")).toBeInTheDocument();
-      expect(within(conversation).getByText(/本轮没有执行外部联网搜索/)).toBeInTheDocument();
+      expect(within(conversation).getByText("联网搜索结果")).toBeInTheDocument();
+      expect(within(conversation).getByText(/已通过 Tavily 返回|已通过 OpenCow 默认搜索 返回/)).toBeInTheDocument();
     });
-    expect(within(conversation).queryByText(/No external network search was run/)).not.toBeInTheDocument();
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "qwen3.6:35b",
-      message: expect.stringContaining("重点解释本轮没有执行外部联网搜索")
-    }));
   });
 
   it("shows a visible assistant pending block while an ordinary chat request is still running", async () => {
@@ -1296,7 +2468,7 @@ describe("App", () => {
 
     expect(within(getConversationRegion()).getAllByText("你能干什么").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
 
     const conversation = getConversationRegion();
     expect(within(conversation).queryAllByText("你能干什么")).toHaveLength(0);
@@ -1555,6 +2727,49 @@ describe("App", () => {
       message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
     }));
     expect(within(getConversationRegion()).queryByText(/Workspace write shell command completed successfully/)).not.toBeInTheDocument();
+  });
+
+  it("imports selected local knowledge files into the OpenCow file pool from the knowledge page", async () => {
+    pickChatAttachmentsMock.mockResolvedValueOnce([
+      {
+        id: "knowledge-1",
+        name: "faq.md",
+        mimeType: "text/markdown",
+        sizeBytes: 128,
+        kind: "file",
+        filePath: "/tmp/faq.md",
+        source: "picker"
+      },
+      {
+        id: "knowledge-2",
+        name: "ignore.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 256,
+        kind: "file",
+        filePath: "/tmp/ignore.pdf",
+        source: "picker"
+      }
+    ]);
+    importKnowledgeFileMock.mockResolvedValueOnce({
+      importedFiles: [],
+      availableFiles: [{ path: "knowledge/files/faq.md", title: "faq.md" }],
+      indexedDocumentCount: 0,
+      registryPath: "knowledge/imported-files.json",
+      summary: "Knowledge file copied into OpenCow file pool.",
+      activeLibraryId: "default-library",
+      activeLibraryLabel: "默认知识库",
+      libraries: [{ id: "default-library", label: "默认知识库", description: "系统默认知识库", documentCount: 0 }]
+    });
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "知识库" }));
+    fireEvent.click(await screen.findByRole("button", { name: "上传文件到文件库" }));
+
+    await waitFor(() => {
+      expect(importKnowledgeFileMock).toHaveBeenCalledWith("/tmp/faq.md", "default-library");
+    });
+    expect(importKnowledgeFileMock).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to verified temp-output command facts when post-approval explanation stalls", async () => {
