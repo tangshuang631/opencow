@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,7 +55,7 @@ struct RollbackSnapshotStore {
     records: Vec<RollbackSnapshotRecord>,
 }
 
-fn rollback_snapshot_store_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn rollback_snapshot_store_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app.path()
         .app_local_data_dir()
         .map(|dir| dir.join("rollback").join("file-snapshots.json"))
@@ -201,8 +201,8 @@ fn build_snapshot_record(
     }
 }
 
-pub fn capture_paths_for_context(
-    app: &AppHandle,
+pub fn capture_paths_for_context<R: Runtime>(
+    app: &AppHandle<R>,
     rollback_context: &Option<RollbackContextPayload>,
     paths: &[PathBuf],
 ) -> Result<(), String> {

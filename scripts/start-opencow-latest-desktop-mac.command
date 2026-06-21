@@ -7,7 +7,6 @@ DESKTOP_APP="/Users/apple/Desktop/OpenCow桌面端.app"
 LOG_FILE="/tmp/opencow-latest-desktop-launch.log"
 APP_BUNDLE_ID="cn.opencow.desktop"
 APP_EXECUTABLE="opencow-desktop"
-APP_BINARY="${DESKTOP_APP}/Contents/MacOS/${APP_EXECUTABLE}"
 NODE_BIN="/Users/apple/.local/opt/node-v24.16.0-darwin-arm64/bin"
 SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"
 
@@ -16,7 +15,7 @@ export SHELL="/bin/zsh"
 export OPENCOW_WORKSPACE_ROOT="${REPO_ROOT}"
 
 : > "${LOG_FILE}"
-exec > >(tee -a "${LOG_FILE}") 2>&1
+exec >> "${LOG_FILE}" 2>&1
 
 handle_launch_error() {
   local exit_code=$?
@@ -44,30 +43,45 @@ close_launcher_terminal_window() {
     return
   fi
 
-  /usr/bin/osascript <<'APPLESCRIPT' >/dev/null 2>&1 || true
+  local window_id
+  window_id=$(/usr/bin/osascript -e 'tell application "Terminal" to id of front window' 2>/dev/null || true)
+  if [[ -z "${window_id}" ]]; then
+    return
+  fi
+
+  (
+    sleep 1
+    /usr/bin/osascript <<APPLESCRIPT >/dev/null 2>&1 || true
 tell application "Terminal"
-  if (count of windows) > 0 then
-    close front window saving no
+  repeat with currentWindow in windows
+    if id of currentWindow is ${window_id} then
+      close currentWindow saving no
+      exit repeat
+    end if
+  end repeat
+  if (count of windows) is 0 then
+    quit
   end if
 end tell
 APPLESCRIPT
+  ) &
+  disown
 }
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] syncing latest desktop app"
 close_existing_desktop_app
 cd "${REPO_ROOT}"
 python3 "${SYNC_SCRIPT}"
-if [[ ! -x "${APP_BINARY}" ]]; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] missing desktop binary: ${APP_BINARY}"
+if [[ ! -x "${DESKTOP_APP}/Contents/MacOS/${APP_EXECUTABLE}" ]]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] missing desktop binary: ${DESKTOP_APP}/Contents/MacOS/${APP_EXECUTABLE}"
   exit 1
 fi
-"${APP_BINARY}" >/dev/null 2>&1 &
-APP_PID=$!
-disown
+/usr/bin/open -n "${DESKTOP_APP}"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] launched ${DESKTOP_APP}"
 sleep 1
-if ! kill -0 "${APP_PID}" >/dev/null 2>&1; then
+if ! /usr/bin/pgrep -x "${APP_EXECUTABLE}" >/dev/null 2>&1; then
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] desktop process exited immediately"
   exit 1
 fi
 close_launcher_terminal_window
+exit 0

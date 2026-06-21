@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, time::Duration};
-use tauri::AppHandle;
+use tauri::{AppHandle, Runtime};
 
 #[derive(Serialize)]
 pub struct WorkspaceOverview {
@@ -74,6 +74,7 @@ pub struct NetworkSearchResultItem {
     url: String,
     source_label: String,
     summary: String,
+    fact_snippets: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -307,6 +308,7 @@ pub async fn network_search(payload: NetworkSearchPayload) -> Result<NetworkSear
         .await
         {
             Ok(items) if !items.is_empty() => {
+                let items = enrich_network_search_items(items).await;
                 return Ok(NetworkSearchResult {
                     query,
                     provider: custom_provider.clone(),
@@ -373,21 +375,21 @@ async fn run_default_network_search(
     let mut failure_reasons = Vec::new();
 
     match run_bing_rss_search(normalized_query).await {
-        Ok(items) if !items.is_empty() => return Ok(items),
+        Ok(items) if !items.is_empty() => return Ok(enrich_network_search_items(items).await),
         Ok(_) => failure_reasons.push("Bing RSS 没有返回可用结果".to_string()),
         Err(error) => failure_reasons.push(format!("Bing RSS 请求失败：{error}")),
     }
 
     if contains_cjk(original_query) || contains_cjk(normalized_query) {
         match run_sogou_html_search(normalized_query).await {
-            Ok(items) if !items.is_empty() => return Ok(items),
+            Ok(items) if !items.is_empty() => return Ok(enrich_network_search_items(items).await),
             Ok(_) => failure_reasons.push("搜狗搜索没有返回可用结果".to_string()),
             Err(error) => failure_reasons.push(format!("搜狗搜索请求失败：{error}")),
         }
     }
 
     match run_wikipedia_open_search(normalized_query).await {
-        Ok(items) if !items.is_empty() => return Ok(items),
+        Ok(items) if !items.is_empty() => return Ok(enrich_network_search_items(items).await),
         Ok(_) => failure_reasons.push("Wikipedia 没有返回可用结果".to_string()),
         Err(error) => failure_reasons.push(format!("Wikipedia 请求失败：{error}")),
     }
@@ -396,6 +398,20 @@ async fn run_default_network_search(
         "OpenCow 默认搜索当前不可用，请检查网络连接后重试。{}",
         failure_reasons.join("；")
     ))
+}
+
+async fn enrich_network_search_items(items: Vec<NetworkSearchResultItem>) -> Vec<NetworkSearchResultItem> {
+    let mut enriched = Vec::with_capacity(items.len());
+
+    for mut item in items {
+        let page_fact_snippets = fetch_page_fact_snippets(&item.url).await;
+        if !page_fact_snippets.is_empty() {
+            item.fact_snippets = page_fact_snippets;
+        }
+        enriched.push(item);
+    }
+
+    enriched
 }
 
 async fn run_bing_rss_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
@@ -446,6 +462,7 @@ async fn run_bing_rss_search(query: &str) -> Result<Vec<NetworkSearchResultItem>
 
         items.push(NetworkSearchResultItem {
             source_label: infer_source_label(&title, &url, "Bing"),
+            fact_snippets: build_fact_snippets(&title, &summary),
             title,
             url,
             summary,
@@ -510,6 +527,7 @@ async fn run_sogou_html_search(query: &str) -> Result<Vec<NetworkSearchResultIte
 
         items.push(NetworkSearchResultItem {
             source_label: infer_source_label(&title, &resolved_url, "搜狗搜索"),
+            fact_snippets: build_fact_snippets(&title, &summary),
             title,
             url: resolved_url,
             summary,
@@ -556,6 +574,7 @@ async fn run_wikipedia_open_search(query: &str) -> Result<Vec<NetworkSearchResul
 
         items.push(NetworkSearchResultItem {
             source_label: infer_source_label(&title, &url, "Wikipedia"),
+            fact_snippets: build_fact_snippets(&title, &summary),
             title,
             url,
             summary: if summary.trim().is_empty() {
@@ -588,6 +607,189 @@ fn decode_basic_html_entities(value: String) -> String {
         .replace("&#39;", "'")
 }
 
+fn build_fact_snippets(title: &str, summary: &str) -> Vec<String> {
+    let normalized_summary = normalize_search_result_text(summary);
+    let normalized_title = normalize_search_result_text(title);
+    let combined = if normalized_summary.trim().is_empty() {
+        normalized_title
+    } else {
+        normalized_summary
+    };
+
+    build_fact_snippets_from_text(&combined)
+}
+
+fn build_fact_snippets_from_text(text: &str) -> Vec<String> {
+    text
+        .split(|character: char| {
+            matches!(
+                character,
+                '。' | '！' | '？' | ';' | '；' | '\n' | '\r' | '.' | '!' | '?'
+            )
+        })
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| truncate_chars(segment, 120))
+        .filter(|segment| segment.chars().count() >= 6)
+        .take(4)
+        .collect()
+}
+
+async fn fetch_page_fact_snippets(url: &str) -> Vec<String> {
+    if url.trim().is_empty() || !url.starts_with("http") {
+        return Vec::new();
+    }
+
+    let client = match build_search_client(false) {
+        Ok(client) => client,
+        Err(_) => return Vec::new(),
+    };
+
+    let response = match client
+        .get(url)
+        .header("Accept", "text/html,application/xhtml+xml")
+        .send()
+        .await
+    {
+        Ok(response) if response.status().is_success() => response,
+        _ => return Vec::new(),
+    };
+
+    let body = match response.text().await {
+        Ok(body) => body,
+        Err(_) => return Vec::new(),
+    };
+
+    build_fact_snippets_from_html(&body)
+}
+
+fn build_fact_snippets_from_html(body: &str) -> Vec<String> {
+    let sanitized_body = strip_low_value_html_sections(body);
+    let narrowed = extract_preferred_html_block(&sanitized_body)
+        .or_else(|| extract_html_tag_content(body, "body"))
+        .unwrap_or(&sanitized_body);
+    let normalized = normalize_search_result_text(narrowed);
+
+    if normalized.trim().is_empty() {
+        return Vec::new();
+    }
+
+    build_fact_snippets_from_text(&normalized)
+        .into_iter()
+        .filter(|segment| segment.chars().count() >= 8)
+        .take(4)
+        .collect()
+}
+
+fn strip_low_value_html_sections(body: &str) -> String {
+    let mut sanitized = body.to_string();
+
+    for tag in ["nav", "footer", "aside", "header"] {
+        sanitized = remove_html_tag_blocks(&sanitized, tag);
+    }
+
+    for marker in [
+        "推荐",
+        "更多",
+        "热门",
+        "猜你喜欢",
+        "延伸阅读",
+        "相关文章",
+        "相关阅读",
+        "广告",
+        "breadcrumb",
+        "sidebar",
+        "footer",
+        "header",
+        "nav",
+    ] {
+        sanitized = remove_html_blocks_containing_marker(&sanitized, marker);
+    }
+
+    sanitized
+}
+
+fn remove_html_tag_blocks(body: &str, tag: &str) -> String {
+    let mut output = body.to_string();
+
+    loop {
+        let lower = output.to_lowercase();
+        let open_marker = format!("<{tag}");
+        let close_marker = format!("</{tag}>");
+        let Some(start) = lower.find(&open_marker) else {
+            break;
+        };
+        let Some(end_offset) = lower[start..].find(&close_marker) else {
+            break;
+        };
+        let end = start + end_offset + close_marker.len();
+        output.replace_range(start..end, " ");
+    }
+
+    output
+}
+
+fn remove_html_blocks_containing_marker(body: &str, marker: &str) -> String {
+    let mut output = body.to_string();
+    let marker_lower = marker.to_lowercase();
+
+    for tag in ["div", "section", "ul"] {
+        loop {
+            let lower = output.to_lowercase();
+            let Some(marker_index) = lower.find(&marker_lower) else {
+                break;
+            };
+            let open_marker = format!("<{tag}");
+            let close_marker = format!("</{tag}>");
+            let start = lower[..marker_index].rfind(&open_marker);
+            let end = lower[marker_index..]
+                .find(&close_marker)
+                .map(|offset| marker_index + offset + close_marker.len());
+
+            match (start, end) {
+                (Some(start), Some(end)) if start < end => {
+                    let block = &lower[start..end];
+                    if ["<article", "<main", "<p", "<h1", "<h2", "<h3"]
+                        .iter()
+                        .any(|content_marker| block.contains(content_marker))
+                    {
+                        let Some(open_end_offset) = block.find('>') else {
+                            break;
+                        };
+                        let inner_start = start + open_end_offset + 1;
+                        let Some(relative_marker_index) = lower[inner_start..end].find(&marker_lower) else {
+                            break;
+                        };
+                        let marker_start = inner_start + relative_marker_index;
+                        let marker_end = marker_start + marker_lower.len();
+                        output.replace_range(marker_start..marker_end, " ");
+                    } else {
+                        output.replace_range(start..end, " ");
+                    }
+                }
+                _ => break,
+            }
+        }
+    }
+
+    output
+}
+
+fn extract_preferred_html_block(body: &str) -> Option<&str> {
+    extract_html_tag_content(body, "article")
+        .or_else(|| extract_html_tag_content(body, "main"))
+}
+
+fn extract_html_tag_content<'a>(body: &'a str, tag: &str) -> Option<&'a str> {
+    let lower = body.to_lowercase();
+    let open_marker = format!("<{tag}");
+    let close_marker = format!("</{tag}>");
+    let start = lower.find(&open_marker)?;
+    let after_open = lower[start..].find('>')? + start + 1;
+    let end = lower[after_open..].find(&close_marker)? + after_open;
+    body.get(after_open..end)
+}
+
 fn strip_html_tags(value: &str) -> String {
     let mut plain = String::with_capacity(value.len());
     let mut in_tag = false;
@@ -616,17 +818,34 @@ fn normalize_search_result_text(value: &str) -> String {
     }
 
     let mut candidate = normalized.trim().to_string();
-    for marker in [
-        "class=\"vr-title\"",
-        "class=\"pt\"",
-        "vrcid=\"",
-        "id=\"cacheresult_summary_",
-        "new Image().src =",
-        "[$s.httpsUtil.getPingbackHost()",
-        "\"&type=security3&tag=show&uuid=\"",
-    ] {
-        if let Some(index) = candidate.find(marker) {
-            candidate = candidate[index + marker.len()..].trim().to_string();
+    loop {
+        let mut trimmed = false;
+
+        for marker in [
+            "class=\"vr-title\"",
+            "class=\"pt\"",
+            "vrcid=\"",
+            "id=\"cacheresult_summary_",
+            "new Image().src =",
+            "[$s.httpsUtil.getPingbackHost()",
+            "\"&type=security3&tag=show&uuid=\"",
+        ] {
+            if let Some(index) = candidate.find(marker) {
+                candidate = candidate[index + marker.len()..].trim().to_string();
+                trimmed = true;
+            }
+        }
+
+        if let Some(index) = candidate.find(' ') {
+            let first_token = &candidate[..index];
+            if first_token.contains('=') || first_token.contains('"') {
+                candidate = candidate[index + 1..].trim().to_string();
+                trimmed = true;
+            }
+        }
+
+        if !trimmed {
+            break;
         }
     }
 
@@ -951,10 +1170,12 @@ fn extract_json_search_items(
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "搜索提供方返回了可用结果。".to_string());
             let source_label = infer_source_label(&title, &url, "外部来源");
+            let fact_snippets = build_fact_snippets(&title, &summary);
             Some(NetworkSearchResultItem {
                 title,
                 url,
                 source_label,
+                fact_snippets,
                 summary,
             })
         })
@@ -1125,8 +1346,8 @@ fn list_workspace_npc_configs_for_selection(
     })
 }
 
-fn upsert_workspace_npc_config(
-    app: &AppHandle,
+fn upsert_workspace_npc_config<R: Runtime>(
+    app: &AppHandle<R>,
     root: &Path,
     payload: NpcWorkspaceConfigUpsertPayload,
     rollback_context: Option<RollbackContextPayload>,
@@ -1458,6 +1679,7 @@ pub struct LocalKnowledgeSearchItem {
     path: String,
     title: String,
     snippet: String,
+    fact_snippets: Vec<String>,
     score: usize,
 }
 
@@ -2181,6 +2403,14 @@ pub fn workspace_project_npc_showcase_site_write(
     query: String,
     rollback_context: Option<RollbackContextPayload>,
 ) -> Result<WorkspaceProjectNpcShowcaseSiteWriteResult, String> {
+    workspace_project_npc_showcase_site_write_with_app(&app, query, rollback_context)
+}
+
+fn workspace_project_npc_showcase_site_write_with_app<R: Runtime>(
+    app: &AppHandle<R>,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<WorkspaceProjectNpcShowcaseSiteWriteResult, String> {
     let root = resolve_workspace_root()?;
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
@@ -2374,6 +2604,7 @@ pub fn local_knowledge_search(
                     .unwrap_or("document")
                     .to_string(),
                 snippet: truncate_chars(snippet, 180),
+                fact_snippets: build_fact_snippets_from_text(snippet),
                 score,
             });
         }
@@ -3382,6 +3613,14 @@ pub fn local_skill_install(
     query: String,
     rollback_context: Option<RollbackContextPayload>,
 ) -> Result<LocalSkillInstallResult, String> {
+    local_skill_install_with_app(&app, query, rollback_context)
+}
+
+fn local_skill_install_with_app<R: Runtime>(
+    app: &AppHandle<R>,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalSkillInstallResult, String> {
     let root = resolve_workspace_root()?;
     let skill_files = collect_installable_local_skill_files(&root)?;
     let tokens = tokenize_query(&query);
@@ -3500,6 +3739,14 @@ pub fn local_skill_disable(
     query: String,
     rollback_context: Option<RollbackContextPayload>,
 ) -> Result<LocalSkillDisableResult, String> {
+    local_skill_disable_with_app(&app, query, rollback_context)
+}
+
+fn local_skill_disable_with_app<R: Runtime>(
+    app: &AppHandle<R>,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalSkillDisableResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = "skills/enabled-skills.json";
     let registry_path = opencow_enabled_skills_registry_path()?;
@@ -3589,6 +3836,14 @@ pub fn opencow_self_repair_enabled_skills_registry(
     query: String,
     rollback_context: Option<RollbackContextPayload>,
 ) -> Result<OpencowSelfRepairEnabledSkillsRegistryResult, String> {
+    opencow_self_repair_enabled_skills_registry_with_app(&app, query, rollback_context)
+}
+
+fn opencow_self_repair_enabled_skills_registry_with_app<R: Runtime>(
+    app: &AppHandle<R>,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<OpencowSelfRepairEnabledSkillsRegistryResult, String> {
     let registry_relative_path = "skills/enabled-skills.json";
     let registry_path = opencow_enabled_skills_registry_path()?;
     let registry_dir = registry_path
@@ -3653,6 +3908,14 @@ pub fn opencow_self_repair_enabled_skills_registry(
 #[tauri::command]
 pub fn opencow_self_repair_workspace_project_runtime_registry(
     app: AppHandle,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult, String> {
+    opencow_self_repair_workspace_project_runtime_registry_with_app(&app, query, rollback_context)
+}
+
+fn opencow_self_repair_workspace_project_runtime_registry_with_app<R: Runtime>(
+    app: &AppHandle<R>,
     query: String,
     rollback_context: Option<RollbackContextPayload>,
 ) -> Result<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult, String> {
@@ -3904,6 +4167,14 @@ pub fn workspace_write_command(
     rollback_context: Option<RollbackContextPayload>,
     app: AppHandle,
 ) -> Result<WorkspaceWriteShellCommandResult, String> {
+    workspace_write_command_with_app(command_id, rollback_context, &app)
+}
+
+fn workspace_write_command_with_app<R: Runtime>(
+    command_id: String,
+    rollback_context: Option<RollbackContextPayload>,
+    app: &AppHandle<R>,
+) -> Result<WorkspaceWriteShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_workspace_write_shell_command(&command_id, &root)?;
     let snapshot_paths = match command_id.as_str() {
@@ -3953,6 +4224,14 @@ pub fn controlled_full_command(
     command_id: String,
     rollback_context: Option<RollbackContextPayload>,
     app: AppHandle,
+) -> Result<ControlledFullShellCommandResult, String> {
+    controlled_full_command_with_app(command_id, rollback_context, &app)
+}
+
+fn controlled_full_command_with_app<R: Runtime>(
+    command_id: String,
+    rollback_context: Option<RollbackContextPayload>,
+    app: &AppHandle<R>,
 ) -> Result<ControlledFullShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_controlled_full_shell_command(&command_id, &root)?;
@@ -5911,23 +6190,26 @@ fn escape_powershell_single_quote(input: &str) -> String {
 mod tests {
     use super::{
         build_controlled_full_shell_command, build_enabled_local_skill_items,
-        build_knowledge_inventory, build_npc_showcase_screenshot_artifact_path,
+        build_fact_snippets_from_html, build_knowledge_inventory,
+        build_npc_showcase_screenshot_artifact_path,
         build_npc_showcase_site_root, build_openclaw_capability_spec, build_readonly_shell_command,
-        build_workspace_write_shell_command, classify_mcp_plugin_source, controlled_full_command,
+        build_workspace_write_shell_command, classify_mcp_plugin_source,
+        controlled_full_command_with_app,
         extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file,
         list_workspace_npc_configs_for_selection, local_mcp_plugin_inspect, local_mcp_plugin_scan,
-        local_mcp_plugin_start_preview, local_skill_disable, local_skill_install,
+        local_mcp_plugin_start_preview, local_skill_disable_with_app, local_skill_install_with_app,
         looks_like_workspace_root, normalize_network_search_query, normalize_npc_workspace_record,
-        opencow_self_repair_enabled_skills_registry,
-        opencow_self_repair_workspace_project_runtime_registry, parse_skill_frontmatter_name,
+        normalize_search_result_text, strip_low_value_html_sections,
+        opencow_self_repair_enabled_skills_registry_with_app,
+        opencow_self_repair_workspace_project_runtime_registry_with_app, parse_skill_frontmatter_name,
         parse_workspace_project_run_pid, read_enabled_skill_registry,
         read_knowledge_import_registry, read_workspace_project_runtime_records,
         resolve_workspace_root, result_matches_query, score_mcp_plugin_match, score_skill_match,
         score_snippet, split_knowledge_segments, tokenize_query, truncate_preview,
         upsert_workspace_npc_config, workspace_project_npc_screenshot_capture,
-        workspace_project_npc_showcase_publish_preview, workspace_project_npc_showcase_site_write,
+        workspace_project_npc_showcase_publish_preview, workspace_project_npc_showcase_site_write_with_app,
         workspace_project_run, workspace_project_run_preview, workspace_project_status,
-        workspace_project_stop, workspace_readonly_command, workspace_write_command,
+        workspace_project_stop, workspace_readonly_command, workspace_write_command_with_app,
         write_knowledge_import_registry, ImportedKnowledgeFileRecord, KnowledgeImportRegistry,
         KnowledgeLibraryRecord, NpcWorkspaceConfigUpsertPayload,
     };
@@ -5938,6 +6220,7 @@ mod tests {
         sync::{Mutex, OnceLock},
         time::{SystemTime, UNIX_EPOCH},
     };
+    use tauri::test::{mock_app, MockRuntime};
 
     fn workspace_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -5948,6 +6231,10 @@ mod tests {
         workspace_test_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn test_app_handle() -> tauri::AppHandle<MockRuntime> {
+        mock_app().handle().clone()
     }
 
     #[test]
@@ -5977,6 +6264,75 @@ mod tests {
     }
 
     #[test]
+    fn strips_navigation_and_footer_sections_before_fact_extraction() {
+        let html = r#"
+            <html>
+              <body>
+                <nav>导航入口 推荐内容</nav>
+                <article>
+                  <p>豆包提供智能问答能力。</p>
+                  <p>豆包支持写作辅助。</p>
+                </article>
+                <footer>页脚 推荐阅读 版权说明</footer>
+              </body>
+            </html>
+        "#;
+
+        let sanitized = strip_low_value_html_sections(html);
+
+        assert!(!sanitized.contains("导航入口"));
+        assert!(!sanitized.contains("页脚"));
+        assert!(sanitized.contains("豆包提供智能问答能力"));
+        assert!(sanitized.contains("豆包支持写作辅助"));
+    }
+
+    #[test]
+    fn strips_recommendation_blocks_and_keeps_main_article_facts() {
+        let html = r#"
+            <html>
+              <body>
+                <section class="recommend">推荐阅读：更多模型评测，猜你喜欢</section>
+                <main>
+                  <div>DeepSeek 提供代码和推理相关能力。</div>
+                  <div>DeepSeek 支持多轮对话。</div>
+                </main>
+                <div class="sidebar">相关文章：热门推荐</div>
+              </body>
+            </html>
+        "#;
+
+        let snippets = build_fact_snippets_from_html(html);
+        let joined = snippets.join(" ");
+
+        assert!(!joined.contains("推荐阅读"));
+        assert!(!joined.contains("猜你喜欢"));
+        assert!(!joined.contains("相关文章"));
+        assert!(joined.contains("DeepSeek 提供代码和推理相关能力"));
+        assert!(joined.contains("DeepSeek 支持多轮对话"));
+    }
+
+    #[test]
+    fn keeps_primary_article_sentences_as_fact_snippets() {
+        let html = r#"
+            <html>
+              <body>
+                <article>
+                  <p>MCP 用于连接模型与外部工具。</p>
+                  <p>MCP 可以统一工具调用上下文。</p>
+                  <p>这能降低多工具集成复杂度。</p>
+                </article>
+              </body>
+            </html>
+        "#;
+
+        let snippets = build_fact_snippets_from_html(html);
+
+        assert!(snippets.iter().any(|item| item.contains("MCP 用于连接模型与外部工具")));
+        assert!(snippets.iter().any(|item| item.contains("MCP 可以统一工具调用上下文")));
+        assert!(snippets.iter().any(|item| item.contains("降低多工具集成复杂度")));
+    }
+
+    #[test]
     fn filters_out_unrelated_search_results() {
         let tokens = vec!["字节跳动".to_string()];
 
@@ -5992,6 +6348,15 @@ mod tests {
             "Missouri Weather Updates",
             "https://www.kmbc.com/weather"
         ));
+    }
+
+    #[test]
+    fn strips_html_attribute_noise_from_search_titles() {
+        let normalized = normalize_search_result_text(
+            "class=\"vr-title\" vrcid=\"title.b429921\" 银龄AI小课堂|豆包是什么它能帮助我们做些什么"
+        );
+
+        assert_eq!(normalized, "银龄AI小课堂|豆包是什么它能帮助我们做些什么");
     }
 
     #[test]
@@ -6095,6 +6460,9 @@ mod tests {
 
     #[test]
     fn workspace_readonly_command_lists_workspace_root_entries() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -6137,6 +6505,7 @@ mod tests {
         fs::create_dir_all(&workspace_root).unwrap();
 
         upsert_workspace_npc_config(
+            &test_app_handle(),
             &workspace_root,
             NpcWorkspaceConfigUpsertPayload {
                 id: "alpha-bot".to_string(),
@@ -6151,9 +6520,11 @@ mod tests {
                 enabled_skill_names: Vec::new(),
                 knowledge_library_ids: Vec::new(),
             },
+            None,
         )
         .unwrap();
         upsert_workspace_npc_config(
+            &test_app_handle(),
             &workspace_root,
             NpcWorkspaceConfigUpsertPayload {
                 id: "zeta-bot".to_string(),
@@ -6168,6 +6539,7 @@ mod tests {
                 enabled_skill_names: Vec::new(),
                 knowledge_library_ids: Vec::new(),
             },
+            None,
         )
         .unwrap();
 
@@ -6244,6 +6616,9 @@ mod tests {
 
     #[test]
     fn workspace_write_command_creates_temp_output_directory_inside_workspace() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -6263,7 +6638,9 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = workspace_write_command("create-temp-output-dir".to_string()).unwrap();
+        let result =
+            workspace_write_command_with_app("create-temp-output-dir".to_string(), None, &test_app_handle())
+                .unwrap();
         let temp_output_exists = workspace_root.join("temp-output").exists();
 
         env::set_current_dir(&original_dir).unwrap();
@@ -6281,6 +6658,9 @@ mod tests {
 
     #[test]
     fn controlled_full_command_removes_temp_output_directory_inside_workspace() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -6303,7 +6683,9 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = controlled_full_command("remove-temp-output-dir".to_string()).unwrap();
+        let result =
+            controlled_full_command_with_app("remove-temp-output-dir".to_string(), None, &test_app_handle())
+                .unwrap();
         let temp_output_exists = temp_output.exists();
 
         env::set_current_dir(&original_dir).unwrap();
@@ -6371,14 +6753,18 @@ mod tests {
     #[test]
     fn reads_missing_knowledge_registry_as_empty() {
         let _guard = lock_workspace_test_guard();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root =
             env::temp_dir().join(format!("opencow-knowledge-registry-empty-{unique}"));
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-knowledge-registry-empty-storage-{unique}"));
 
         fs::create_dir_all(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
         let registry = read_knowledge_import_registry(&workspace_root).unwrap();
 
@@ -6387,7 +6773,13 @@ mod tests {
         assert_eq!(registry.libraries[0].id, "default-library");
         assert!(registry.libraries[0].imported_files.is_empty());
 
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
     }
 
     #[test]
@@ -6492,12 +6884,13 @@ mod tests {
 
         env::set_current_dir(&tauri_dir).unwrap();
 
-        let resolved = resolve_workspace_root().unwrap();
+        let resolved = resolve_workspace_root().unwrap().canonicalize().unwrap();
+        let expected = workspace_root.canonicalize().unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
 
-        assert_eq!(resolved, workspace_root);
+        assert_eq!(resolved, expected);
     }
 
     #[test]
@@ -6543,10 +6936,8 @@ mod tests {
 
     #[test]
     fn classifies_vendor_extension_plugin_source() {
-        let root = Path::new("E:\\2026\\opencow");
-        let path = Path::new(
-            "E:\\2026\\opencow\\vendor\\openclaw\\extensions\\browser\\openclaw.plugin.json",
-        );
+        let root = Path::new("/tmp/opencow");
+        let path = Path::new("/tmp/opencow/vendor/openclaw/extensions/browser/openclaw.plugin.json");
 
         assert_eq!(
             classify_mcp_plugin_source(root, path),
@@ -6706,8 +7097,12 @@ mod tests {
         env::set_current_dir(&workspace_root).unwrap();
         env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
-        let result =
-            local_skill_disable("disable the vendor coding-agent skill".to_string()).unwrap();
+        let result = local_skill_disable_with_app(
+            &test_app_handle(),
+            "disable the vendor coding-agent skill".to_string(),
+            None,
+        )
+        .unwrap();
         let remaining_entries = read_enabled_skill_registry(&registry_path).unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
@@ -6733,17 +7128,20 @@ mod tests {
     fn local_mcp_plugin_scan_reads_vendor_plugin_manifests() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root =
             env::temp_dir().join(format!("opencow-local-mcp-plugin-scan-{unique}"));
-        let browser_plugin =
-            workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-local-mcp-plugin-scan-storage-{unique}"));
+        let browser_plugin = app_data_root.join("mcp/installed/browser/openclaw.plugin.json");
         let supervisor_plugin =
-            workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
+            app_data_root.join("mcp/installed/codex-supervisor/openclaw.plugin.json");
 
+        fs::create_dir_all(&workspace_root).unwrap();
         fs::create_dir_all(browser_plugin.parent().unwrap()).unwrap();
         fs::create_dir_all(supervisor_plugin.parent().unwrap()).unwrap();
         fs::write(
@@ -6771,15 +7169,24 @@ mod tests {
         .unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
         let result = local_mcp_plugin_scan().unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
 
         assert_eq!(result.total_count, 2);
         assert_eq!(result.scanned_root_count, 1);
         assert_eq!(result.items[0].id, "browser");
+        assert_eq!(result.items[0].source, "opencow-installed-mcp");
+        assert_eq!(result.items[0].path, "mcp/installed/browser/openclaw.plugin.json");
         assert_eq!(result.items[0].activation, "startup");
         assert_eq!(result.items[0].tool_count, 1);
         assert_eq!(result.items[0].skill_count, 1);
@@ -6792,17 +7199,20 @@ mod tests {
     fn local_mcp_plugin_inspect_reads_matching_vendor_plugin_manifest_details() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root =
             env::temp_dir().join(format!("opencow-local-mcp-plugin-inspect-{unique}"));
-        let browser_plugin =
-            workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-local-mcp-plugin-inspect-storage-{unique}"));
+        let browser_plugin = app_data_root.join("mcp/installed/browser/openclaw.plugin.json");
         let supervisor_plugin =
-            workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
+            app_data_root.join("mcp/installed/codex-supervisor/openclaw.plugin.json");
 
+        fs::create_dir_all(&workspace_root).unwrap();
         fs::create_dir_all(browser_plugin.parent().unwrap()).unwrap();
         fs::create_dir_all(supervisor_plugin.parent().unwrap()).unwrap();
         fs::write(
@@ -6832,17 +7242,26 @@ mod tests {
         .unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
         let result =
             local_mcp_plugin_inspect("show details for the browser mcp plugin".to_string())
                 .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
 
         assert_eq!(result.match_count, 1);
         assert_eq!(result.scanned_root_count, 1);
         assert_eq!(result.items[0].id, "browser");
+        assert_eq!(result.items[0].path, "mcp/installed/browser/openclaw.plugin.json");
+        assert_eq!(result.items[0].source, "opencow-installed-mcp");
         assert_eq!(result.items[0].activation, "startup");
         assert_eq!(
             result.items[0].description,
@@ -6856,17 +7275,20 @@ mod tests {
     fn local_mcp_plugin_start_preview_reads_matching_vendor_plugin_preview_fields() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root =
             env::temp_dir().join(format!("opencow-local-mcp-plugin-start-preview-{unique}"));
-        let browser_plugin =
-            workspace_root.join("vendor/openclaw/extensions/browser/openclaw.plugin.json");
+        let app_data_root = env::temp_dir()
+            .join(format!("opencow-local-mcp-plugin-start-preview-storage-{unique}"));
+        let browser_plugin = app_data_root.join("mcp/installed/browser/openclaw.plugin.json");
         let supervisor_plugin =
-            workspace_root.join("vendor/openclaw/extensions/codex-supervisor/openclaw.plugin.json");
+            app_data_root.join("mcp/installed/codex-supervisor/openclaw.plugin.json");
 
+        fs::create_dir_all(&workspace_root).unwrap();
         fs::create_dir_all(browser_plugin.parent().unwrap()).unwrap();
         fs::create_dir_all(supervisor_plugin.parent().unwrap()).unwrap();
         fs::write(
@@ -6894,6 +7316,7 @@ mod tests {
         .unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
         let result = local_mcp_plugin_start_preview(
             "preview starting the browser mcp plugin locally".to_string(),
@@ -6901,20 +7324,25 @@ mod tests {
         .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
 
         assert_eq!(result.match_count, 1);
         assert_eq!(result.items[0].id, "browser");
-        assert!(!result.items[0].startup_allowed);
+        assert!(result.items[0].startup_allowed);
         assert_eq!(result.items[0].activation, "startup");
         assert_eq!(
             result.items[0].command_preview,
-            "No resolved executable launcher for this local MCP plugin in the current desktop slice."
-                .to_string()
+            "node vendor/openclaw/openclaw.mjs browser start".to_string()
         );
         assert_eq!(
             result.items[0].working_directory,
-            "vendor/openclaw/extensions/browser".to_string()
+            "vendor/openclaw".to_string()
         );
         assert!(!result.items[0].requires_config);
         assert_eq!(
@@ -6927,11 +7355,13 @@ mod tests {
     fn local_skill_install_copies_vendor_skill_into_workspace_skills_directory() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root = env::temp_dir().join(format!("opencow-local-skill-install-{unique}"));
+        let app_data_root = env::temp_dir().join(format!("opencow-local-skill-install-storage-{unique}"));
         let vendor_skill_path = workspace_root.join("vendor/openclaw/skills/gpt-taste/SKILL.md");
 
         fs::create_dir_all(vendor_skill_path.parent().unwrap()).unwrap();
@@ -6950,17 +7380,26 @@ mod tests {
         .unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
-        let result = local_skill_install(
+        let result = local_skill_install_with_app(
+            &test_app_handle(),
             "install the gpt-taste skill into this workspace skills folder".to_string(),
+            None,
         )
         .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
 
-        let installed_path = workspace_root.join("skills/gpt-taste/SKILL.md");
+        let installed_path = app_data_root.join("skills/installed/gpt-taste/SKILL.md");
         let installed_contents = fs::read_to_string(&installed_path).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
 
         assert_eq!(result.installed_skill_name, "gpt-taste".to_string());
         assert_eq!(
@@ -7059,8 +7498,12 @@ mod tests {
         env::set_current_dir(&workspace_root).unwrap();
         env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
-        let result =
-            local_skill_install("install the gpt-taste skill into opencow".to_string()).unwrap();
+        let result = local_skill_install_with_app(
+            &test_app_handle(),
+            "install the gpt-taste skill into opencow".to_string(),
+            None,
+        )
+        .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
         if let Some(value) = original_app_data_root {
@@ -7091,13 +7534,16 @@ mod tests {
     fn opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json() {
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
+        let original_app_data_root = env::var("OPENCOW_APP_DATA_ROOT").ok();
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let workspace_root =
             env::temp_dir().join(format!("opencow-self-repair-enabled-skills-{unique}"));
-        let registry_path = workspace_root.join(".opencow/skills/enabled-skills.json");
+        let app_data_root =
+            env::temp_dir().join(format!("opencow-self-repair-enabled-skills-storage-{unique}"));
+        let registry_path = app_data_root.join("skills/enabled-skills.json");
 
         fs::create_dir_all(workspace_root.join("apps")).unwrap();
         fs::create_dir_all(workspace_root.join("packages")).unwrap();
@@ -7111,22 +7557,31 @@ mod tests {
         fs::write(&registry_path, "{ invalid json").unwrap();
 
         env::set_current_dir(&workspace_root).unwrap();
+        env::set_var("OPENCOW_APP_DATA_ROOT", &app_data_root);
 
-        let result = opencow_self_repair_enabled_skills_registry(
+        let result = opencow_self_repair_enabled_skills_registry_with_app(
+            &test_app_handle(),
             "diagnose opencow and continue repairing its enabled skills registry".to_string(),
+            None,
         )
         .unwrap();
 
         env::set_current_dir(&original_dir).unwrap();
+        if let Some(value) = original_app_data_root {
+            env::set_var("OPENCOW_APP_DATA_ROOT", value);
+        } else {
+            env::remove_var("OPENCOW_APP_DATA_ROOT");
+        }
 
         let repaired = fs::read_to_string(&registry_path).unwrap();
         let parsed: Value = serde_json::from_str(&repaired).unwrap();
         let _ = fs::remove_dir_all(&workspace_root);
+        let _ = fs::remove_dir_all(&app_data_root);
 
         assert_eq!(result.repair_target, "enabled-skills-registry".to_string());
         assert_eq!(
             result.repaired_path,
-            ".opencow/skills/enabled-skills.json".to_string()
+            "skills/enabled-skills.json".to_string()
         );
         assert_eq!(result.status, "repaired".to_string());
         assert_eq!(result.preserved_entry_count, 0);
@@ -7167,9 +7622,11 @@ mod tests {
 
         env::set_current_dir(&workspace_root).unwrap();
 
-        let result = opencow_self_repair_workspace_project_runtime_registry(
+        let result = opencow_self_repair_workspace_project_runtime_registry_with_app(
+            &test_app_handle(),
             "diagnose opencow and continue repairing its workspace project runtime registry"
                 .to_string(),
+            None,
         )
         .unwrap();
 
@@ -7280,6 +7737,9 @@ mod tests {
 
     #[test]
     fn workspace_project_run_starts_matched_app_and_returns_handle() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -7345,6 +7805,9 @@ mod tests {
 
     #[test]
     fn workspace_project_status_reports_active_runtime_handle_for_matched_app() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -7508,6 +7971,9 @@ mod tests {
 
     #[test]
     fn workspace_project_status_migrates_legacy_runtime_registry_records() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -7623,6 +8089,9 @@ mod tests {
 
     #[test]
     fn workspace_project_stop_stops_matched_app_and_clears_runtime_handle() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -7771,6 +8240,9 @@ mod tests {
 
     #[test]
     fn workspace_project_npc_showcase_site_write_returns_error_without_screenshot_artifact() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -7821,8 +8293,10 @@ mod tests {
         let run_result = workspace_project_run("run the cattle app locally".to_string()).unwrap();
         assert_eq!(run_result.project_name, "cattle".to_string());
 
-        let error = workspace_project_npc_showcase_site_write(
+        let error = workspace_project_npc_showcase_site_write_with_app(
+            &test_app_handle(),
             "use npc collaboration to generate the showcase site for the matched cattle project now".to_string(),
+            None,
         )
         .unwrap_err();
 
@@ -7843,6 +8317,9 @@ mod tests {
 
     #[test]
     fn workspace_project_npc_showcase_publish_preview_returns_error_without_site_output() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
@@ -7907,6 +8384,9 @@ mod tests {
 
     #[test]
     fn workspace_project_npc_showcase_publish_preview_reads_deterministic_project_scoped_paths() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
         let _guard = lock_workspace_test_guard();
         let original_dir = env::current_dir().unwrap();
         let unique = SystemTime::now()
