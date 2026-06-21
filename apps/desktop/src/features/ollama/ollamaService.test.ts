@@ -29,29 +29,100 @@ describe("ollamaService", () => {
     delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals];
   });
 
+  async function runWithDesktopIpcOnly<T>(callback: () => Promise<T>): Promise<T> {
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", undefined);
+
+    try {
+      return await callback();
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  }
+
   it("loads models through the Tauri command when desktop IPC is available", async () => {
-    mockIPC((cmd) => {
-      if (cmd === "ollama_overview") {
-        return {
-          reachable: true,
-          endpoint: "http://127.0.0.1:11434",
-          selectedModel: "qwen2.5-coder:7b",
-          diagnostic: "",
-          models: [
-            { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" },
-            { name: "bge-m3:latest", sizeLabel: "1.2 GB" }
-          ]
-        } satisfies OllamaOverview;
-      }
+    const overview = await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd) => {
+        if (cmd === "ollama_overview") {
+          return {
+            reachable: true,
+            endpoint: "http://127.0.0.1:11434",
+            selectedModel: "qwen2.5-coder:7b",
+            diagnostic: "",
+            models: [
+              { name: "qwen2.5-coder:7b", sizeLabel: "4.1 GB" },
+              { name: "bge-m3:latest", sizeLabel: "1.2 GB" }
+            ]
+          } satisfies OllamaOverview;
+        }
 
-      return null;
+        return null;
+      });
+
+      return loadOllamaOverview();
     });
-
-    const overview = await loadOllamaOverview();
 
     expect(overview.reachable).toBe(true);
     expect(overview.selectedModel).toBe("qwen2.5-coder:7b");
     expect(overview.models).toHaveLength(2);
+  });
+
+  it("prefers the local HTTP Ollama API over desktop IPC when fetch is available", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "ollama_overview" || cmd === "ollama_chat") {
+        throw new Error("desktop IPC should not be used when direct Ollama HTTP is available");
+      }
+
+      return null;
+    });
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          models: [
+            {
+              name: "qwen3.5:9b",
+              size: 6_594_474_711,
+              details: {
+                capabilities: ["completion", "chat"]
+              }
+            }
+          ]
+        })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        body: new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(
+              '{"model":"qwen3.5:9b","message":{"content":"第一段，"}}\n'
+            ));
+            controller.enqueue(encoder.encode(
+              '{"model":"qwen3.5:9b","message":{"content":"第二段。"},"done_reason":"stop"}\n'
+            ));
+            controller.close();
+          }
+        })
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const overview = await loadOllamaOverview();
+    const chatResult = await chatWithOllamaModel({
+      model: "qwen3.5:9b",
+      message: "解释一下 MCP"
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:11434/api/tags");
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:11434/api/chat", expect.any(Object));
+    expect(overview.selectedModel).toBe("qwen3.5:9b");
+    expect(chatResult).toEqual({
+      model: "qwen3.5:9b",
+      message: "第一段，第二段。",
+      doneReason: "stop"
+    });
   });
 
   it("falls back to the local HTTP API during browser preview", async () => {
@@ -226,22 +297,23 @@ describe("ollamaService", () => {
 
   it("wraps desktop chat args under request for the Tauri command", async () => {
     let chatPayload: unknown;
+    const result = await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        if (cmd === "ollama_chat") {
+          chatPayload = payload;
+          return {
+            model: "qwen3.6:35b",
+            message: "享元模式通过共享内部状态来减少对象数量。"
+          };
+        }
 
-    mockIPC((cmd, payload) => {
-      if (cmd === "ollama_chat") {
-        chatPayload = payload;
-        return {
-          model: "qwen3.6:35b",
-          message: "享元模式通过共享内部状态来减少对象数量。"
-        };
-      }
+        return null;
+      });
 
-      return null;
-    });
-
-    const result = await chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "解释享元模式"
+      return chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "解释享元模式"
+      });
     });
 
     expect(chatPayload).toEqual({
@@ -262,22 +334,23 @@ describe("ollamaService", () => {
 
   it("uses a compact output budget for short ordinary desktop chat questions", async () => {
     let chatPayload: unknown;
+    await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        if (cmd === "ollama_chat") {
+          chatPayload = payload;
+          return {
+            model: "qwen3.6:35b",
+            message: "常见开源协议包括 MIT、Apache-2.0、BSD、GPL、LGPL、AGPL 和 MPL。"
+          };
+        }
 
-    mockIPC((cmd, payload) => {
-      if (cmd === "ollama_chat") {
-        chatPayload = payload;
-        return {
-          model: "qwen3.6:35b",
-          message: "常见开源协议包括 MIT、Apache-2.0、BSD、GPL、LGPL、AGPL 和 MPL。"
-        };
-      }
+        return null;
+      });
 
-      return null;
-    });
-
-    await chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "开源协议有哪些"
+      await chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "开源协议有哪些"
+      });
     });
 
     expect(chatPayload).toEqual({
@@ -293,30 +366,31 @@ describe("ollamaService", () => {
 
   it("passes request ids to desktop Ollama chat and cancellation commands", async () => {
     const seenPayloads: Array<{ cmd: string; payload: unknown }> = [];
+    await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        seenPayloads.push({ cmd, payload });
 
-    mockIPC((cmd, payload) => {
-      seenPayloads.push({ cmd, payload });
+        if (cmd === "ollama_chat") {
+          return {
+            model: "qwen3.6:35b",
+            message: "正在回答。"
+          };
+        }
 
-      if (cmd === "ollama_chat") {
-        return {
-          model: "qwen3.6:35b",
-          message: "正在回答。"
-        };
-      }
+        if (cmd === "ollama_cancel_chat") {
+          return null;
+        }
 
-      if (cmd === "ollama_cancel_chat") {
         return null;
-      }
+      });
 
-      return null;
+      await chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "解释 MIT 协议",
+        requestId: "local-model-chat-task-1"
+      });
+      await cancelOllamaChat("local-model-chat-task-1");
     });
-
-    await chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "解释 MIT 协议",
-      requestId: "local-model-chat-task-1"
-    });
-    await cancelOllamaChat("local-model-chat-task-1");
 
     expect(seenPayloads).toContainEqual({
       cmd: "ollama_chat",
@@ -342,26 +416,27 @@ describe("ollamaService", () => {
   it("forwards matching desktop Ollama chunk events and releases the listener after completion", async () => {
     let resolveChat: (value: { model: string; message: string }) => void = () => {};
     const onChunk = vi.fn();
+    const resultPromise = runWithDesktopIpcOnly(async () => {
+      listenMock.mockImplementation((_eventName: string, listener: (event: { payload: unknown }) => void) => {
+        desktopChunkListeners.push(listener);
+        return Promise.resolve(unlistenMock);
+      });
+      mockIPC((cmd) => {
+        if (cmd === "ollama_chat") {
+          return new Promise((resolve) => {
+            resolveChat = resolve;
+          });
+        }
 
-    listenMock.mockImplementation((_eventName: string, listener: (event: { payload: unknown }) => void) => {
-      desktopChunkListeners.push(listener);
-      return Promise.resolve(unlistenMock);
-    });
-    mockIPC((cmd) => {
-      if (cmd === "ollama_chat") {
-        return new Promise((resolve) => {
-          resolveChat = resolve;
-        });
-      }
+        return null;
+      });
 
-      return null;
-    });
-
-    const resultPromise = chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "解释享元模式",
-      requestId: "local-model-chat-task-1",
-      onChunk
+      return chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "解释享元模式",
+        requestId: "local-model-chat-task-1",
+        onChunk
+      });
     });
 
     await vi.waitFor(() => {
@@ -408,26 +483,27 @@ describe("ollamaService", () => {
 
   it("keeps request ids on every desktop Ollama call created by long-answer splitting", async () => {
     const seenChatPayloads: unknown[] = [];
+    await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        if (cmd === "ollama_chat") {
+          seenChatPayloads.push(payload);
 
-    mockIPC((cmd, payload) => {
-      if (cmd === "ollama_chat") {
-        seenChatPayloads.push(payload);
+          return {
+            model: "qwen3.6:35b",
+            message: seenChatPayloads.length === 1
+              ? "一、单选题\n1. A\n2. B\n3. C\n4. D\n5. B\n6. D\n7. A\n8. C"
+              : "二、多选题\n1. A,B,D\n2. C,D\n3. D\n4. A,C\n5. B,D\n6. A,B\n7. C,D\n8. A,C"
+          };
+        }
 
-        return {
-          model: "qwen3.6:35b",
-          message: seenChatPayloads.length === 1
-            ? "一、单选题\n1. A\n2. B\n3. C\n4. D\n5. B\n6. D\n7. A\n8. C"
-            : "二、多选题\n1. A,B,D\n2. C,D\n3. D\n4. A,C\n5. B,D\n6. A,B\n7. C,D\n8. A,C"
-        };
-      }
+        return null;
+      });
 
-      return null;
-    });
-
-    await chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
-      requestId: "local-model-chat-long-1"
+      await chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
+        requestId: "local-model-chat-long-1"
+      });
     });
 
     expect(seenChatPayloads).toHaveLength(2);
@@ -443,32 +519,33 @@ describe("ollamaService", () => {
 
   it("preserves desktop split answer length-limit status after bounded continuations", async () => {
     const seenChatPayloads: unknown[] = [];
+    const result = await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        if (cmd === "ollama_chat") {
+          seenChatPayloads.push(payload);
 
-    mockIPC((cmd, payload) => {
-      if (cmd === "ollama_chat") {
-        seenChatPayloads.push(payload);
+          if (seenChatPayloads.length === 1) {
+            return {
+              model: "qwen3.6:35b",
+              message: "一、单选题\n1. A\n2. B\n3. C\n4. D\n5. B\n6. D\n7. A\n8. C"
+            };
+          }
 
-        if (seenChatPayloads.length === 1) {
           return {
             model: "qwen3.6:35b",
-            message: "一、单选题\n1. A\n2. B\n3. C\n4. D\n5. B\n6. D\n7. A\n8. C"
+            message: `二、多选题续写片段 ${seenChatPayloads.length}`,
+            doneReason: "length"
           };
         }
 
-        return {
-          model: "qwen3.6:35b",
-          message: `二、多选题续写片段 ${seenChatPayloads.length}`,
-          doneReason: "length"
-        };
-      }
+        return null;
+      });
 
-      return null;
-    });
-
-    const result = await chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
-      requestId: "local-model-chat-long-length-limit"
+      return chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
+        requestId: "local-model-chat-long-length-limit"
+      });
     });
 
     expect(seenChatPayloads.length).toBeGreaterThan(2);
@@ -478,32 +555,33 @@ describe("ollamaService", () => {
 
   it("preserves desktop split answer length-limit status when an earlier section remains truncated", async () => {
     const seenChatPayloads: unknown[] = [];
+    const result = await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        if (cmd === "ollama_chat") {
+          seenChatPayloads.push(payload);
 
-    mockIPC((cmd, payload) => {
-      if (cmd === "ollama_chat") {
-        seenChatPayloads.push(payload);
+          if (seenChatPayloads.length <= 3) {
+            return {
+              model: "qwen3.6:35b",
+              message: `一、单选题续写片段 ${seenChatPayloads.length}`,
+              doneReason: "length"
+            };
+          }
 
-        if (seenChatPayloads.length <= 3) {
           return {
             model: "qwen3.6:35b",
-            message: `一、单选题续写片段 ${seenChatPayloads.length}`,
-            doneReason: "length"
+            message: "二、多选题\n1. A,B,D\n2. C,D\n3. D\n4. A,C\n5. B,D\n6. A,B\n7. C,D\n8. A,C"
           };
         }
 
-        return {
-          model: "qwen3.6:35b",
-          message: "二、多选题\n1. A,B,D\n2. C,D\n3. D\n4. A,C\n5. B,D\n6. A,B\n7. C,D\n8. A,C"
-        };
-      }
+        return null;
+      });
 
-      return null;
-    });
-
-    const result = await chatWithOllamaModel({
-      model: "qwen3.6:35b",
-      message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
-      requestId: "local-model-chat-earlier-section-length-limit"
+      return chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
+        requestId: "local-model-chat-earlier-section-length-limit"
+      });
     });
 
     expect(seenChatPayloads.length).toBeGreaterThan(3);
@@ -515,29 +593,30 @@ describe("ollamaService", () => {
   it("does not send another desktop Ollama split call after the request signal is aborted", async () => {
     const abortController = new AbortController();
     let chatCallCount = 0;
+    await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd) => {
+        if (cmd === "ollama_chat") {
+          chatCallCount += 1;
+          abortController.abort();
 
-    mockIPC((cmd) => {
-      if (cmd === "ollama_chat") {
-        chatCallCount += 1;
-        abortController.abort();
+          return {
+            model: "qwen3.6:35b",
+            message: "一、单选题\n1. A\n2. B\n3. C\n4. D\n5. B\n6. D\n7. A\n8. C"
+          };
+        }
 
-        return {
+        return null;
+      });
+
+      await expect(
+        chatWithOllamaModel({
           model: "qwen3.6:35b",
-          message: "一、单选题\n1. A\n2. B\n3. C\n4. D\n5. B\n6. D\n7. A\n8. C"
-        };
-      }
-
-      return null;
+          message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
+          requestId: "local-model-chat-long-2",
+          signal: abortController.signal
+        })
+      ).rejects.toThrow(/aborted|cancelled/i);
     });
-
-    await expect(
-      chatWithOllamaModel({
-        model: "qwen3.6:35b",
-        message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
-        requestId: "local-model-chat-long-2",
-        signal: abortController.signal
-      })
-    ).rejects.toThrow(/aborted|cancelled/i);
 
     expect(chatCallCount).toBe(1);
   });

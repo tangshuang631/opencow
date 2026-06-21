@@ -32,6 +32,7 @@ export type OllamaOverview = {
 export type OllamaChatRequest = {
   model: string;
   message: string;
+  images?: string[];
   requestId?: string;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
@@ -80,6 +81,10 @@ type NumberedRangeRequest = {
 };
 
 export async function loadOllamaOverview(): Promise<OllamaOverview> {
+  if (shouldUseDirectHttpOllamaTransport()) {
+    return loadFromBrowserPreview();
+  }
+
   if (hasTauriInvoke()) {
     return Promise.race([
       invoke<OllamaOverview>("ollama_overview"),
@@ -350,6 +355,10 @@ export async function cancelOllamaChat(requestId: string): Promise<void> {
 }
 
 async function sendOllamaChatRequest(request: OllamaChatRequest): Promise<OllamaChatResult> {
+  if (shouldUseDirectHttpOllamaTransport()) {
+    return chatFromBrowserPreview(request);
+  }
+
   if (hasTauriInvoke()) {
     let unlisten: UnlistenFn | null = null;
 
@@ -364,6 +373,7 @@ async function sendOllamaChatRequest(request: OllamaChatRequest): Promise<Ollama
         request: {
           model: request.model,
           message: request.message,
+          images: request.images,
           requestId: request.requestId,
           numPredict: getOllamaChatNumPredict(request.message),
           timeoutMs: getOllamaChatTimeoutMs(request.message),
@@ -394,7 +404,13 @@ function forwardMatchingDesktopChunk(
   onChunk?.(chunk);
 }
 
-function createOllamaChatMessages(message: string): Array<{ role: "user"; content: string }> {
+function shouldUseDirectHttpOllamaTransport(): boolean {
+  return typeof fetch === "function";
+}
+
+function createOllamaChatMessages(message: string, images: string[] = []): Array<{ role: "user"; content: string; images?: string[] }> {
+  const normalizedImages = images.map((image) => image.trim()).filter(Boolean);
+
   return [
     {
       role: "user",
@@ -404,7 +420,8 @@ function createOllamaChatMessages(message: string): Array<{ role: "user"; conten
         "",
         "用户问题：",
         message
-      ].join("\n")
+      ].join("\n"),
+      ...(normalizedImages.length > 0 ? { images: normalizedImages } : {})
     }
   ];
 }
@@ -483,7 +500,7 @@ async function chatFromBrowserPreview(request: OllamaChatRequest): Promise<Ollam
     },
     body: JSON.stringify({
       model: request.model,
-      messages: createOllamaChatMessages(request.message),
+      messages: createOllamaChatMessages(request.message, request.images),
       options: {
         num_predict: getOllamaChatNumPredict(request.message)
       },
@@ -956,7 +973,9 @@ function hasTauriInvoke(): boolean {
 
 function normalizeModels(payload: OllamaTagsResponse): OllamaModelSummary[] {
   return (payload.models ?? [])
-    .filter((model): model is { name: string; size?: number } => typeof model.name === "string" && model.name.length > 0)
+    .filter((model): model is { name: string; size?: number; details?: { capabilities?: string[] } } =>
+      typeof model.name === "string" && model.name.length > 0
+    )
     .map((model) => ({
       name: model.name,
       sizeLabel: formatModelSize(model.size ?? 0),
