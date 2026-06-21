@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Composer } from "./Composer";
 import {
   createInitialWorkbenchState,
@@ -9,7 +9,22 @@ import {
   mergeOllamaOverview
 } from "../workbenchState";
 
+const sampleAttachment = {
+  id: "attachment-1",
+  name: "design.png",
+  mimeType: "image/png",
+  sizeBytes: 2048,
+  kind: "image" as const,
+  filePath: "/tmp/design.png",
+  previewUrl: "blob:design-preview",
+  source: "picker" as const
+};
+
 describe("Composer", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps composer status metadata to one concise line", () => {
     const state = createInitialWorkbenchState();
 
@@ -68,8 +83,336 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     expect(onSubmitTask).toHaveBeenCalledTimes(1);
-    expect(onSubmitTask).toHaveBeenCalledWith("scan local mcp plugins");
+    expect(onSubmitTask).toHaveBeenCalledWith("scan local mcp plugins", []);
     expect((textbox as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("shows draft attachments above the text input and clears them after send", () => {
+    const onSubmitTask = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      composer: {
+        draftAttachments: [sampleAttachment]
+      }
+    };
+
+    render(
+      <Composer
+        state={state}
+        onSubmitTask={onSubmitTask}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "带附件一起发出" }
+    });
+
+    expect(screen.getByText("design.png")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(onSubmitTask).toHaveBeenCalledWith("带附件一起发出", [sampleAttachment]);
+  });
+
+  it("renders image thumbnails and compact file type chips for draft attachments", () => {
+    const state = {
+      ...createInitialWorkbenchState(),
+      composer: {
+        draftAttachments: [
+          sampleAttachment,
+          {
+            id: "attachment-pdf",
+            name: "谭懿钧简历-AI方向.pdf",
+            mimeType: "application/pdf",
+            sizeBytes: 1872 * 1024,
+            kind: "file" as const,
+            filePath: "/tmp/resume.pdf",
+            source: "picker" as const
+          },
+          {
+            id: "attachment-unknown",
+            name: "archive.bin",
+            mimeType: "application/octet-stream",
+            sizeBytes: 512,
+            kind: "file" as const,
+            filePath: "/tmp/archive.bin",
+            source: "picker" as const
+          }
+        ]
+      }
+    };
+
+    render(
+      <Composer
+        state={state}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByAltText("附件缩略图：design.png")).toHaveAttribute("src", "blob:design-preview");
+    expect(screen.queryByText(/图片 ·/)).not.toBeInTheDocument();
+    expect(screen.getByText("PDF")).toBeInTheDocument();
+    expect(screen.getByText("?")).toBeInTheDocument();
+    expect(screen.getByText("谭懿钧简历-AI方向.pdf")).toBeInTheDocument();
+  });
+
+  it("submits attachments even when there is no text message", () => {
+    const onSubmitTask = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      composer: {
+        draftAttachments: [sampleAttachment]
+      }
+    };
+
+    render(
+      <Composer
+        state={state}
+        onSubmitTask={onSubmitTask}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(onSubmitTask).toHaveBeenCalledWith("", [sampleAttachment]);
+  });
+
+  it("accepts dropped files into the draft attachment strip", async () => {
+    const onAddAttachments = vi.fn();
+
+    render(
+      <Composer
+        state={createInitialWorkbenchState()}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onAddAttachments={onAddAttachments}
+      />
+    );
+
+    const textbox = screen.getByRole("textbox", { name: "输入任务" });
+    const droppedFile = new File(["hello"], "notes.txt", { type: "text/plain" });
+
+    fireEvent.drop(textbox, {
+      dataTransfer: {
+        files: [droppedFile],
+        items: []
+      }
+    });
+
+    await waitFor(() => {
+      expect(onAddAttachments).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("notes.txt")).toBeInTheDocument();
+  });
+
+  it("shows browser-picked files immediately even before parent state syncs", async () => {
+    const onAddAttachments = vi.fn();
+
+    render(
+      <Composer
+        state={createInitialWorkbenchState()}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onAddAttachments={onAddAttachments}
+      />
+    );
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+
+    const pickedFile = new File(["hello"], "picked.txt", { type: "text/plain" });
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [pickedFile]
+      }
+    });
+
+    await waitFor(() => {
+      expect(onAddAttachments).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("picked.txt")).toBeInTheDocument();
+  });
+
+  it("accepts pasted clipboard images into the draft attachment strip", async () => {
+    const onAddAttachments = vi.fn();
+
+    render(
+      <Composer
+        state={createInitialWorkbenchState()}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onAddAttachments={onAddAttachments}
+      />
+    );
+
+    const textbox = screen.getByRole("textbox", { name: "输入任务" });
+    const clipboardImage = new File(["image"], "paste.png", { type: "image/png" });
+
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        files: [clipboardImage],
+        items: []
+      }
+    });
+
+    await waitFor(() => {
+      expect(onAddAttachments).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("paste.png")).toBeInTheDocument();
+  });
+
+  it("shows pasted clipboard files from transfer items when files is empty", async () => {
+    const onAddAttachments = vi.fn();
+
+    render(
+      <Composer
+        state={createInitialWorkbenchState()}
+        onSubmitTask={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onAddAttachments={onAddAttachments}
+      />
+    );
+
+    const textbox = screen.getByRole("textbox", { name: "输入任务" });
+    const clipboardImage = new File(["image"], "paste-from-items.png", { type: "image/png" });
+
+    fireEvent.paste(textbox, {
+      clipboardData: {
+        files: [],
+        items: [
+          {
+            kind: "file",
+            getAsFile: () => clipboardImage
+          }
+        ]
+      }
+    });
+
+    await waitFor(() => {
+      expect(onAddAttachments).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findByText("paste-from-items.png")).toBeInTheDocument();
+  });
+
+  it("submits locally visible attachments before parent state syncs", async () => {
+    const onSubmitTask = vi.fn();
+
+    render(
+      <Composer
+        state={createInitialWorkbenchState()}
+        onSubmitTask={onSubmitTask}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onAddAttachments={vi.fn()}
+      />
+    );
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const pickedFile = new File(["hello"], "local-only.txt", { type: "text/plain" });
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [pickedFile]
+      }
+    });
+
+    expect(await screen.findByText("local-only.txt")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(onSubmitTask).toHaveBeenCalledTimes(1);
+    expect(onSubmitTask.mock.calls[0]?.[0]).toBe("");
+    expect(onSubmitTask.mock.calls[0]?.[1]).toEqual([
+      expect.objectContaining({
+        name: "local-only.txt",
+        source: "picker"
+      })
+    ]);
+  });
+
+  it("waits for picked image attachments to finish importing before sending", async () => {
+    const originalFileReader = globalThis.FileReader;
+    const onSubmitTask = vi.fn();
+    const finishReadCallbacks: Array<() => void> = [];
+
+    class SlowFileReader {
+      result: string | ArrayBuffer | null = null;
+      private loadListener: (() => void) | null = null;
+
+      addEventListener(type: string, listener: () => void) {
+        if (type === "load") {
+          this.loadListener = listener;
+        }
+      }
+
+      readAsDataURL() {
+        finishReadCallbacks.push(() => {
+          this.result = "data:image/png;base64,aW1hZ2U=";
+          this.loadListener?.();
+        });
+      }
+    }
+
+    Object.defineProperty(globalThis, "FileReader", {
+      configurable: true,
+      value: SlowFileReader
+    });
+
+    render(
+      <Composer
+        state={createInitialWorkbenchState()}
+        onSubmitTask={onSubmitTask}
+        onCancelActiveTask={vi.fn()}
+        onSelectModel={vi.fn()}
+        onAddAttachments={vi.fn()}
+      />
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "提取图片中的文字" }
+    });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const pickedFile = new File(["image"], "slow-capture.png", { type: "image/png" });
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [pickedFile]
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(screen.getByText("正在添加附件…")).toBeInTheDocument();
+    expect(onSubmitTask).not.toHaveBeenCalled();
+
+    expect(finishReadCallbacks).toHaveLength(1);
+    finishReadCallbacks[0]?.();
+    expect(await screen.findByText("slow-capture.png")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(onSubmitTask).toHaveBeenCalledWith("提取图片中的文字", [
+      expect.objectContaining({
+        name: "slow-capture.png",
+        base64Data: "aW1hZ2U="
+      })
+    ]);
+
+    Object.defineProperty(globalThis, "FileReader", {
+      configurable: true,
+      value: originalFileReader
+    });
   });
 
   it("disables input while a task is running", () => {
@@ -177,7 +520,7 @@ describe("Composer", () => {
     expect(onSelectModel).toHaveBeenCalledWith("qwen3.6:35b");
   });
 
-  it("uses the same dropdown style for NPC model selection and filters embedding models out", () => {
+  it("keeps only one model selector in the composer", () => {
     const onSelectNpcModel = vi.fn();
     const state = {
       ...createInitialWorkbenchState(),
@@ -212,16 +555,7 @@ describe("Composer", () => {
 
     expect(screen.getByRole("menuitemradio", { name: "qwen2.5-coder:7b 4.1 GB" })).toBeInTheDocument();
     expect(screen.getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "选择 NPC 模型：qwen2.5-coder:7b" }));
-    const npcMenu = screen.getByRole("menu", { name: "NPC 模型" });
-
-    expect(within(npcMenu).getByRole("menuitemradio", { name: "qwen2.5-coder:7b 4.1 GB" })).toHaveAttribute("aria-checked", "true");
-    expect(within(npcMenu).getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" })).toHaveAttribute("aria-checked", "false");
-
-    fireEvent.click(within(npcMenu).getByRole("menuitemradio", { name: "gemma4:12b 7.2 GB" }));
-
-    expect(onSelectNpcModel).toHaveBeenCalledWith("gemma4:12b");
+    expect(screen.queryByRole("button", { name: "选择 NPC 模型：qwen2.5-coder:7b" })).not.toBeInTheDocument();
   });
 
   it("shows a lightweight setup prompt near the composer when Ollama cannot be reached", () => {

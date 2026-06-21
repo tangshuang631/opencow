@@ -1,16 +1,28 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { chatWithOllamaModelMock, loadOllamaOverviewMock } = vi.hoisted(() => ({
+const { chatWithOllamaModelMock, loadOllamaOverviewMock, searchNetworkMock } = vi.hoisted(() => ({
   chatWithOllamaModelMock: vi.fn(),
-  loadOllamaOverviewMock: vi.fn()
+  loadOllamaOverviewMock: vi.fn(),
+  searchNetworkMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
   chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
+
+vi.mock("../features/assistant/localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("../features/assistant/localAssistantService")>(
+    "../features/assistant/localAssistantService"
+  );
+
+  return {
+    ...actual,
+    searchNetwork: searchNetworkMock
+  };
+});
 
 vi.mock("../features/workbench/workbenchState", async () => {
   const actual = await vi.importActual<typeof import("../features/workbench/workbenchState")>(
@@ -29,6 +41,7 @@ vi.mock("../features/workbench/workbenchState", async () => {
 
 describe("App chat search empty context", () => {
   it("tells the local model and audit log when search is enabled but no external sources are available", async () => {
+    searchNetworkMock.mockRejectedValue(new Error("OpenCow 默认搜索当前不可用"));
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -59,9 +72,9 @@ describe("App chat search empty context", () => {
     await waitFor(() => {
       expect(screen.getByText(/我会基于已有知识回答/)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "展开配置与记录" }));
-    fireEvent.click(screen.getByRole("button", { name: "展开日志细节" }));
+    fireEvent.click(screen.getByRole("button", { name: "审计" }));
+    const auditPanel = await screen.findByRole("region", { name: "审计" });
 
-    expect(screen.queryAllByText(/Search context status: enabled-no-sources/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/Search context status: enabled-no-sources/).length).toBeGreaterThan(0);
   });
 });

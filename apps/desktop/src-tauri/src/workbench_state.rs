@@ -37,10 +37,12 @@ pub fn workbench_state_load(app: AppHandle) -> Result<WorkbenchStateReadResult, 
                 payload: Some(payload),
             })
         }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(WorkbenchStateReadResult {
-            found: false,
-            payload: None,
-        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(WorkbenchStateReadResult {
+                found: false,
+                payload: None,
+            })
+        }
         Err(error) => Err(format!("failed to read {}: {error}", path.display())),
     }
 }
@@ -50,12 +52,14 @@ pub fn workbench_state_save(app: AppHandle, payload: WorkbenchStateEnvelope) -> 
     let path = workbench_state_file_path(&app)?;
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
     }
 
     let serialized = serde_json::to_string_pretty(&payload)
         .map_err(|error| format!("failed to serialize workbench state: {error}"))?;
-    fs::write(&path, format!("{serialized}\n")).map_err(|error| format!("failed to write {}: {error}", path.display()))
+    fs::write(&path, format!("{serialized}\n"))
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))
 }
 
 #[tauri::command]

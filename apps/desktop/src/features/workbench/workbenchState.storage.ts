@@ -115,13 +115,21 @@ function buildCleanupState(
         ? null
         : (nextState.conversation.restoredFromConversationId ?? null)
     },
+    composer: target === "conversation"
+      ? {
+          draftAttachments: []
+        }
+      : nextState.composer,
     history: {
       lastNonEmptyConversationEntries: target === "conversation"
         ? []
         : nextState.history.lastNonEmptyConversationEntries,
-      recentConversations: target === "conversation"
+      draftConversations: target === "conversation"
         ? []
-        : nextState.history.recentConversations
+        : nextState.history.draftConversations,
+      archivedConversations: target === "conversation"
+        ? []
+        : nextState.history.archivedConversations
     },
     storage: nextStorage,
     audit: {

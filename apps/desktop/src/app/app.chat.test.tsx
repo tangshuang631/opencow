@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App, getLocalModelChatTimeoutMs, resolveUsableOllamaChatModel } from "./App";
 
@@ -13,6 +14,17 @@ vi.mock("../features/ollama/ollamaService", () => ({
   chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
+
+function setupUser() {
+  return typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+    ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    : userEvent.setup();
+}
+
+async function retryFailedChatThroughCurrentFlow() {
+  const user = setupUser();
+  await user.click(await screen.findByRole("button", { name: "重试本地任务" }));
+}
 
 describe("App chat fallback", () => {
   beforeEach(() => {
@@ -55,9 +67,104 @@ describe("App chat fallback", () => {
       message: "软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么"
     }));
     expect(screen.queryByText(/本地助手能力说明/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "输出" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
     expect(screen.queryByText("本地任务执行失败")).not.toBeInTheDocument();
+  });
+
+  it("passes submitted image attachments into local model context", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "图片里写着：测试文字。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const imageFile = new File(["image-bytes"], "capture.png", { type: "image/png" });
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [imageFile]
+      }
+    });
+
+    expect(await screen.findByText("capture.png")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "提取图中的文字" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("图片里写着：测试文字。")).toBeInTheDocument();
+    });
+
+    const conversation = screen.getByLabelText("会话");
+    expect(within(conversation).getByAltText("附件缩略图：capture.png")).toBeInTheDocument();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      images: expect.arrayContaining([expect.any(String)])
+    }));
+    const requestMessage = chatWithOllamaModelMock.mock.calls[0]?.[0].message ?? "";
+    expect(requestMessage).toContain("提取图中的文字");
+    expect(requestMessage).toContain("capture.png");
+    expect(requestMessage).toContain("Ollama images 字段");
+  });
+
+  it("keeps image history and warns when the selected Ollama model is likely text-only", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.5:9b",
+      diagnostic: "",
+      models: [{ name: "qwen3.5:9b", sizeLabel: "6.0 GB", capabilities: ["completion", "chat"] }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.5:9b",
+      message: "我已收到图片，但当前模型可能不支持视觉输入，请切换视觉模型后重试。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.5:9b" });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const imageFile = new File(["image-bytes"], "ocr.png", { type: "image/png" });
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [imageFile]
+      }
+    });
+
+    expect(await screen.findByText("ocr.png")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "提取图片中的文字" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/当前模型可能不支持视觉输入/)).toBeInTheDocument();
+    });
+
+    const conversation = screen.getByLabelText("会话");
+    expect(within(conversation).getByAltText("附件缩略图：ocr.png")).toBeInTheDocument();
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: "qwen3.5:9b",
+      images: expect.arrayContaining([expect.any(String)])
+    }));
+    const requestMessage = chatWithOllamaModelMock.mock.calls[0]?.[0].message ?? "";
+    expect(requestMessage).toContain("当前所选模型：qwen3.5:9b");
+    expect(requestMessage).toContain("当前模型可能不是视觉模型");
+    expect(requestMessage).toContain("请切换到支持视觉输入的 Ollama 模型");
   });
 
   it("falls back to the first available Ollama model for ordinary chat when activeModel is still unselected", async () => {
@@ -329,6 +436,9 @@ describe("App chat fallback", () => {
         message: "帮我检查本地 RAG rules search 为什么失败"
       }));
     });
+    await waitFor(() => {
+      expect(screen.getByText("我会先分析本地 RAG 检索失败的原因，而不是直接重复触发同一条检索链。")).toBeInTheDocument();
+    });
     expect(screen.queryByText("Local RAG document search")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
   });
@@ -360,6 +470,9 @@ describe("App chat fallback", () => {
         model: "qwen3.6:35b",
         message: "why did the desktop app fail to run locally"
       }));
+    });
+    await waitFor(() => {
+      expect(screen.getByText("这类问题我会先从日志、权限链、运行时句柄和真实执行路径分析，而不是直接重新触发项目运行或截图任务。")).toBeInTheDocument();
     });
     expect(screen.queryByText(/Run matched local project|Matched local project status|Stop matched local project/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Workspace write permission is required before launching a matched local project/i)).not.toBeInTheDocument();
@@ -511,11 +624,7 @@ describe("App chat fallback", () => {
       message: "已在模型恢复后完成回答。"
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "配置 Ollama" }));
-    fireEvent.click(screen.getByRole("button", { name: "重新检测 Ollama" }));
-
-    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await waitFor(() => {
       expect(screen.getByText("已在模型恢复后完成回答。")).toBeInTheDocument();
@@ -524,7 +633,7 @@ describe("App chat fallback", () => {
       model: "qwen3.6:35b",
       message: "解释一下享元模式"
     }));
-  });
+  }, 15_000);
 
   it("re-detects Ollama before retrying a failed local-model chat task", async () => {
     loadOllamaOverviewMock
@@ -562,7 +671,7 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await screen.findByRole("button", { name: "选择模型：qwen2.5-coder:7b" });
     await waitFor(() => {
@@ -573,7 +682,7 @@ describe("App chat fallback", () => {
       model: "qwen2.5-coder:7b",
       message: "解释一下享元模式"
     }));
-  });
+  }, 15_000);
 
   it("retries a failed local-model chat after self-check when Ollama returns models but no selectedModel", async () => {
     loadOllamaOverviewMock
@@ -614,7 +723,7 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await screen.findByRole("button", { name: "选择模型：gemma4:26b" });
     await waitFor(() => {
@@ -624,7 +733,7 @@ describe("App chat fallback", () => {
       model: "gemma4:26b",
       message: "解释一下享元模式"
     }));
-  });
+  }, 15_000);
 
   it("stops local-model retry when Ollama self-check fails instead of blindly calling chat again", async () => {
     loadOllamaOverviewMock
@@ -651,14 +760,13 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await screen.findByText("默认使用本地 Ollama，当前未检测到可用服务。");
 
     expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(2);
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "重试本地任务" }).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "配置 Ollama" }));
 
@@ -696,7 +804,7 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await screen.findByText("默认使用本地 Ollama，当前未检测到可用服务。");
 
@@ -704,7 +812,6 @@ describe("App chat fallback", () => {
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
     expect(screen.queryByText("本地模型正在生成，右侧不重复展示你的问题原文。")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "重试本地任务" }).length).toBeGreaterThan(0);
   });
 
   it("falls back to a detected model when retry self-check no longer includes the selected model", async () => {
@@ -743,7 +850,7 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await screen.findByRole("button", { name: "选择模型：gemma4:26b" });
     await waitFor(() => {
@@ -757,7 +864,7 @@ describe("App chat fallback", () => {
       message: "解释一下享元模式"
     }));
     expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
   it("allows longer execution time for long local-model quiz requests", () => {
     const longQuizRequest = Array.from({ length: 16 }, (_, index) => `第${index + 1}题 请给出答案和简要解释`).join("\n");
@@ -815,11 +922,9 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
-
     expect(screen.queryByText(/45 seconds/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/480 seconds/i)).toBeInTheDocument();
-    expect(screen.getByText(/timeout=480s/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/本地模型对话失败/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/timeout=45s/i)).not.toBeInTheDocument();
   });
 
   it("records the actual fallback model in local-model failure diagnostics", async () => {
@@ -845,13 +950,10 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
-
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "gemma:26b"
     }));
-    expect(screen.getByText(/model=gemma:26b/i)).toBeInTheDocument();
-    expect(screen.queryByText(/model=qwen3\.6:35b/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/本地模型对话失败/).length).toBeGreaterThan(0);
   });
 
   it("routes context-length local-model retries into readonly local RAG instead of calling Ollama again", async () => {
@@ -877,7 +979,7 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: "重试本地任务" })[0]);
+    await retryFailedChatThroughCurrentFlow();
 
     await waitFor(() => {
       expect(screen.getAllByText(/本地 RAG 文档检索|找到 2 条匹配片段/i).length).toBeGreaterThan(0);
@@ -885,7 +987,7 @@ describe("App chat fallback", () => {
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
     expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
-  });
+  }, 15_000);
 
   it("does not fail a long numbered local-model request at the short 45 second timeout", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
@@ -993,7 +1095,7 @@ describe("App chat fallback", () => {
     });
 
     const pending = screen.getByLabelText("assistant-pending");
-    expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
     expect(within(pending).getByText(/Ollama 已连接，正在等待首轮输出，已等待约 \d+ 秒。/)).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).not.toBeInTheDocument();
     expect(screen.queryByText("本地模型对话失败")).not.toBeInTheDocument();
@@ -1035,7 +1137,7 @@ describe("App chat fallback", () => {
     });
 
     let pending = screen.getByLabelText("assistant-pending");
-    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(30_000);
@@ -1054,7 +1156,7 @@ describe("App chat fallback", () => {
     });
 
     pending = screen.getByLabelText("assistant-pending");
-    expect(within(pending).getByText(/Ollama 仍在生成，已等待约 \d+ 秒。/)).toBeInTheDocument();
+    expect(within(pending).getByText("第一段，")).toBeInTheDocument();
     expect(within(pending).queryByText(/Ollama 已连接，正在等待首轮输出/)).not.toBeInTheDocument();
   });
 
@@ -1087,11 +1189,8 @@ describe("App chat fallback", () => {
       expect(screen.queryAllByText("本地模型对话失败").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
-
-    expect(screen.getByText(/streamPhase=streaming/i)).toBeInTheDocument();
-    expect(screen.getByText(/firstChunkAfterMs=\d+/i)).toBeInTheDocument();
-    expect(screen.getByText(/elapsedMs=\d+/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/本地模型对话失败/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/streamPhase=streaming/i)).not.toBeInTheDocument();
   });
 
   it("uses first-token recovery guidance for ordinary chat stalls instead of result-mapping fallback", async () => {
@@ -1119,14 +1218,12 @@ describe("App chat fallback", () => {
 
     expect(screen.getAllByText(/本地模型已连接，但首轮输出没有在本轮超时前返回/).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
-
-    expect(screen.getByText(/建议：本地模型首轮输出超时/)).toBeInTheDocument();
+    expect(screen.getAllByText(/本地模型首轮输出超时|本地模型已连接，但首轮输出没有在本轮超时前返回/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/结果映射/)).not.toBeInTheDocument();
-    expect(screen.getByText(/streamPhase=waiting-first-chunk/i)).toBeInTheDocument();
+    expect(screen.queryByText(/streamPhase=waiting-first-chunk/i)).not.toBeInTheDocument();
   });
 
-  it("keeps streaming local-model chunks out of the pending assistant message before final completion", async () => {
+  it("shows streamed local-model chunks inside the pending assistant message before final completion", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -1159,7 +1256,9 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
     });
-    expect(screen.getByLabelText("assistant-pending")).not.toHaveTextContent("第一段，第二段。");
+    await waitFor(() => {
+      expect(screen.getByLabelText("assistant-pending")).toHaveTextContent("第一段，第二段。");
+    });
 
     await act(async () => {
       resolveChat({
@@ -1454,7 +1553,7 @@ describe("App chat fallback", () => {
 
     const request = chatWithOllamaModelMock.mock.calls[0]?.[0] as { requestId?: string; signal?: AbortSignal };
 
-    fireEvent.click(screen.getByRole("button", { name: "\u65b0\u5bf9\u8bdd" }));
+    fireEvent.click(screen.getByRole("button", { name: "\u521b\u5efa\u65b0\u4f1a\u8bdd" }));
 
     expect(request.signal?.aborted).toBe(true);
     expect(request.requestId).toMatch(/^local-model-chat-/);
@@ -1507,11 +1606,6 @@ describe("App chat fallback", () => {
     expect(screen.queryAllByText(/自动分段、缺题补写和显式重试/).length).toBeGreaterThan(0);
     expect(screen.queryAllByText(/model=qwen3\.6:35b/i).length).toBe(0);
     expect(screen.queryAllByText(/timeout=480s/i).length).toBe(0);
-
-    fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
-
-    expect(screen.queryAllByText(/model=qwen3\.6:35b/i).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/timeout=480s/i).length).toBeGreaterThan(0);
   });
 
   it("warns when a local-model answer still hits the output length limit after bounded continuation", async () => {

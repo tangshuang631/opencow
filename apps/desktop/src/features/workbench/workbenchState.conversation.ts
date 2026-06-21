@@ -75,6 +75,22 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
   const preservedConversationEntries = state.conversation.entries.filter((entry) => entry.id !== COMPRESSED_CONVERSATION_ENTRY_ID);
   const shouldPreserveConversationHistory = preservedConversationEntries.length > 0;
   const draftRecord = createDraftConversationRecord(state, state.conversation.entries);
+  const nextDraftConversationId = `draft-conversation-${state.storage.sessionCount + 1}`;
+  const nextDraftConversations = [
+    {
+      id: nextDraftConversationId,
+      title: "新会话",
+      summary: "等待第一条消息",
+      entries: [],
+      archivedAt: null
+    },
+    ...(
+      shouldPreserveConversationHistory
+        ? [{ ...draftRecord, archivedAt: null }]
+        : []
+    ),
+    ...getDraftConversations(state).filter((record) => record.id !== draftRecord.id)
+  ].slice(0, MAX_RECENT_CONVERSATIONS);
   const nextArchivedConversations = shouldPreserveConversationHistory
     ? [
         {
@@ -84,22 +100,17 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
         ...getArchivedConversations(state).filter((record) => record.id !== draftRecord.id)
       ].slice(0, MAX_RECENT_CONVERSATIONS)
     : getArchivedConversations(state);
-  const nextDraftConversations = [
-    {
-      id: `draft-conversation-${state.storage.sessionCount + 1}`,
-      title: "新会话",
-      summary: "等待第一条消息",
-      entries: [],
-      archivedAt: null
-    }
-  ];
 
   return {
     ...state,
     conversation: {
+      id: nextDraftConversations[0]?.id ?? nextDraftConversationId,
       entries: [],
       mode: "blank",
       restoredFromConversationId: nextDraftConversations[0]?.id ?? null
+    },
+    composer: {
+      draftAttachments: []
     },
     history: {
       lastNonEmptyConversationEntries: shouldPreserveConversationHistory
@@ -159,9 +170,13 @@ export function restoreRecentConversationState(
   return {
     ...state,
     conversation: {
+      id: record.id,
       entries: record.entries,
       mode: record.entries.length === 0 ? "blank" : "restored",
       restoredFromConversationId: record.id
+    },
+    composer: {
+      draftAttachments: []
     },
     history: {
       ...state.history,
@@ -221,10 +236,18 @@ export function deleteRecentConversationState(
   return {
     ...state,
     conversation: {
+      id: deletedCurrentConversation
+        ? (nextDraftConversations[0]?.id ?? `draft-conversation-${state.storage.sessionCount}`)
+        : state.conversation.id,
       entries: nextConversationEntries,
       mode: nextConversationMode,
       restoredFromConversationId: nextRestoredFromConversationId
     },
+    composer: deletedCurrentConversation
+      ? {
+          draftAttachments: []
+        }
+      : state.composer,
     history: {
       ...state.history,
       draftConversations: nextDraftConversations,
@@ -257,9 +280,13 @@ export function createArchivedConversationState(state: WorkbenchState): Workbenc
   return {
     ...state,
     conversation: {
+      id: nextDraftConversationId,
       entries: [],
       mode: "blank",
       restoredFromConversationId: nextDraftConversationId
+    },
+    composer: {
+      draftAttachments: []
     },
     history: {
       lastNonEmptyConversationEntries: state.conversation.entries,

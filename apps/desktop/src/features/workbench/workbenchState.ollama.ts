@@ -18,7 +18,7 @@ function isEmbeddingOnlyOllamaModel(modelName: string) {
 export function getChatCapableOllamaModels(availableModels: WorkbenchState["model"]["availableModels"]) {
   return availableModels.filter((model) => {
     const capabilities = model.capabilities ?? [];
-    const capabilityBasedEmbedding = capabilities.some((capability) => capability.toLowerCase() === "embedding");
+    const capabilityBasedEmbedding = capabilities.some((capability: string) => capability.toLowerCase() === "embedding");
 
     return !(capabilityBasedEmbedding || isEmbeddingOnlyOllamaModel(model.name));
   });
@@ -133,7 +133,7 @@ export function mergeOllamaOverview(state: WorkbenchState, overview: OllamaOverv
     ? diagnostic
     : `已完成 ${chatCapableModels.length} 个本地模型的读取检查。`;
   const nextActiveModel = getReachableOllamaActiveModel(overview);
-  const nextNpcModel = resolveUsableWorkbenchChatModel(state.settings.npc.localModel, overview.models) || nextActiveModel;
+  const nextNpcModel = resolveUsableWorkbenchChatModel(state.settings?.npc?.localModel ?? "", overview.models) || nextActiveModel;
 
   return recordRollbackEntry(
     {
@@ -221,7 +221,7 @@ export function createModelSelectedState(state: WorkbenchState, modelName: strin
       settings: {
         ...state.settings,
         npc: {
-          localModel: state.settings.npc.localModel || selectedModel.name
+          localModel: state.settings?.npc?.localModel || selectedModel.name
         }
       },
       output: {

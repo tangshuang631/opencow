@@ -22,6 +22,8 @@ import {
   loadNpcWorkspaceConfig,
   loadNpcWorkspace,
   removeKnowledgeFile,
+  type RollbackContext,
+  restoreRollbackFiles,
   searchNetwork,
   selectKnowledgeLibrary,
   updateNpcWorkspaceConfig,
@@ -808,12 +810,12 @@ function createLocalModelChatMessage(payload: {
 
   const sourceLines = visibleSources.map((source, index) => {
     const title = truncateChatSearchField(source.title || "未命名来源");
-    const provider = truncateChatSearchField(source.provider || "未知 provider", 80);
+    const sourceLabel = truncateChatSearchField(source.sourceLabel || source.provider || "未知来源", 80);
     const query = truncateChatSearchField(source.query || "未记录查询", 160);
     const url = truncateChatSearchField(source.url || "未记录地址", 180);
     const summary = truncateChatSearchField(source.summary || "未记录摘要");
 
-    return `${index + 1}. ${title} | provider=${provider} | query=${query} | url=${url} | summary=${summary}`;
+    return `${index + 1}. ${title} | source=${sourceLabel} | query=${query} | url=${url} | summary=${summary}`;
   });
 
   return [
@@ -823,6 +825,15 @@ function createLocalModelChatMessage(payload: {
     "",
     `用户问题：${normalizedMessage}`
   ].join("\n");
+}
+
+function looksLikeExplicitNetworkSearchRequest(message: string) {
+  const normalized = message.trim();
+
+  return (
+    /(?:帮我|请帮我|请)?(?:上网搜索|联网搜索|网上搜索)/.test(normalized)
+    || /\b(search (the )?web|internet search|web search|lookup online)\b/i.test(normalized)
+  );
 }
 
 export function getLocalModelChatTimeoutMs(message: string): number {
@@ -902,6 +913,7 @@ async function executeLocalModelChatTask(payload: {
         title: item.title,
         url: item.url,
         provider: networkResult.effective_provider,
+        sourceLabel: item.source_label ?? networkResult.effective_provider,
         query: payload.message,
         summary: item.summary,
         usedFallback: networkResult.used_fallback
@@ -917,7 +929,7 @@ async function executeLocalModelChatTask(payload: {
 
   const searchProviders = Array.from(
     new Set([
-      ...visibleSources.map((source) => source.provider.trim()).filter(Boolean),
+      ...visibleSources.map((source) => (source.sourceLabel || source.provider).trim()).filter(Boolean),
       ...(payload.searchEnabled && visibleSources.length === 0 && effectiveSearchProvider
         ? [effectiveSearchProvider]
         : [])
@@ -953,7 +965,7 @@ async function executeLocalModelChatTask(payload: {
   return {
     resultTitle: "本地模型答复",
     resultSummary: [result.message, ...lengthLimitRecoveryLines].join("\n"),
-    searchSources: visibleSources,
+    searchSources: payload.searchEnabled ? visibleSources : undefined,
     searchStatePatch: payload.searchEnabled
       ? {
           effectiveProvider: effectiveSearchProvider || "OpenCow 默认搜索",
@@ -981,6 +993,7 @@ async function executeNpcConfigWriteTask(payload: {
   availableModels: WorkbenchState["model"]["availableModels"];
   message: string;
   requestId?: string;
+  rollbackContext?: RollbackContext;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
 }): Promise<AssistantTaskExecutionResult> {
@@ -1006,7 +1019,8 @@ async function executeNpcConfigWriteTask(payload: {
   const writeResult = await writeNpcConfig({
     query: payload.message,
     modelOutput: result.message,
-    config: configResult.config
+    config: configResult.config,
+    rollbackContext: payload.rollbackContext
   });
   const parseStatusLines = configResult.status === "wrapped"
     ? [
@@ -1147,8 +1161,7 @@ type ExplainableReadonlyResultKind =
   | "rag-local-shell-create-temp-output"
   | "readonly-shell-git-status"
   | "readonly-shell-workspace-root"
-  | "readonly-shell-packages-dir"
-  | "network-search-guidance";
+  | "readonly-shell-packages-dir";
 
 function isExplainableReadonlyResultKind(kind: string | undefined): kind is ExplainableReadonlyResultKind {
   return kind === "workspace-overview"
@@ -1194,8 +1207,7 @@ function isExplainableReadonlyResultKind(kind: string | undefined): kind is Expl
     || kind === "rag-local-shell-create-temp-output"
     || kind === "readonly-shell-git-status"
     || kind === "readonly-shell-workspace-root"
-    || kind === "readonly-shell-packages-dir"
-    || kind === "network-search-guidance";
+    || kind === "readonly-shell-packages-dir";
 }
 
 function isSelfRepairMutationResultKind(kind: ExplainableReadonlyResultKind): boolean {
@@ -1440,10 +1452,6 @@ function getReadonlyOverviewExplanationTitle(
     return "本地 MCP 插件扫描说明";
   }
 
-  if (executionKind === "network-search-guidance") {
-    return "联网搜索说明";
-  }
-
   if (executionKind === "skills-local-enabled-rag-doc-search") {
     return "Skill 辅助 RAG 说明";
   }
@@ -1562,9 +1570,7 @@ function createReadonlyOverviewExplanationPrompt(payload: {
                                   ? "重点解释匹配到的 MCP 插件用途、激活方式、工具/Skill 暴露情况、配置边界和下一步安全验证建议。"
                                   : payload.executionKind === "mcp-local-plugin-scan"
                                     ? "重点解释扫描到的本地 MCP 插件生态、插件入口、激活方式线索、可用工具边界和下一步安全验证建议。"
-                                    : payload.executionKind === "network-search-guidance"
-                                      ? "重点解释本轮没有执行外部联网搜索、搜索 provider 未配置、需要用户批准后才能联网，以及可以先用本地 RAG 的安全替代路径。"
-                                      : payload.executionKind === "skills-local-enabled-rag-doc-search"
+                                    : payload.executionKind === "skills-local-enabled-rag-doc-search"
                                         ? "重点根据已匹配 Skill 和本地 RAG 命中文档解释答案、引用依据、边界和下一步可执行建议。"
                                         : payload.executionKind === "npc-local-enabled-rag-shell-handoff-preview"
                                           ? "重点解释 NPC、已启用 Skill、本地 RAG 依据和 Shell 交接计划；明确这只是只读预览，没有执行命令，继续时仍必须经过权限审批和必要的高风险确认。"
@@ -2418,8 +2424,12 @@ export function App() {
               availableModels,
               message: localModelMessage,
               attachments: activeTask.attachments,
+              rollbackContext: {
+                conversationId: stateRef.current.conversation.id ?? stateRef.current.conversation.restoredFromConversationId ?? "draft-conversation-1",
+                rollbackEntryId: activeTask.id
+              },
               searchEnabled: stateRef.current.search.enabled,
-              searchProviderLabel: stateRef.current.search.providerLabel,
+              searchProviderLabel: stateRef.current.search.customProviderLabel,
               searchBaseUrl: stateRef.current.search.customBaseUrl,
               searchApiKey: stateRef.current.search.customApiKey,
               suppressFallbackNotice: stateRef.current.search.suppressFallbackNotice,
@@ -2544,6 +2554,10 @@ export function App() {
       const executeAssistantTaskWithOptionalExplanation = async () => {
         const result = await executeAssistantTask(executionPlan, {
           snapshotAvailable: stateRef.current.storage.snapshotCount > 0,
+          rollbackContext: {
+            conversationId: stateRef.current.conversation.id ?? stateRef.current.conversation.restoredFromConversationId ?? "draft-conversation-1",
+            rollbackEntryId: activeTask.id
+          },
           searchConfig: {
             enabled: stateRef.current.search.enabled,
             customProviderLabel: stateRef.current.search.customProviderLabel,
@@ -2670,7 +2684,7 @@ export function App() {
         enabled: true,
         source: "conversation_request",
         reason: "\u7528\u6237\u8bf7\u6c42\u8054\u7f51\u641c\u7d22\u6700\u65b0\u8d44\u6599\uff0c\u9700\u8981\u5148\u786e\u8ba4\u542f\u7528\u8054\u7f51\u641c\u7d22\u3002",
-        providerLabel: currentState.search.providerLabel,
+        providerLabel: currentState.search.customProviderLabel,
         queuedMessage: normalized
       };
     }
@@ -2681,7 +2695,7 @@ export function App() {
         enabled: true,
         source: "conversation_request",
         reason: "用户请求开启联网搜索以补充最新来源。",
-        providerLabel: currentState.search.providerLabel
+        providerLabel: currentState.search.customProviderLabel
       };
     }
 
@@ -2982,9 +2996,50 @@ export function App() {
   }
 
   function handleApplyRollback() {
-    startTransition(() => {
-      setState((current) => applyPendingRollbackState(current));
-    });
+    const pendingPreview = stateRef.current.rollback.pendingPreview;
+    const conversationId =
+      stateRef.current.conversation.id
+      ?? stateRef.current.conversation.restoredFromConversationId
+      ?? "draft-conversation-1";
+
+    if (!pendingPreview) {
+      return;
+    }
+
+    void restoreRollbackFiles({
+      conversationId,
+      rollbackEntryId: pendingPreview.targetEntryId
+    })
+      .then(() => {
+        startTransition(() => {
+          setState((current) => applyPendingRollbackState(current));
+        });
+      })
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : "本地文件恢复失败";
+        startTransition(() => {
+          setState((current) => ({
+            ...current,
+            audit: {
+              summary: "本地文件回退失败",
+              lastEvent: {
+                module: "rollback",
+                detail,
+                timestamp: "rollback-file-restore-failed",
+                source: "rollback_file_restore_failed"
+              }
+            },
+            error: {
+              module: "rollback",
+              summary: "本地文件未能完整恢复",
+              detail,
+              actionLabel: "请稍后重试回退，或先检查本地文件权限和占用状态。",
+              timestamp: "rollback-file-restore-failed",
+              source: "rollback_file_restore_failed"
+            }
+          }));
+        });
+      });
   }
 
   function handleCancelRollback() {
@@ -3145,6 +3200,16 @@ export function App() {
     });
   }
 
+  function currentRollbackContext() {
+    return {
+      conversationId:
+        stateRef.current.conversation.id
+        ?? stateRef.current.conversation.restoredFromConversationId
+        ?? "draft-conversation-1",
+      rollbackEntryId: stateRef.current.rollback.entries[0]?.id ?? "startup-baseline"
+    };
+  }
+
   function handleUpdateRollbackLimit(limit: number) {
     startTransition(() => {
       setState((current) => createRollbackLimitUpdatedState(current, limit));
@@ -3153,7 +3218,7 @@ export function App() {
 
   function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {
     if (target === "knowledge") {
-      void clearKnowledgeImports(stateRef.current.knowledge.activeLibraryId)
+      void clearKnowledgeImports(stateRef.current.knowledge.activeLibraryId, currentRollbackContext())
         .then((inventory) => {
           startTransition(() => {
             setState((current) => createStorageCleanupState({
@@ -3279,7 +3344,7 @@ export function App() {
   }
 
   function handleImportKnowledgeFile(path: string) {
-    void importKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId)
+    void importKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId, currentRollbackContext())
       .then((inventory) => {
         startTransition(() => {
           setState((current) => ({
@@ -3319,7 +3384,7 @@ export function App() {
         }
 
         return Promise.all(
-          candidatePaths.map((path) => importKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId))
+          candidatePaths.map((path) => importKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId, currentRollbackContext()))
         ).then((inventories) => {
           const inventory = inventories[inventories.length - 1];
 
@@ -3349,7 +3414,7 @@ export function App() {
   }
 
   function handleRemoveKnowledgeFile(path: string) {
-    void removeKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId)
+    void removeKnowledgeFile(path, stateRef.current.knowledge.activeLibraryId, currentRollbackContext())
       .then((inventory) => {
         startTransition(() => {
           setState((current) => ({
@@ -3372,7 +3437,7 @@ export function App() {
   }
 
   function handleCreateKnowledgeLibrary(name: string, description?: string) {
-    void createKnowledgeLibrary(name, description)
+    void createKnowledgeLibrary(name, description, currentRollbackContext())
       .then((inventory) => {
         startTransition(() => {
           setState((current) => ({
@@ -3470,7 +3535,7 @@ export function App() {
       rulesDraft: "",
       enabledSkillNames: [],
       knowledgeLibraryIds: optimisticNpc.knowledgeLibraryIds
-    }).then((workspace) => {
+    }, currentRollbackContext()).then((workspace) => {
       startTransition(() => {
         setState((current) => ({
           ...current,
@@ -3632,7 +3697,7 @@ export function App() {
       }
     }));
 
-    void updateNpcWorkspaceConfig(nextNpc)
+    void updateNpcWorkspaceConfig(nextNpc, currentRollbackContext())
       .then((workspace) => {
         startTransition(() => {
           setState((current) => ({
@@ -3798,6 +3863,22 @@ export function App() {
             queuedExecutionAuditSummary: assistantPlan.queuedExecutionAuditSummary,
             queuedExecutionAuditDetail: assistantPlan.queuedExecutionAuditDetail,
             queuedMessage: assistantPlan.queuedMessage
+          });
+        }
+
+        const shouldForceNetworkSearchTask =
+          current.search.enabled
+          && looksLikeExplicitNetworkSearchRequest(resolvedMessage)
+          && attachments.length === 0;
+
+        if (shouldForceNetworkSearchTask) {
+          return createUserTaskSubmittedState(current, {
+            message,
+            executionMessage: resolvedMessage === message ? undefined : resolvedMessage,
+            executionKind: "network-search-guidance",
+            executionTitle: "联网搜索说明",
+            executionAuditSummary: "Local assistant routed an explicit network search request to the network search workflow.",
+            executionAuditDetail: `Explicit network search task: ${resolvedMessage}`
           });
         }
 

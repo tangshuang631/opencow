@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelPendingConfirmationState,
   cancelPermissionModeChangeState,
@@ -17,6 +17,7 @@ import {
   createTaskExecutionSucceededState,
   createTaskExecutionStartedState,
   createUserTaskSubmittedState,
+  requestRollbackPreviewState,
   createToolExecutionErrorState,
   requestPermissionModeChangeState
 } from "../workbenchState";
@@ -24,6 +25,10 @@ import { mergeOllamaOverview } from "../workbenchState";
 import { MainConversation } from "./MainConversation";
 
 describe("MainConversation", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps a new conversation visually blank by default", () => {
     const { container } = render(
       <MainConversation state={createInitialWorkbenchState()} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />
@@ -56,7 +61,7 @@ describe("MainConversation", () => {
             summary: "帮我继续修网页端历史记录"
           }
         ],
-        recentConversations: [
+        draftConversations: [
           {
             id: "recent-conversation-1",
             title: "帮我继续修网页端历史记录",
@@ -70,7 +75,8 @@ describe("MainConversation", () => {
               }
             ]
           }
-        ]
+        ],
+        archivedConversations: []
       }
     };
 
@@ -110,6 +116,126 @@ describe("MainConversation", () => {
     expect(screen.queryByText("本地助手工作台")).not.toBeInTheDocument();
     expect(screen.queryByText("Ollama 本地优先")).not.toBeInTheDocument();
     expect(screen.queryByText("当前权限")).not.toBeInTheDocument();
+  });
+
+  it("renders historical user attachments and reopens them on double click", () => {
+    const onOpenAttachment = vi.fn();
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "看一下这些附件",
+      attachments: [
+        {
+          id: "attachment-1",
+          name: "capture-1.png",
+          mimeType: "image/png",
+          sizeBytes: 4096,
+          kind: "image",
+          filePath: "/tmp/capture-1.png",
+          previewUrl: "blob:capture-1",
+          source: "drop"
+        },
+        {
+          id: "attachment-2",
+          name: "谭懿钧简历-AI方向.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 2048,
+          kind: "file",
+          filePath: "/tmp/resume.pdf",
+          source: "paste"
+        },
+        {
+          id: "attachment-3",
+          name: "payload.bin",
+          mimeType: "application/octet-stream",
+          sizeBytes: 512,
+          kind: "file",
+          filePath: "/tmp/payload.bin",
+          source: "drop"
+        }
+      ]
+    });
+
+    render(
+      <MainConversation
+        state={submitted}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+        onOpenAttachment={onOpenAttachment}
+      />
+    );
+
+    const firstAttachment = screen.getByRole("button", { name: /打开附件：capture-1\.png/i });
+    const messageBody = firstAttachment.closest(".message-body");
+    expect(screen.getByAltText("附件缩略图：capture-1.png")).toHaveAttribute("src", "blob:capture-1");
+    expect(messageBody?.textContent?.indexOf("capture-1.png")).toBeLessThan(
+      messageBody?.textContent?.indexOf("看一下这些附件") ?? 0
+    );
+    expect(screen.queryByText(/图片 ·/)).not.toBeInTheDocument();
+    expect(screen.getByText("谭懿钧简历-AI方向.pdf")).toBeInTheDocument();
+    expect(screen.getByText("PDF")).toBeInTheDocument();
+    expect(screen.getByText("?")).toBeInTheDocument();
+
+    fireEvent.doubleClick(firstAttachment);
+
+    expect(onOpenAttachment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "attachment-1",
+        name: "capture-1.png"
+      })
+    );
+  });
+
+  it("auto-scrolls to the newest message when conversation content changes", () => {
+    const scrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    let latestScrollTop = 0;
+
+    Object.defineProperty(HTMLElement.prototype, "scrollTop", {
+      configurable: true,
+      get() {
+        return latestScrollTop;
+      },
+      set(value) {
+        latestScrollTop = value;
+      }
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return 480;
+      }
+    });
+
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "第一条消息",
+      executionKind: "local-model-chat",
+      executionTitle: "本地模型对话",
+      executionAuditSummary: "Local assistant planned an ordinary local model chat response.",
+      executionAuditDetail: "Local model chat task: 第一条消息"
+    });
+
+    const { rerender } = render(
+      <MainConversation state={submitted} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />
+    );
+
+    expect(latestScrollTop).toBe(480);
+
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: "这里是最新回复。"
+    });
+
+    latestScrollTop = 0;
+    rerender(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(latestScrollTop).toBe(480);
+
+    if (scrollTopDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "scrollTop", scrollTopDescriptor);
+    }
+
+    if (scrollHeightDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    }
   });
 
   it("surfaces capability cancellation recovery in the main conversation", () => {
@@ -311,7 +437,7 @@ describe("MainConversation", () => {
     expect(screen.queryByText(/TOOL_ERROR_DETAIL_SENTINEL/i)).not.toBeInTheDocument();
   });
 
-  it("surfaces missing search provider repair guidance in the main conversation", () => {
+  it("keeps the main conversation empty when custom search provider is cleared back to default search", () => {
     const searchEnabled = createSearchToggleState(createInitialWorkbenchState(), {
       enabled: true,
       providerLabel: "Tavily"
@@ -322,11 +448,9 @@ describe("MainConversation", () => {
 
     render(<MainConversation state={missingProvider} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
 
-    expect(screen.getAllByText(/联网搜索 Provider 未配置/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/前往设置配置联网搜索 Provider/)).toBeInTheDocument();
-    expect(screen.getByText(/不会执行实时联网检索/)).toBeInTheDocument();
-    expect(screen.queryByText(/Search provider is not configured/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Configure a search provider/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/联网搜索 Provider 未配置/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/前往设置配置联网搜索 Provider/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/不会执行实时联网检索/)).not.toBeInTheDocument();
   });
 
   it("offers rollback from the user message instead of assistant recovery chrome", () => {
@@ -350,7 +474,7 @@ describe("MainConversation", () => {
     expect(screen.queryByRole("button", { name: /预览回退/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "回退到这条消息之前" }));
 
-    expect(onPreviewRollback).toHaveBeenCalledWith("startup-baseline");
+    expect(onPreviewRollback).toHaveBeenCalledWith("composer-submit-local-task-1");
   });
 
   it("rolls back a later user message to the state immediately before that message", () => {
@@ -365,7 +489,6 @@ describe("MainConversation", () => {
         resultSummary: "The first request completed."
       }
     );
-    const firstCompletedRollbackId = firstCompleted.rollback.entries[0]?.id;
     const secondSubmitted = createUserTaskSubmittedState(firstCompleted, {
       message: "second local request"
     });
@@ -377,8 +500,7 @@ describe("MainConversation", () => {
     expect(rollbackButtons).toHaveLength(2);
     fireEvent.click(rollbackButtons[1]);
 
-    expect(firstCompletedRollbackId).toBeDefined();
-    expect(onPreviewRollback).toHaveBeenCalledWith(firstCompletedRollbackId);
+    expect(onPreviewRollback).toHaveBeenCalledWith("composer-submit-local-task-4");
     expect(onPreviewRollback).not.toHaveBeenCalledWith("startup-baseline");
   });
 
@@ -599,7 +721,27 @@ describe("MainConversation", () => {
     expect(screen.queryByRole("button", { name: /预览回退/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "回退到这条消息之前" }));
 
-    expect(onPreviewRollback).toHaveBeenCalledWith("startup-baseline");
+    expect(onPreviewRollback).toHaveBeenCalledWith("composer-submit-local-task-1");
+  });
+
+  it("keeps rollback preview confirmation out of the main conversation", () => {
+    const completed = createTaskExecutionSucceededState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "first request"
+        })
+      ),
+      {
+        resultTitle: "Done",
+        resultSummary: "First request completed."
+      }
+    );
+    const previewed = requestRollbackPreviewState(completed, "startup-baseline");
+
+    render(<MainConversation state={previewed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.queryByText("等待确认回退")).not.toBeInTheDocument();
+    expect(screen.queryByText(/准备回退到 启动基线/)).not.toBeInTheDocument();
   });
 
   it("keeps task cancellation recovery concise in the main conversation", () => {
@@ -678,8 +820,8 @@ describe("MainConversation", () => {
     const pending = screen.getByLabelText("assistant-pending");
 
     expect(pending).toBeInTheDocument();
-    expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
+    expect(within(pending).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
     expect(screen.getAllByText("开源协议有哪些").length).toBeGreaterThan(0);
     expect(within(pending).queryByText("开源协议有哪些")).not.toBeInTheDocument();
@@ -713,7 +855,7 @@ describe("MainConversation", () => {
 
     const pending = screen.getByLabelText("assistant-pending");
 
-    expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
     expect(within(pending).getByText("Ollama 仍在生成，已等待约 15 秒。")).toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
     expect(screen.getAllByText("开源协议有哪些").length).toBeGreaterThan(0);
@@ -744,7 +886,7 @@ describe("MainConversation", () => {
 
     const pending = screen.getByLabelText("assistant-pending");
 
-    expect(within(pending).getByText("Ollama 正在生成 NPC 配置")).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
     expect(within(pending).getByText("Ollama 已连接，正在等待首轮输出，已等待约 15 秒。")).toBeInTheDocument();
     expect(screen.getAllByText("你能帮我创建一个课程助手npc吗").length).toBeGreaterThan(0);
   });
@@ -786,10 +928,10 @@ describe("MainConversation", () => {
     const conversation = screen.getByLabelText("会话");
     const pending = screen.getByLabelText("assistant-pending");
 
-    expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
+    expect(within(pending).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
-    expect(within(conversation).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
+    expect(within(conversation).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText("请稍候，界面保持响应中")).not.toBeInTheDocument();
     expect(within(conversation).getAllByText("你能做什么").length).toBeGreaterThan(0);
     expect(within(conversation).getAllByText("上一轮问题").length).toBeGreaterThan(0);
@@ -906,5 +1048,106 @@ describe("MainConversation", () => {
     expect(screen.queryByText(/Search context items:/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Search context status:/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Search provider:/i)).not.toBeInTheDocument();
+  });
+
+  it("collapses knowledge details behind a compact toggle and localizes knowledge metadata", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "检索知识库规则"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地 RAG 说明",
+      resultSummary: "本地知识库返回了匹配内容。",
+      auditDetailLines: [
+        "Knowledge library: 默认知识库",
+        "Knowledge library sources: 暂无匹配来源",
+        "Indexed documents: 0",
+        "命中卡片：来源文件=rules.md；匹配分数=42；片段预览=Shell 执行必须经过权限确认。；回查指令=只看 rules.md"
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "展开信息引用" })).toBeInTheDocument();
+    expect(screen.getByText("1 条信息引用")).toBeInTheDocument();
+    expect(screen.queryByText(/Knowledge library:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("知识库：默认知识库")).not.toBeInTheDocument();
+    expect(screen.queryByText("rules.md")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+
+    expect(screen.getByRole("button", { name: "收起信息引用" })).toBeInTheDocument();
+    expect(screen.getByText("知识库：默认知识库")).toBeInTheDocument();
+    expect(screen.getByText("知识库来源：暂无匹配来源")).toBeInTheDocument();
+    expect(screen.getByText("已索引文档：0")).toBeInTheDocument();
+    expect(screen.getByText("来源文件：rules.md")).toBeInTheDocument();
+    expect(screen.getByText("匹配分数：42")).toBeInTheDocument();
+    expect(screen.getByText("Shell 执行必须经过权限确认。")).toBeInTheDocument();
+  });
+
+  it("collapses network-search references behind the same compact info toggle", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "帮我上网搜索豆包"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "联网搜索结果",
+      resultSummary: "已通过 OpenCow 默认搜索 返回 2 条来源。",
+      searchSources: [
+        {
+          title: "豆包",
+          url: "https://www.doubao.com/",
+          provider: "豆包官网",
+          sourceLabel: "豆包官网",
+          query: "帮我上网搜索豆包",
+          summary: "豆包是字节跳动推出的 AI 助手产品。"
+        },
+        {
+          title: "豆包帮助中心",
+          url: "https://www.doubao.com/help",
+          provider: "豆包帮助中心",
+          sourceLabel: "豆包帮助中心",
+          query: "帮我上网搜索豆包",
+          summary: "包含产品使用与常见问题说明。"
+        }
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "展开信息引用" })).toBeInTheDocument();
+    expect(screen.getByText("2 条信息引用")).toBeInTheDocument();
+    expect(screen.queryByText("https://www.doubao.com/")).not.toBeInTheDocument();
+    expect(screen.queryByText("豆包是字节跳动推出的 AI 助手产品。")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+
+    expect(screen.getByText("豆包")).toBeInTheDocument();
+    expect(screen.getByText("来源：豆包官网")).toBeInTheDocument();
+    expect(screen.getByText("来源：豆包帮助中心")).toBeInTheDocument();
+    expect(screen.queryByText("https://www.doubao.com/")).not.toBeInTheDocument();
+    expect(screen.getByText("豆包是字节跳动推出的 AI 助手产品。")).toBeInTheDocument();
+    expect(screen.getByText("豆包帮助中心")).toBeInTheDocument();
+    expect(screen.getByText("包含产品使用与常见问题说明。")).toBeInTheDocument();
+    expect(screen.getAllByText("原文链接").length).toBe(2);
+  });
+
+  it("renders assistant markdown without exposing raw double asterisks", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "抽象工厂模式是什么"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary:
+        "**结论：**\n抽象工厂模式是一种**创建型设计模式**。\n\n**简要解析：**\n1. **核心目的**：解耦对象创建。\n2. **结构构成**：\n   * **抽象工厂**：定义创建接口。\n   * **具体工厂**：生成一组产品。\n"
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.queryByText("**")).not.toBeInTheDocument();
+    expect(screen.getByText("结论：")).toBeInTheDocument();
+    expect(screen.getByText(/抽象工厂模式是一种/)).toBeInTheDocument();
+    expect(screen.getByText("简要解析：")).toBeInTheDocument();
+    expect(screen.getByText("核心目的")).toBeInTheDocument();
+    expect(screen.getByText("抽象工厂")).toBeInTheDocument();
+    expect(screen.getByText("具体工厂")).toBeInTheDocument();
   });
 });

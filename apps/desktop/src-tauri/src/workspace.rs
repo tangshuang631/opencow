@@ -1,3 +1,4 @@
+use crate::rollback_files::{capture_paths_for_context, RollbackContextPayload};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
@@ -5,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, time::Duration};
+use tauri::AppHandle;
 
 #[derive(Serialize)]
 pub struct WorkspaceOverview {
@@ -70,6 +72,7 @@ pub struct WorkspaceProjectRunResult {
 pub struct NetworkSearchResultItem {
     title: String,
     url: String,
+    source_label: String,
     summary: String,
 }
 
@@ -93,12 +96,7 @@ pub struct NetworkSearchPayload {
 }
 
 #[derive(Debug, Deserialize)]
-struct WikipediaOpenSearchResponse(
-    String,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-);
+struct WikipediaOpenSearchResponse((), Vec<String>, Vec<String>, Vec<String>);
 
 #[derive(Serialize)]
 pub struct WorkspaceProjectStatusResult {
@@ -153,6 +151,7 @@ pub struct NpcConfigWritePayload {
     query: String,
     model_output: String,
     config: Value,
+    rollback_context: Option<RollbackContextPayload>,
 }
 
 #[derive(Debug, Serialize)]
@@ -201,6 +200,13 @@ pub struct NpcWorkspaceConfigUpsertPayload {
     knowledge_library_ids: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NpcWorkspaceConfigMutationPayload {
+    payload: NpcWorkspaceConfigUpsertPayload,
+    rollback_context: Option<RollbackContextPayload>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
     project_name: String,
@@ -215,6 +221,7 @@ pub struct WorkspaceProjectNpcShowcasePublishPreviewResult {
 
 #[tauri::command]
 pub fn workspace_npc_config_write(
+    app: AppHandle,
     payload: NpcConfigWritePayload,
 ) -> Result<NpcConfigWriteResult, String> {
     let root = resolve_workspace_root()?;
@@ -236,6 +243,7 @@ pub fn workspace_npc_config_write(
 
     let config_path = config_directory.join(format!("{slug}.json"));
     ensure_path_stays_in_workspace(&root, &config_path)?;
+    capture_paths_for_context(&app, &payload.rollback_context, &[config_path.clone()])?;
 
     let mut saved_config = payload.config;
     if let Some(object) = saved_config.as_object_mut() {
@@ -287,8 +295,17 @@ pub async fn network_search(payload: NetworkSearchPayload) -> Result<NetworkSear
         .unwrap_or_default()
         .to_string();
 
+    let search_query = normalize_network_search_query(&query);
+
     if !custom_provider.is_empty() {
-        match run_custom_network_search(&query, &custom_provider, &custom_base_url, &custom_api_key).await {
+        match run_custom_network_search(
+            &search_query,
+            &custom_provider,
+            &custom_base_url,
+            &custom_api_key,
+        )
+        .await
+        {
             Ok(items) if !items.is_empty() => {
                 return Ok(NetworkSearchResult {
                     query,
@@ -301,7 +318,7 @@ pub async fn network_search(payload: NetworkSearchPayload) -> Result<NetworkSear
             }
             Ok(_) => {}
             Err(error) => {
-                let fallback_items = run_default_network_search(&query).await?;
+                let fallback_items = run_default_network_search(&query, &search_query).await?;
                 return Ok(NetworkSearchResult {
                     query,
                     provider: custom_provider,
@@ -316,7 +333,7 @@ pub async fn network_search(payload: NetworkSearchPayload) -> Result<NetworkSear
         }
     }
 
-    let items = run_default_network_search(&query).await?;
+    let items = run_default_network_search(&query, &search_query).await?;
     Ok(NetworkSearchResult {
         query,
         provider: "OpenCow 默认搜索".to_string(),
@@ -349,35 +366,168 @@ async fn run_custom_network_search(
     Err(format!("暂不支持的自定义搜索提供方：{provider_label}"))
 }
 
-async fn run_default_network_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
-    let direct_attempt = run_wikipedia_open_search(query, false).await;
+async fn run_default_network_search(
+    original_query: &str,
+    normalized_query: &str,
+) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let mut failure_reasons = Vec::new();
 
-    match direct_attempt {
+    match run_bing_rss_search(normalized_query).await {
         Ok(items) if !items.is_empty() => return Ok(items),
-        Ok(_) => {}
-        Err(_) => {}
+        Ok(_) => failure_reasons.push("Bing RSS 没有返回可用结果".to_string()),
+        Err(error) => failure_reasons.push(format!("Bing RSS 请求失败：{error}")),
     }
 
-    let proxy_attempt = run_wikipedia_open_search(query, true).await;
-
-    match proxy_attempt {
-        Ok(items) if !items.is_empty() => Ok(items),
-        Ok(_) => Err("OpenCow 默认搜索没有返回可用来源。".to_string()),
-        Err(error) => Err(format!(
-            "OpenCow 默认搜索当前不可用，请检查网络或代理设置后重试。原因：{error}"
-        )),
+    if contains_cjk(original_query) || contains_cjk(normalized_query) {
+        match run_sogou_html_search(normalized_query).await {
+            Ok(items) if !items.is_empty() => return Ok(items),
+            Ok(_) => failure_reasons.push("搜狗搜索没有返回可用结果".to_string()),
+            Err(error) => failure_reasons.push(format!("搜狗搜索请求失败：{error}")),
+        }
     }
+
+    match run_wikipedia_open_search(normalized_query).await {
+        Ok(items) if !items.is_empty() => return Ok(items),
+        Ok(_) => failure_reasons.push("Wikipedia 没有返回可用结果".to_string()),
+        Err(error) => failure_reasons.push(format!("Wikipedia 请求失败：{error}")),
+    }
+
+    Err(format!(
+        "OpenCow 默认搜索当前不可用，请检查网络连接后重试。{}",
+        failure_reasons.join("；")
+    ))
 }
 
-async fn run_wikipedia_open_search(
-    query: &str,
-    use_system_proxy: bool,
-) -> Result<Vec<NetworkSearchResultItem>, String> {
+async fn run_bing_rss_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let client = build_search_client(false)?;
+    let response = client
+        .get("https://www.bing.com/search")
+        .query(&[("q", query), ("format", "rss"), ("setlang", "zh-Hans")])
+        .header("Accept", "application/rss+xml, application/xml, text/xml")
+        .send()
+        .await
+        .map_err(|error| format!("request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("failed to read Bing RSS response: {error}"))?;
+
+    let query_tokens = build_search_match_tokens(query);
+    let mut items = Vec::new();
+    for segment in body.split("<item>").skip(1) {
+        let item_block = match segment.split_once("</item>") {
+            Some((value, _)) => value,
+            None => continue,
+        };
+        let title = extract_xml_tag(item_block, "title")
+            .map(decode_basic_html_entities)
+            .map(|value| normalize_search_result_text(&value))
+            .unwrap_or_default();
+        let url = extract_xml_tag(item_block, "link")
+            .map(decode_basic_html_entities)
+            .unwrap_or_default();
+        let summary = extract_xml_tag(item_block, "description")
+            .map(decode_basic_html_entities)
+            .map(|value| normalize_search_result_text(&value))
+            .unwrap_or_else(|| "OpenCow 默认搜索返回了可用网页结果。".to_string());
+
+        if title.trim().is_empty() || url.trim().is_empty() {
+            continue;
+        }
+
+        if !result_matches_query(&query_tokens, &title, &summary, &url) {
+            continue;
+        }
+
+        items.push(NetworkSearchResultItem {
+            source_label: infer_source_label(&title, &url, "Bing"),
+            title,
+            url,
+            summary,
+        });
+        if items.len() >= 5 {
+            break;
+        }
+    }
+
+    Ok(items)
+}
+
+async fn run_sogou_html_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
+    let client = build_search_client(false)?;
+    let response = client
+        .get("https://www.sogou.com/web")
+        .query(&[("query", query)])
+        .header("Accept", "text/html,application/xhtml+xml")
+        .send()
+        .await
+        .map_err(|error| format!("request failed: {error}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("failed to read Sogou response: {error}"))?;
+    let query_tokens = build_search_match_tokens(query);
+    let mut items = Vec::new();
+
+    for segment in body.split("<h3").skip(1) {
+        let title_block = match segment.split_once("</h3>") {
+            Some((value, _)) => value,
+            None => continue,
+        };
+        let href = extract_html_attribute(title_block, "href").unwrap_or_default();
+        let title = normalize_search_result_text(title_block);
+        let summary = segment
+            .split_once("<div class=\"ft\"")
+            .and_then(|(_, rest)| rest.split_once("</div>").map(|(value, _)| value))
+            .map(normalize_search_result_text)
+            .unwrap_or_else(|| "OpenCow 默认搜索返回了可用网页结果。".to_string());
+
+        let resolved_url = extract_html_attribute(segment, "url")
+            .filter(|value| value.starts_with("http"))
+            .or_else(|| {
+                href.strip_prefix("/link?url=")
+                    .map(|_| "https://www.sogou.com".to_string() + &href)
+            })
+            .unwrap_or(href);
+
+        if title.trim().is_empty() || resolved_url.trim().is_empty() {
+            continue;
+        }
+
+        if !result_matches_query(&query_tokens, &title, &summary, &resolved_url) {
+            continue;
+        }
+
+        items.push(NetworkSearchResultItem {
+            source_label: infer_source_label(&title, &resolved_url, "搜狗搜索"),
+            title,
+            url: resolved_url,
+            summary,
+        });
+        if items.len() >= 5 {
+            break;
+        }
+    }
+
+    Ok(items)
+}
+
+async fn run_wikipedia_open_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
     let encoded_query = urlencoding::encode(query);
     let url = format!(
         "https://en.wikipedia.org/w/api.php?action=opensearch&search={encoded_query}&limit=5&namespace=0&format=json"
     );
-    let client = build_search_client(use_system_proxy)?;
+    let client = build_search_client(false)?;
     let response = client
         .get(url)
         .header("Accept", "application/json")
@@ -396,26 +546,304 @@ async fn run_wikipedia_open_search(
 
     let mut items = Vec::new();
     for index in 0..payload.1.len().min(payload.2.len()).min(payload.3.len()) {
-      let title = payload.1.get(index).cloned().unwrap_or_default();
-      let summary = payload.2.get(index).cloned().unwrap_or_default();
-      let url = payload.3.get(index).cloned().unwrap_or_default();
+        let title = payload.1.get(index).cloned().unwrap_or_default();
+        let summary = payload.2.get(index).cloned().unwrap_or_default();
+        let url = payload.3.get(index).cloned().unwrap_or_default();
 
-      if title.trim().is_empty() || url.trim().is_empty() {
-        continue;
-      }
+        if title.trim().is_empty() || url.trim().is_empty() {
+            continue;
+        }
 
-      items.push(NetworkSearchResultItem {
-        title,
-        url,
-        summary: if summary.trim().is_empty() {
-          "OpenCow 默认搜索返回了可用词条。".to_string()
-        } else {
-          summary
-        },
-      });
+        items.push(NetworkSearchResultItem {
+            source_label: infer_source_label(&title, &url, "Wikipedia"),
+            title,
+            url,
+            summary: if summary.trim().is_empty() {
+                "OpenCow 默认搜索返回了可用词条。".to_string()
+            } else {
+                summary
+            },
+        });
     }
 
     Ok(items)
+}
+
+fn extract_xml_tag(block: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let (_, rest) = block.split_once(&open)?;
+    let (value, _) = rest.split_once(&close)?;
+    Some(value.trim().to_string())
+}
+
+fn decode_basic_html_entities(value: String) -> String {
+    value
+        .replace("<![CDATA[", "")
+        .replace("]]>", "")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+}
+
+fn strip_html_tags(value: &str) -> String {
+    let mut plain = String::with_capacity(value.len());
+    let mut in_tag = false;
+
+    for character in value.chars() {
+        match character {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => plain.push(character),
+            _ => {}
+        }
+    }
+
+    decode_basic_html_entities(plain)
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn normalize_search_result_text(value: &str) -> String {
+    let normalized = strip_html_tags(value);
+
+    if normalized.trim().is_empty() {
+        return String::new();
+    }
+
+    let mut candidate = normalized.trim().to_string();
+    for marker in [
+        "class=\"vr-title\"",
+        "class=\"pt\"",
+        "vrcid=\"",
+        "id=\"cacheresult_summary_",
+        "new Image().src =",
+        "[$s.httpsUtil.getPingbackHost()",
+        "\"&type=security3&tag=show&uuid=\"",
+    ] {
+        if let Some(index) = candidate.find(marker) {
+            candidate = candidate[index + marker.len()..].trim().to_string();
+        }
+    }
+
+    candidate
+        .trim_matches(|character: char| matches!(character, '"' | '\'' | '[' | ']' | ';' | ',' | ':'))
+        .trim()
+        .to_string()
+}
+
+fn extract_html_attribute(block: &str, attribute: &str) -> Option<String> {
+    let needle = format!("{attribute}=\"");
+    let (_, rest) = block.split_once(&needle)?;
+    let (value, _) = rest.split_once('"')?;
+    Some(decode_basic_html_entities(value.to_string()))
+}
+
+fn infer_source_label(title: &str, url: &str, fallback: &str) -> String {
+    let normalized_title = title.to_lowercase();
+
+    for (needle, label) in [
+        ("百度百科", "百度百科"),
+        ("搜狗百科", "搜狗百科"),
+        ("维基百科", "Wikipedia"),
+        ("wikipedia", "Wikipedia"),
+        ("微博", "微博"),
+        ("抖音", "抖音"),
+        ("小红书", "小红书"),
+        ("知乎", "知乎"),
+        ("哔哩哔哩", "Bilibili"),
+        ("bilibili", "Bilibili"),
+        ("github", "GitHub"),
+        ("csdn", "CSDN"),
+        ("公众号", "微信公众号"),
+        ("微信公众平台", "微信公众号"),
+        ("豆包", "豆包"),
+    ] {
+        if normalized_title.contains(&needle.to_lowercase()) {
+            return label.to_string();
+        }
+    }
+
+    infer_source_label_from_url(url, fallback)
+}
+
+fn infer_source_label_from_url(url: &str, fallback: &str) -> String {
+    let normalized = url.to_lowercase();
+
+    if normalized.contains("baike.sogou.com") {
+        return "搜狗百科".to_string();
+    }
+    if normalized.contains("baike.baidu.com") {
+        return "百度百科".to_string();
+    }
+    if normalized.contains("zhidao.baidu.com") {
+        return "百度知道".to_string();
+    }
+    if normalized.contains("douyin.com") {
+        return "抖音".to_string();
+    }
+    if normalized.contains("weibo.com") {
+        return "微博".to_string();
+    }
+    if normalized.contains("xiaohongshu.com") {
+        return "小红书".to_string();
+    }
+    if normalized.contains("zhihu.com") {
+        return "知乎".to_string();
+    }
+    if normalized.contains("bilibili.com") {
+        return "Bilibili".to_string();
+    }
+    if normalized.contains("mp.weixin.qq.com") {
+        return "微信公众号".to_string();
+    }
+    if normalized.contains("github.com") {
+        return "GitHub".to_string();
+    }
+    if normalized.contains("huggingface.co") {
+        return "Hugging Face".to_string();
+    }
+    if normalized.contains("csdn.net") {
+        return "CSDN".to_string();
+    }
+    if normalized.contains("sogou.com") {
+        return "搜狗搜索".to_string();
+    }
+    if normalized.contains("bing.com") {
+        return "Bing".to_string();
+    }
+    if normalized.contains("wikipedia.org") {
+        return "Wikipedia".to_string();
+    }
+    if normalized.contains("doubao.com") {
+        return "豆包官网".to_string();
+    }
+
+    if let Some(host) = extract_host_label(url) {
+        return host;
+    }
+
+    fallback.to_string()
+}
+
+fn extract_host_label(url: &str) -> Option<String> {
+    let without_scheme = url
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(url);
+    let host = without_scheme.split('/').next()?.trim().to_lowercase();
+    if host.is_empty() {
+        return None;
+    }
+
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    let host = host.strip_prefix("m.").unwrap_or(host);
+    let parts = host.split('.').collect::<Vec<_>>();
+
+    if parts.len() >= 2 {
+        let main = parts[parts.len().saturating_sub(2)];
+        if !main.is_empty() {
+            let mut characters = main.chars();
+            let first = characters.next()?;
+            let mut label = first.to_uppercase().collect::<String>();
+            label.push_str(characters.as_str());
+            return Some(label);
+        }
+    }
+
+    None
+}
+
+fn normalize_network_search_query(query: &str) -> String {
+    let mut normalized = query.trim().replace('？', "?").replace('，', " ");
+    for phrase in [
+        "请帮我",
+        "请",
+        "帮我上网搜索",
+        "请帮我上网搜索",
+        "帮我联网搜索",
+        "请帮我联网搜索",
+        "上网搜索一下",
+        "联网搜索一下",
+        "上网搜索",
+        "联网搜索",
+        "搜索一下",
+        "搜索",
+        "帮我查一下",
+        "查一下",
+        "帮我查查",
+        "查查",
+        "相关信息",
+        "相关资料",
+        "最新资料",
+        "最新信息",
+        "一下",
+    ] {
+        normalized = normalized.replace(phrase, " ");
+    }
+
+    let collapsed = normalized
+        .split(|character: char| {
+            character.is_whitespace()
+                || matches!(
+                    character,
+                    ',' | '.' | '?' | '!' | '。' | '、' | ':' | '：' | ';' | '；' | '“' | '”'
+                )
+        })
+        .filter(|segment| !segment.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if collapsed.is_empty() {
+        query.trim().to_string()
+    } else {
+        collapsed
+    }
+}
+
+fn contains_cjk(value: &str) -> bool {
+    value.chars().any(|character| {
+        ('\u{4E00}'..='\u{9FFF}').contains(&character)
+            || ('\u{3400}'..='\u{4DBF}').contains(&character)
+    })
+}
+
+fn build_search_match_tokens(query: &str) -> Vec<String> {
+    let collapsed = normalize_network_search_query(query);
+    let mut tokens = collapsed
+        .split_whitespace()
+        .map(|part| part.trim().to_lowercase())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+
+    if contains_cjk(&collapsed) {
+        tokens.push(collapsed.replace(' ', "").to_lowercase());
+    }
+
+    tokens.sort();
+    tokens.dedup();
+    tokens
+}
+
+fn result_matches_query(tokens: &[String], title: &str, summary: &str, url: &str) -> bool {
+    if tokens.is_empty() {
+        return true;
+    }
+
+    let haystack = format!("{title} {summary} {url}").to_lowercase();
+    tokens.iter().any(|token| {
+        if token.len() >= 2 && contains_cjk(token) {
+            haystack.contains(token)
+        } else if token.len() >= 3 {
+            haystack.contains(token)
+        } else {
+            false
+        }
+    })
 }
 
 async fn run_serpapi_search(
@@ -431,11 +859,7 @@ async fn run_serpapi_search(
 
     let response = client
         .get(url)
-        .query(&[
-            ("q", query),
-            ("api_key", api_key),
-            ("engine", "google"),
-        ])
+        .query(&[("q", query), ("api_key", api_key), ("engine", "google")])
         .send()
         .await
         .map_err(|error| format!("request failed: {error}"))?;
@@ -506,8 +930,16 @@ fn extract_json_search_items(
         .into_iter()
         .flat_map(|items| items.iter())
         .filter_map(|item| {
-            let title = item.get(title_key).and_then(Value::as_str)?.trim().to_string();
-            let url = item.get(url_key).and_then(Value::as_str)?.trim().to_string();
+            let title = item
+                .get(title_key)
+                .and_then(Value::as_str)?
+                .trim();
+            let url = item
+                .get(url_key)
+                .and_then(Value::as_str)?
+                .trim()
+                .to_string();
+            let title = normalize_search_result_text(title);
             if title.is_empty() || url.is_empty() {
                 return None;
             }
@@ -515,10 +947,16 @@ fn extract_json_search_items(
                 .iter()
                 .find_map(|key| item.get(*key).and_then(Value::as_str))
                 .map(str::trim)
+                .map(normalize_search_result_text)
                 .filter(|value| !value.is_empty())
-                .unwrap_or("搜索提供方返回了可用结果。")
-                .to_string();
-            Some(NetworkSearchResultItem { title, url, summary })
+                .unwrap_or_else(|| "搜索提供方返回了可用结果。".to_string());
+            let source_label = infer_source_label(&title, &url, "外部来源");
+            Some(NetworkSearchResultItem {
+                title,
+                url,
+                source_label,
+                summary,
+            })
         })
         .take(5)
         .collect()
@@ -557,7 +995,6 @@ fn resolve_system_proxy_url() -> Option<String> {
     .find_map(|key| env::var(key).ok())
     .map(|value| value.trim().to_string())
     .filter(|value| !value.is_empty())
-    .or_else(|| Some("http://127.0.0.1:7897".to_string()))
 }
 
 #[tauri::command]
@@ -574,21 +1011,23 @@ pub fn workspace_npc_config_read(npc_id: String) -> Result<NpcWorkspaceConfigRec
 
 #[tauri::command]
 pub fn workspace_npc_config_create(
-    payload: NpcWorkspaceConfigUpsertPayload,
+    app: AppHandle,
+    payload: NpcWorkspaceConfigMutationPayload,
 ) -> Result<NpcWorkspaceResult, String> {
     let root = resolve_workspace_root()?;
-    let selected_npc_id = slugify_npc_config_name(&payload.id);
-    upsert_workspace_npc_config(&root, payload)?;
+    let selected_npc_id = slugify_npc_config_name(&payload.payload.id);
+    upsert_workspace_npc_config(&app, &root, payload.payload, payload.rollback_context)?;
     list_workspace_npc_configs_for_selection(&root, Some(selected_npc_id))
 }
 
 #[tauri::command]
 pub fn workspace_npc_config_update(
-    payload: NpcWorkspaceConfigUpsertPayload,
+    app: AppHandle,
+    payload: NpcWorkspaceConfigMutationPayload,
 ) -> Result<NpcWorkspaceResult, String> {
     let root = resolve_workspace_root()?;
-    let selected_npc_id = slugify_npc_config_name(&payload.id);
-    upsert_workspace_npc_config(&root, payload)?;
+    let selected_npc_id = slugify_npc_config_name(&payload.payload.id);
+    upsert_workspace_npc_config(&app, &root, payload.payload, payload.rollback_context)?;
     list_workspace_npc_configs_for_selection(&root, Some(selected_npc_id))
 }
 
@@ -687,8 +1126,10 @@ fn list_workspace_npc_configs_for_selection(
 }
 
 fn upsert_workspace_npc_config(
+    app: &AppHandle,
     root: &Path,
     payload: NpcWorkspaceConfigUpsertPayload,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<(), String> {
     let npc_directory = root.join(".opencow").join("npcs");
     fs::create_dir_all(&npc_directory)
@@ -697,6 +1138,7 @@ fn upsert_workspace_npc_config(
     let id = slugify_npc_config_name(&payload.id);
     let config_path = npc_directory.join(format!("{id}.json"));
     ensure_path_stays_in_workspace(root, &config_path)?;
+    capture_paths_for_context(app, &rollback_context, &[config_path.clone()])?;
 
     let record = NpcWorkspaceConfigRecord {
         id,
@@ -1735,7 +2177,9 @@ pub fn workspace_project_npc_screenshot_capture(
 
 #[tauri::command]
 pub fn workspace_project_npc_showcase_site_write(
+    app: AppHandle,
     query: String,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<WorkspaceProjectNpcShowcaseSiteWriteResult, String> {
     let root = resolve_workspace_root()?;
     let candidates = collect_workspace_project_run_candidates(&root)?;
@@ -1767,6 +2211,7 @@ pub fn workspace_project_npc_showcase_site_write(
     let expected_url = infer_project_expected_url(Some(matched));
     let site_root = build_npc_showcase_site_root(&root, &matched.name);
     let entry_file = site_root.join("index.html");
+    capture_paths_for_context(&app, &rollback_context, &[site_root.clone()])?;
 
     write_npc_showcase_site_html(
         &entry_file,
@@ -1970,8 +2415,10 @@ pub fn knowledge_inventory(library_id: Option<String>) -> Result<KnowledgeInvent
 
 #[tauri::command]
 pub fn knowledge_file_import(
+    app: AppHandle,
     path: String,
     library_id: Option<String>,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
     let normalized = normalize_workspace_relative_knowledge_path(&root, &path)?;
@@ -1984,6 +2431,11 @@ pub fn knowledge_file_import(
 
     let mut registry = read_knowledge_import_registry(&root)?;
     let target_library_id = resolve_knowledge_library_id(&registry, library_id);
+    capture_paths_for_context(
+        &app,
+        &rollback_context,
+        &[knowledge_registry_path(&root)],
+    )?;
 
     if let Some(library) = registry
         .libraries
@@ -2010,13 +2462,20 @@ pub fn knowledge_file_import(
 
 #[tauri::command]
 pub fn knowledge_file_remove(
+    app: AppHandle,
     path: String,
     library_id: Option<String>,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
     let normalized = normalize_workspace_relative_knowledge_path(&root, &path)?;
     let mut registry = read_knowledge_import_registry(&root)?;
     let target_library_id = resolve_knowledge_library_id(&registry, library_id);
+    capture_paths_for_context(
+        &app,
+        &rollback_context,
+        &[knowledge_registry_path(&root)],
+    )?;
 
     if let Some(library) = registry
         .libraries
@@ -2034,11 +2493,18 @@ pub fn knowledge_file_remove(
 
 #[tauri::command]
 pub fn knowledge_imports_clear(
+    app: AppHandle,
     library_id: Option<String>,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
     let mut registry = read_knowledge_import_registry(&root)?;
     let target_library_id = resolve_knowledge_library_id(&registry, library_id);
+    capture_paths_for_context(
+        &app,
+        &rollback_context,
+        &[knowledge_registry_path(&root)],
+    )?;
 
     if let Some(library) = registry
         .libraries
@@ -2054,12 +2520,19 @@ pub fn knowledge_imports_clear(
 
 #[tauri::command]
 pub fn knowledge_library_create(
+    app: AppHandle,
     name: String,
     description: Option<String>,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<KnowledgeInventoryResult, String> {
     let root = resolve_workspace_root()?;
     let trimmed = name.trim();
     let trimmed_description = description.unwrap_or_default().trim().to_string();
+    capture_paths_for_context(
+        &app,
+        &rollback_context,
+        &[knowledge_registry_path(&root)],
+    )?;
 
     if trimmed.is_empty() {
         return Err("knowledge library name cannot be empty".to_string());
@@ -2397,7 +2870,8 @@ pub fn local_mcp_plugin_start_preview(
             "当前版本尚未为这个 MCP 提供受支持的宿主命令".to_string()
         };
         let risk_summary = if id == "browser" {
-            "会尝试通过 OpenClaw browser CLI 启动浏览器控制服务；如果本地依赖缺失会返回明确诊断。".to_string()
+            "会尝试通过 OpenClaw browser CLI 启动浏览器控制服务；如果本地依赖缺失会返回明确诊断。"
+                .to_string()
         } else {
             "这个 MCP 已进入产品目录，但当前桌面端还没有为它开放受控启动宿主。".to_string()
         };
@@ -2522,7 +2996,11 @@ pub fn recommended_mcp_manifest() -> Result<RecommendedMcpManifestResult, String
 }
 
 #[tauri::command]
-pub fn local_mcp_plugin_install(query: String) -> Result<LocalMcpPluginInstallResult, String> {
+pub fn local_mcp_plugin_install(
+    app: AppHandle,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalMcpPluginInstallResult, String> {
     let root = resolve_workspace_root()?;
     let items = read_recommended_mcp_manifest_items()?;
     let tokens = tokenize_query(&query);
@@ -2561,6 +3039,7 @@ pub fn local_mcp_plugin_install(query: String) -> Result<LocalMcpPluginInstallRe
 
     let target_dir = opencow_installed_mcp_root()?.join(&matched.id);
     let target_file = target_dir.join("openclaw.plugin.json");
+    capture_paths_for_context(&app, &rollback_context, &[target_dir.clone()])?;
     fs::create_dir_all(&target_dir)
         .map_err(|error| format!("failed to create {}: {error}", target_dir.display()))?;
     let status = if target_file.exists() {
@@ -2593,7 +3072,11 @@ pub fn local_mcp_plugin_install(query: String) -> Result<LocalMcpPluginInstallRe
 }
 
 #[tauri::command]
-pub fn local_mcp_plugin_uninstall(query: String) -> Result<LocalMcpPluginUninstallResult, String> {
+pub fn local_mcp_plugin_uninstall(
+    app: AppHandle,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalMcpPluginUninstallResult, String> {
     let root = resolve_workspace_root()?;
     let plugin_files = collect_installed_local_mcp_plugin_files()?;
     let tokens = tokenize_query(&query);
@@ -2638,6 +3121,7 @@ pub fn local_mcp_plugin_uninstall(query: String) -> Result<LocalMcpPluginUninsta
         let parent = matched_path
             .parent()
             .ok_or_else(|| format!("failed to resolve parent for {}", matched_path.display()))?;
+        capture_paths_for_context(&app, &rollback_context, &[parent.to_path_buf()])?;
         fs::remove_dir_all(parent)
             .map_err(|error| format!("failed to remove {}: {error}", parent.display()))?;
         "removed".to_string()
@@ -2681,7 +3165,11 @@ pub fn local_skill_scan() -> Result<LocalSkillScanResult, String> {
         });
 
         items.push(LocalSkillScanItem {
-            enabled: is_skill_enabled(&enabled_skills, &name, &to_display_relative_path(&root, &path)),
+            enabled: is_skill_enabled(
+                &enabled_skills,
+                &name,
+                &to_display_relative_path(&root, &path),
+            ),
             name,
             path: to_display_relative_path(&root, &path),
             source: classify_skill_source(&root, &path),
@@ -2775,7 +3263,11 @@ pub fn local_skill_inspect(query: String) -> Result<LocalSkillInspectResult, Str
 }
 
 #[tauri::command]
-pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, String> {
+pub fn local_skill_enable(
+    app: AppHandle,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalSkillEnableResult, String> {
     let root = resolve_workspace_root()?;
     let skill_files = collect_opencow_installed_skill_files()?;
     let tokens = tokenize_query(&query);
@@ -2833,6 +3325,7 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve skill registry directory".to_string())?;
+    capture_paths_for_context(&app, &rollback_context, &[registry_path.clone()])?;
     fs::create_dir_all(registry_dir)
         .map_err(|error| format!("failed to create {}: {error}", registry_dir.display()))?;
 
@@ -2884,7 +3377,11 @@ pub fn local_skill_enable(query: String) -> Result<LocalSkillEnableResult, Strin
 }
 
 #[tauri::command]
-pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, String> {
+pub fn local_skill_install(
+    app: AppHandle,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalSkillInstallResult, String> {
     let root = resolve_workspace_root()?;
     let skill_files = collect_installable_local_skill_files(&root)?;
     let tokens = tokenize_query(&query);
@@ -2941,6 +3438,7 @@ pub fn local_skill_install(query: String) -> Result<LocalSkillInstallResult, Str
     let target_file = target_dir.join("SKILL.md");
     let installed_skill_path = to_opencow_product_relative_path(&target_file);
 
+    capture_paths_for_context(&app, &rollback_context, &[target_dir.clone()])?;
     fs::create_dir_all(&target_dir)
         .map_err(|error| format!("failed to create {}: {error}", target_dir.display()))?;
 
@@ -2997,7 +3495,11 @@ pub fn recommended_skill_manifest() -> Result<RecommendedSkillManifestResult, St
 }
 
 #[tauri::command]
-pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, String> {
+pub fn local_skill_disable(
+    app: AppHandle,
+    query: String,
+    rollback_context: Option<RollbackContextPayload>,
+) -> Result<LocalSkillDisableResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = "skills/enabled-skills.json";
     let registry_path = opencow_enabled_skills_registry_path()?;
@@ -3058,6 +3560,7 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve skill registry directory".to_string())?;
+    capture_paths_for_context(&app, &rollback_context, &[registry_path.clone()])?;
     fs::create_dir_all(registry_dir)
         .map_err(|error| format!("failed to create {}: {error}", registry_dir.display()))?;
     let pretty = serde_json::to_string_pretty(&serde_json::json!({
@@ -3082,13 +3585,16 @@ pub fn local_skill_disable(query: String) -> Result<LocalSkillDisableResult, Str
 
 #[tauri::command]
 pub fn opencow_self_repair_enabled_skills_registry(
+    app: AppHandle,
     query: String,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<OpencowSelfRepairEnabledSkillsRegistryResult, String> {
     let registry_relative_path = "skills/enabled-skills.json";
     let registry_path = opencow_enabled_skills_registry_path()?;
     let registry_dir = registry_path
         .parent()
         .ok_or_else(|| "failed to resolve enabled skills registry directory".to_string())?;
+    capture_paths_for_context(&app, &rollback_context, &[registry_path.clone()])?;
     fs::create_dir_all(registry_dir)
         .map_err(|error| format!("failed to create {}: {error}", registry_dir.display()))?;
 
@@ -3146,11 +3652,14 @@ pub fn opencow_self_repair_enabled_skills_registry(
 
 #[tauri::command]
 pub fn opencow_self_repair_workspace_project_runtime_registry(
+    app: AppHandle,
     query: String,
+    rollback_context: Option<RollbackContextPayload>,
 ) -> Result<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult, String> {
     let root = resolve_workspace_root()?;
     let registry_relative_path = ".opencow/runtime/workspace-project-runs.json";
     let registry_path = workspace_project_runtime_registry_path(&root);
+    capture_paths_for_context(&app, &rollback_context, &[registry_path.clone()])?;
     let preserved_runs = read_workspace_project_runtime_records(&root).unwrap_or_default();
     let preserved_entry_count = preserved_runs.len();
 
@@ -3392,9 +3901,16 @@ pub fn workspace_readonly_command(
 #[tauri::command]
 pub fn workspace_write_command(
     command_id: String,
+    rollback_context: Option<RollbackContextPayload>,
+    app: AppHandle,
 ) -> Result<WorkspaceWriteShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_workspace_write_shell_command(&command_id, &root)?;
+    let snapshot_paths = match command_id.as_str() {
+        "create-temp-output-dir" => vec![root.join("temp-output")],
+        _ => Vec::new(),
+    };
+    capture_paths_for_context(&app, &rollback_context, &snapshot_paths)?;
     let output = Command::new("powershell")
         .arg("-NoProfile")
         .arg("-Command")
@@ -3435,9 +3951,16 @@ pub fn workspace_write_command(
 #[tauri::command]
 pub fn controlled_full_command(
     command_id: String,
+    rollback_context: Option<RollbackContextPayload>,
+    app: AppHandle,
 ) -> Result<ControlledFullShellCommandResult, String> {
     let root = resolve_workspace_root()?;
     let spec = build_controlled_full_shell_command(&command_id, &root)?;
+    let snapshot_paths = match command_id.as_str() {
+        "remove-temp-output-dir" => vec![root.join("temp-output")],
+        _ => Vec::new(),
+    };
+    capture_paths_for_context(&app, &rollback_context, &snapshot_paths)?;
     let output = Command::new("powershell")
         .arg("-NoProfile")
         .arg("-Command")
@@ -3937,10 +4460,6 @@ fn opencow_recommended_mcp_manifest_path() -> Result<PathBuf, String> {
         .join("recommended-mcp.json"))
 }
 
-fn opencow_mcp_runtime_registry_path() -> Result<PathBuf, String> {
-    Ok(opencow_mcp_root()?.join("runtime").join("mcp-runs.json"))
-}
-
 fn opencow_knowledge_files_root() -> Result<PathBuf, String> {
     Ok(opencow_knowledge_root()?.join("files"))
 }
@@ -4309,7 +4828,10 @@ fn normalize_workspace_relative_knowledge_path(root: &Path, path: &str) -> Resul
     let candidate = PathBuf::from(trimmed);
     if candidate.is_absolute() {
         if !candidate.exists() {
-            return Err(format!("knowledge file does not exist: {}", candidate.display()));
+            return Err(format!(
+                "knowledge file does not exist: {}",
+                candidate.display()
+            ));
         }
 
         let storage_root = opencow_knowledge_files_root()?;
@@ -4337,7 +4859,10 @@ fn normalize_workspace_relative_knowledge_path(root: &Path, path: &str) -> Resul
     if trimmed.starts_with("knowledge/files/") {
         let storage_path = opencow_app_data_root()?.join(trimmed);
         if !storage_path.exists() {
-            return Err(format!("knowledge file does not exist: {}", storage_path.display()));
+            return Err(format!(
+                "knowledge file does not exist: {}",
+                storage_path.display()
+            ));
         }
 
         return Ok(trimmed.replace('\\', "/"));
@@ -4491,27 +5016,6 @@ fn collect_opencow_installed_skill_files() -> Result<Vec<PathBuf>, String> {
     Ok(candidates)
 }
 
-fn collect_local_mcp_plugin_files(root: &Path) -> Result<Vec<PathBuf>, String> {
-    let mut candidates = Vec::new();
-
-    let workspace_plugins = root.join("plugins");
-
-    if workspace_plugins.exists() {
-        collect_local_mcp_plugin_files_recursive(&workspace_plugins, &mut candidates)?;
-    }
-
-    let vendor_extensions = root.join("vendor").join("openclaw").join("extensions");
-
-    if vendor_extensions.exists() {
-        collect_local_mcp_plugin_files_recursive(&vendor_extensions, &mut candidates)?;
-    }
-
-    candidates.sort();
-    candidates.dedup();
-
-    Ok(candidates)
-}
-
 fn read_enabled_skill_registry(path: &Path) -> Result<Vec<Value>, String> {
     if !path.exists() {
         return Ok(Vec::new());
@@ -4622,16 +5126,6 @@ fn count_existing_skill_roots(root: &Path) -> usize {
         .into_iter()
         .filter(|path| path.exists())
         .count()
-}
-
-fn count_existing_mcp_plugin_roots(root: &Path) -> usize {
-    [
-        root.join("plugins"),
-        root.join("vendor").join("openclaw").join("extensions"),
-    ]
-    .into_iter()
-    .filter(|path| path.exists())
-    .count()
 }
 
 fn collect_local_knowledge_candidates_recursive(
@@ -4878,14 +5372,16 @@ fn default_recommended_skill_manifest_items() -> Vec<RecommendedSkillManifestIte
             description: "适合整理文档、说明和产品交接内容。".to_string(),
             source: "opencow-builtin-manifest".to_string(),
             install_query: "docs-helper".to_string(),
-            rationale: "本地助手经常需要整理规则、交接文档和知识说明，适合作为默认文档能力。".to_string(),
+            rationale: "本地助手经常需要整理规则、交接文档和知识说明，适合作为默认文档能力。"
+                .to_string(),
         },
         RecommendedSkillManifestItem {
             name: "browser-automation".to_string(),
             description: "适合页面联调、真实按钮点击验证和前端回归检查。".to_string(),
             source: "opencow-builtin-manifest".to_string(),
             install_query: "browser-automation".to_string(),
-            rationale: "桌面端和本地 Web 联调频繁，浏览器自动化是最能直接提升闭环效率的能力之一。".to_string(),
+            rationale: "桌面端和本地 Web 联调频繁，浏览器自动化是最能直接提升闭环效率的能力之一。"
+                .to_string(),
         },
     ]
 }
@@ -4958,9 +5454,12 @@ fn write_recommended_skill_manifest_items(
     manifest_path: &Path,
     items: &[RecommendedSkillManifestItem],
 ) -> Result<(), String> {
-    let parent = manifest_path
-        .parent()
-        .ok_or_else(|| format!("failed to resolve manifest parent for {}", manifest_path.display()))?;
+    let parent = manifest_path.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve manifest parent for {}",
+            manifest_path.display()
+        )
+    })?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
     let payload = serde_json::json!({
@@ -5006,9 +5505,12 @@ fn write_recommended_mcp_manifest_items(
     manifest_path: &Path,
     items: &[RecommendedMcpManifestItem],
 ) -> Result<(), String> {
-    let parent = manifest_path
-        .parent()
-        .ok_or_else(|| format!("failed to resolve manifest parent for {}", manifest_path.display()))?;
+    let parent = manifest_path.parent().ok_or_else(|| {
+        format!(
+            "failed to resolve manifest parent for {}",
+            manifest_path.display()
+        )
+    })?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("failed to create {}: {error}", parent.display()))?;
     let payload = serde_json::json!({
@@ -5409,28 +5911,25 @@ fn escape_powershell_single_quote(input: &str) -> String {
 mod tests {
     use super::{
         build_controlled_full_shell_command, build_enabled_local_skill_items,
-        build_npc_showcase_screenshot_artifact_path, build_npc_showcase_site_root,
-        build_openclaw_capability_spec, build_readonly_shell_command,
+        build_knowledge_inventory, build_npc_showcase_screenshot_artifact_path,
+        build_npc_showcase_site_root, build_openclaw_capability_spec, build_readonly_shell_command,
         build_workspace_write_shell_command, classify_mcp_plugin_source, controlled_full_command,
-        build_knowledge_inventory, extract_skill_content_preview, is_local_knowledge_file,
-        is_local_mcp_plugin_file, ImportedKnowledgeFileRecord, KnowledgeImportRegistry,
-        KnowledgeLibraryRecord,
-        local_mcp_plugin_inspect, local_mcp_plugin_scan, local_mcp_plugin_start_preview,
-        local_skill_disable, local_skill_install, looks_like_workspace_root,
-        list_workspace_npc_configs_for_selection,
-        normalize_npc_workspace_record,
+        extract_skill_content_preview, is_local_knowledge_file, is_local_mcp_plugin_file,
+        list_workspace_npc_configs_for_selection, local_mcp_plugin_inspect, local_mcp_plugin_scan,
+        local_mcp_plugin_start_preview, local_skill_disable, local_skill_install,
+        looks_like_workspace_root, normalize_network_search_query, normalize_npc_workspace_record,
         opencow_self_repair_enabled_skills_registry,
         opencow_self_repair_workspace_project_runtime_registry, parse_skill_frontmatter_name,
-        NpcWorkspaceConfigUpsertPayload,
         parse_workspace_project_run_pid, read_enabled_skill_registry,
         read_knowledge_import_registry, read_workspace_project_runtime_records,
-        write_knowledge_import_registry,
-        resolve_workspace_root, score_mcp_plugin_match,
-        score_skill_match, score_snippet, split_knowledge_segments, tokenize_query,
-        truncate_preview, upsert_workspace_npc_config, workspace_project_npc_screenshot_capture,
+        resolve_workspace_root, result_matches_query, score_mcp_plugin_match, score_skill_match,
+        score_snippet, split_knowledge_segments, tokenize_query, truncate_preview,
+        upsert_workspace_npc_config, workspace_project_npc_screenshot_capture,
         workspace_project_npc_showcase_publish_preview, workspace_project_npc_showcase_site_write,
         workspace_project_run, workspace_project_run_preview, workspace_project_status,
         workspace_project_stop, workspace_readonly_command, workspace_write_command,
+        write_knowledge_import_registry, ImportedKnowledgeFileRecord, KnowledgeImportRegistry,
+        KnowledgeLibraryRecord, NpcWorkspaceConfigUpsertPayload,
     };
     use serde_json::{json, Value};
     use std::{
@@ -5459,6 +5958,40 @@ mod tests {
         assert_eq!(spec.command_id, "git-status");
         assert_eq!(spec.command_label, "git status --short");
         assert_eq!(spec.args, vec!["git status --short".to_string()]);
+    }
+
+    #[test]
+    fn normalizes_spoken_network_search_queries_into_keywords() {
+        assert_eq!(
+            normalize_network_search_query("帮我上网搜索字节跳动"),
+            "字节跳动"
+        );
+        assert_eq!(
+            normalize_network_search_query("帮我上网搜索豆包相关信息"),
+            "豆包"
+        );
+        assert_eq!(
+            normalize_network_search_query("请帮我联网搜索一下 OpenAI 最新信息"),
+            "OpenAI"
+        );
+    }
+
+    #[test]
+    fn filters_out_unrelated_search_results() {
+        let tokens = vec!["字节跳动".to_string()];
+
+        assert!(result_matches_query(
+            &tokens,
+            "字节跳动 - 官网",
+            "北京字节跳动科技有限公司成立于2012年",
+            "https://www.bytedance.com/"
+        ));
+        assert!(!result_matches_query(
+            &tokens,
+            "Kansas City Weather News",
+            "Missouri Weather Updates",
+            "https://www.kmbc.com/weather"
+        ));
     }
 
     #[test]
@@ -5643,7 +6176,10 @@ mod tests {
                 .unwrap();
 
         assert_eq!(result.selected_npc_id.as_deref(), Some("zeta-bot"));
-        assert_eq!(result.items.first().map(|item| item.id.as_str()), Some("alpha-bot"));
+        assert_eq!(
+            result.items.first().map(|item| item.id.as_str()),
+            Some("alpha-bot")
+        );
 
         fs::remove_dir_all(&workspace_root).unwrap();
     }
@@ -5698,7 +6234,10 @@ mod tests {
                 .unwrap();
 
         assert_eq!(result.selected_npc_id.as_deref(), Some("zeta-bot"));
-        assert_eq!(result.items.first().map(|item| item.id.as_str()), Some("alpha-bot"));
+        assert_eq!(
+            result.items.first().map(|item| item.id.as_str()),
+            Some("alpha-bot")
+        );
 
         fs::remove_dir_all(&workspace_root).unwrap();
     }
@@ -5884,7 +6423,10 @@ mod tests {
 
         assert_eq!(registry.libraries.len(), 1);
         assert_eq!(registry.libraries[0].imported_files.len(), 1);
-        assert_eq!(registry.libraries[0].imported_files[0].path, "docs/guide.md");
+        assert_eq!(
+            registry.libraries[0].imported_files[0].path,
+            "docs/guide.md"
+        );
 
         let _ = fs::remove_dir_all(&workspace_root);
     }
@@ -5969,7 +6511,8 @@ mod tests {
             .as_nanos();
         let workspace_root =
             env::temp_dir().join(format!("opencow-workspace-root-env-override-{unique}"));
-        let fake_current_dir = env::temp_dir().join(format!("opencow-non-workspace-current-{unique}"));
+        let fake_current_dir =
+            env::temp_dir().join(format!("opencow-non-workspace-current-{unique}"));
 
         fs::create_dir_all(workspace_root.join("apps")).unwrap();
         fs::create_dir_all(workspace_root.join("packages")).unwrap();

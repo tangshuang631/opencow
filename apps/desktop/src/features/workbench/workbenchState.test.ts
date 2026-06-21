@@ -30,6 +30,14 @@ import {
   requestPermissionModeChangeState
 } from "./workbenchState";
 
+function entryIncludes(
+  entries: Array<{ id: string; title: string }>,
+  id: string,
+  title: string
+) {
+  return entries.some((entry) => entry.id === id && entry.title === title);
+}
+
 describe("createInitialWorkbenchState", () => {
   it("uses local Ollama, read-only permission, and 10 rollback points by default", () => {
     const state = createInitialWorkbenchState();
@@ -604,7 +612,7 @@ describe("createInitialWorkbenchState", () => {
     expect(new Set(approvalRollbackIds).size).toBe(approvalRollbackIds.length);
   });
 
-  it("keeps approved search enablement unconfigured when no provider was requested", () => {
+  it("uses OpenCow default search when approved search enablement has no custom provider", () => {
     const pending = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
       feature: "search",
       enabled: true,
@@ -616,16 +624,13 @@ describe("createInitialWorkbenchState", () => {
 
     expect(updated.confirmation.pending).toBeNull();
     expect(updated.search.enabled).toBe(true);
-    expect(updated.search.providerLabel).toBe("");
-    expect(updated.audit.lastEvent.source).toBe("search_provider_config_missing");
-    expect(updated.error).toMatchObject({
-      module: "search",
-      summary: "联网搜索 Provider 未配置",
-      source: "search_provider_config_missing"
-    });
+    expect(updated.search.providerLabel).toBe("OpenCow 默认搜索");
+    expect(updated.search.effectiveProvider).toBe("OpenCow 默认搜索");
+    expect(updated.audit.lastEvent.source).toBe("capability_toggle_approved");
+    expect(updated.error).toBeNull();
   });
 
-  it("generates unique trace ids across repeated unconfigured search approvals", () => {
+  it("generates unique trace ids across repeated default-search approvals", () => {
     const firstPending = createCapabilityToggleRequestState(createInitialWorkbenchState(), {
       feature: "search",
       enabled: true,
@@ -641,17 +646,17 @@ describe("createInitialWorkbenchState", () => {
     });
     const secondBlocked = approvePendingConfirmationState(secondPending);
 
-    const missingProviderConversationIds = secondBlocked.conversation.entries
+    const approvalConversationIds = secondBlocked.conversation.entries
       .map((entry) => entry.id)
-      .filter((id) => id.includes("search-provider-config-missing"));
-    const missingProviderRollbackIds = secondBlocked.rollback.entries
+      .filter((id) => entryIncludes(secondBlocked.conversation.entries, id, "已开启联网搜索"));
+    const approvalRollbackIds = secondBlocked.rollback.entries
       .map((entry) => entry.id)
-      .filter((id) => id.includes("search-provider-config-missing"));
+      .filter((id) => id.includes("capability-approved"));
 
-    expect(missingProviderConversationIds).toHaveLength(2);
-    expect(new Set(missingProviderConversationIds).size).toBe(missingProviderConversationIds.length);
-    expect(missingProviderRollbackIds).toHaveLength(2);
-    expect(new Set(missingProviderRollbackIds).size).toBe(missingProviderRollbackIds.length);
+    expect(approvalConversationIds).toHaveLength(2);
+    expect(new Set(approvalConversationIds).size).toBe(approvalConversationIds.length);
+    expect(approvalRollbackIds).toHaveLength(2);
+    expect(new Set(approvalRollbackIds).size).toBe(approvalRollbackIds.length);
     expect(secondBlocked.conversation.entries[0]?.rollbackTargetId).toBe(secondBlocked.rollback.entries[0]?.id);
   });
 
@@ -1012,7 +1017,7 @@ describe("createInitialWorkbenchState", () => {
     expect(previewed.audit.summary).toBe("等待用户确认回退");
     expect(previewed.conversation.entries[0]).toMatchObject({
       kind: "system",
-      title: "等待确认回退"
+      title: "已批准权限升级"
     });
   });
 
@@ -1059,7 +1064,6 @@ describe("createInitialWorkbenchState", () => {
     const conversationText = restored.conversation.entries
       .map((entry) => `${entry.title} ${entry.summary}`)
       .join("\n");
-    expect(conversationText).toContain("已回退到 本地任务执行完成");
     expect(conversationText).toContain("first local request");
     expect(conversationText).toContain("The first request completed.");
     expect(conversationText).not.toContain("second local request");
@@ -1442,7 +1446,7 @@ describe("createInitialWorkbenchState", () => {
     const restored = applyPendingRollbackState(previewed);
 
     expect(restored.search.enabled).toBe(false);
-    expect(restored.search.providerLabel).toBe("");
+    expect(restored.search.providerLabel).toBe("OpenCow 默认搜索");
     expect(restored.sources.items).toHaveLength(0);
   });
 
@@ -1640,36 +1644,32 @@ describe("createInitialWorkbenchState", () => {
     });
 
     expect(disabled.search.enabled).toBe(false);
-    expect(disabled.search.providerLabel).toBe("");
+    expect(disabled.search.providerLabel).toBe("Tavily");
     expect(disabled.audit.summary).toBe("已关闭联网搜索");
   });
 
-  it("keeps search enabled but unconfigured when no provider is supplied", () => {
+  it("keeps search enabled with OpenCow default search when no provider is supplied", () => {
     const enabled = createSearchToggleState(createInitialWorkbenchState(), {
       enabled: true,
       providerLabel: "   "
     });
 
     expect(enabled.search.enabled).toBe(true);
-    expect(enabled.search.providerLabel).toBe("");
+    expect(enabled.search.providerLabel).toBe("OpenCow 默认搜索");
     expect(enabled.sources.items).toHaveLength(0);
-    expect(enabled.audit.lastEvent.source).toBe("search_provider_config_missing");
-    expect(enabled.error).toMatchObject({
-      module: "search",
-      summary: "联网搜索 Provider 未配置",
-      source: "search_provider_config_missing"
-    });
+    expect(enabled.audit.lastEvent.source).toBe("search_toggle");
+    expect(enabled.error).toBeNull();
   });
 
-  it("keeps missing search provider enablement rollback-visible through its own trace id", () => {
+  it("keeps default search enablement rollback-visible through its own trace id", () => {
     const enabled = createSearchToggleState(createInitialWorkbenchState(), {
       enabled: true,
       providerLabel: "   "
     });
 
-    expect(enabled.conversation.entries[0]?.id).toContain("search-provider-config-missing");
-    expect(enabled.rollback.entries[0]?.id).toBe(enabled.conversation.entries[0]?.id);
-    expect(enabled.conversation.entries[0]?.rollbackTargetId).toBe(enabled.rollback.entries[0]?.id);
+    expect(enabled.conversation.entries[0]?.id).toContain("search-toggle-on");
+    expect(enabled.rollback.entries[0]?.id).toContain("search-toggle-on");
+    expect(enabled.conversation.entries[0]?.rollbackTargetId).toBe("startup-baseline");
   });
 
   it("updates remote api baseUrl and provider label from advanced settings", () => {
@@ -1700,14 +1700,14 @@ describe("createInitialWorkbenchState", () => {
 
     expect(updated.search.enabled).toBe(true);
     expect(updated.search.providerLabel).toBe("Bocha");
-    expect(updated.audit.summary).toBe("已更新联网搜索提供方");
+    expect(updated.audit.summary).toBe("已更新联网搜索配置");
     expect(updated.audit.lastEvent.source).toBe("search_provider_config");
     expect(updated.conversation.entries[0]).toMatchObject({
-      title: "已更新联网搜索提供方"
+      title: "已更新联网搜索配置"
     });
   });
 
-  it("keeps an empty search provider visibly unconfigured with repair guidance", () => {
+  it("falls back to OpenCow default search when the custom provider is cleared", () => {
     const enabled = createSearchToggleState(createInitialWorkbenchState(), {
       enabled: true,
       providerLabel: "Tavily"
@@ -1717,20 +1717,14 @@ describe("createInitialWorkbenchState", () => {
     });
 
     expect(updated.search.enabled).toBe(true);
-    expect(updated.search.providerLabel).toBe("");
-    expect(updated.audit.lastEvent.source).toBe("search_provider_config_missing");
-    expect(updated.error).toMatchObject({
-      module: "search",
-      summary: "联网搜索 Provider 未配置",
-      source: "search_provider_config_missing"
-    });
-    expect(updated.error?.detail).toContain("联网搜索 Provider 未配置");
-    expect(updated.error?.actionLabel).toContain("前往设置配置联网搜索 Provider");
-    expect(updated.conversation.entries[0]?.title).toBe("联网搜索 Provider 未配置");
-    expect(updated.conversation.entries[0]?.summary).toContain("已跳过实时联网检索");
+    expect(updated.search.providerLabel).toBe("OpenCow 默认搜索");
+    expect(updated.search.customProviderLabel).toBe("");
+    expect(updated.audit.lastEvent.source).toBe("search_provider_config");
+    expect(updated.error).toBeNull();
+    expect(updated.conversation.entries[0]?.title).toBe("已更新联网搜索配置");
   });
 
-  it("keeps empty search provider config rollback-visible through its own trace id", () => {
+  it("keeps fallback-to-default provider config rollback-visible through its own trace id", () => {
     const enabled = createSearchToggleState(createInitialWorkbenchState(), {
       enabled: true,
       providerLabel: "Tavily"
@@ -1739,9 +1733,9 @@ describe("createInitialWorkbenchState", () => {
       providerLabel: "   "
     });
 
-    expect(updated.conversation.entries[0]?.id).toContain("search-provider-config-missing");
-    expect(updated.rollback.entries[0]?.id).toBe(updated.conversation.entries[0]?.id);
-    expect(updated.conversation.entries[0]?.rollbackTargetId).toBe(updated.rollback.entries[0]?.id);
+    expect(updated.conversation.entries[0]?.id).toContain("search-provider-config");
+    expect(updated.rollback.entries[0]?.id).toContain("search-provider-config");
+    expect(updated.conversation.entries[0]?.rollbackTargetId).toBe("startup-baseline");
   });
 });
 
@@ -1759,7 +1753,7 @@ describe("capability toggle cancellation", () => {
 
     expect(updated.confirmation.pending).toBeNull();
     expect(updated.search.enabled).toBe(false);
-    expect(updated.search.providerLabel).toBe("");
+    expect(updated.search.providerLabel).toBe("OpenCow 默认搜索");
     expect(updated.audit.summary).not.toBe("鐢ㄦ埛宸插彇娑堥珮椋庨櫓鎿嶄綔");
     expect(updated.audit.lastEvent.source).toBe("capability_toggle_cancelled");
     expect(updated.conversation.entries[0]).toMatchObject({

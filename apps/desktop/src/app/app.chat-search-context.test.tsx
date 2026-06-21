@@ -1,16 +1,28 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const { chatWithOllamaModelMock, loadOllamaOverviewMock } = vi.hoisted(() => ({
+const { chatWithOllamaModelMock, loadOllamaOverviewMock, searchNetworkMock } = vi.hoisted(() => ({
   chatWithOllamaModelMock: vi.fn(),
-  loadOllamaOverviewMock: vi.fn()
+  loadOllamaOverviewMock: vi.fn(),
+  searchNetworkMock: vi.fn()
 }));
 
 vi.mock("../features/ollama/ollamaService", () => ({
   chatWithOllamaModel: chatWithOllamaModelMock,
   loadOllamaOverview: loadOllamaOverviewMock
 }));
+
+vi.mock("../features/assistant/localAssistantService", async () => {
+  const actual = await vi.importActual<typeof import("../features/assistant/localAssistantService")>(
+    "../features/assistant/localAssistantService"
+  );
+
+  return {
+    ...actual,
+    searchNetwork: searchNetworkMock
+  };
+});
 
 vi.mock("../features/workbench/workbenchState", async () => {
   const actual = await vi.importActual<typeof import("../features/workbench/workbenchState")>(
@@ -32,6 +44,20 @@ vi.mock("../features/workbench/workbenchState", async () => {
 
 describe("App chat search context", () => {
   it("passes compressed enabled-search references to the selected local model for ordinary chat", async () => {
+    searchNetworkMock.mockResolvedValue({
+      query: "软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么",
+      provider: "Tavily",
+      effective_provider: "Tavily",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "Flyweight pattern reference",
+          url: "https://example.test/flyweight",
+          summary: "享元模式通常把可共享且不随上下文变化的数据称为内部状态，把随使用场景变化的数据称为外部状态。"
+        }
+      ]
+    });
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -69,6 +95,20 @@ describe("App chat search context", () => {
   });
 
   it("records selected Ollama model and bounded search context in the audit log", async () => {
+    searchNetworkMock.mockResolvedValue({
+      query: "软件体系设计的享元模式",
+      provider: "Tavily",
+      effective_provider: "Tavily",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "Flyweight pattern reference",
+          url: "https://example.test/flyweight",
+          summary: "享元模式通常把可共享且不随上下文变化的数据称为内部状态，把随使用场景变化的数据称为外部状态。"
+        }
+      ]
+    });
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -93,11 +133,12 @@ describe("App chat search context", () => {
     await waitFor(() => {
       expect(screen.getByText(/享元模式会共享内部状态/)).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "展开配置与记录" }));
-    fireEvent.click(screen.getByRole("button", { name: "展开日志细节" }));
+    fireEvent.click(screen.getByRole("button", { name: "审计" }));
 
-    expect(screen.queryAllByText(/Ollama model: qwen3\.6:35b/).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/Search context items: 1\/3/).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/Search provider: Tavily/).length).toBeGreaterThan(0);
+    const auditPanel = await screen.findByRole("region", { name: "审计" });
+
+    expect(within(auditPanel).getAllByText(/Ollama model: qwen3\.6:35b/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/Search context items: 1\/3/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/Search provider: Tavily/).length).toBeGreaterThan(0);
   });
 });

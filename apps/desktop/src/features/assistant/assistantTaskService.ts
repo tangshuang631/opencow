@@ -17,6 +17,7 @@ import {
   startLocalMcpPlugin,
   inspectLocalSkill,
   scanLocalSkills,
+  searchNetwork,
   searchLocalKnowledge,
   loadWorkspaceConfigOverview,
   loadWorkspaceOverview,
@@ -35,6 +36,7 @@ import {
   repairOpencowEnabledSkillsRegistry,
   repairOpencowWorkspaceProjectRuntimeRegistry
 } from "./localAssistantService";
+import type { RollbackContext } from "./localAssistantService";
 
 type ReadonlyAssistantTaskPlan =
   | {
@@ -481,11 +483,36 @@ export type AssistantTaskExecutionResult = {
   resultSummary: string;
   auditDetailLines?: string[];
   auditOnlyDetailLines?: string[];
+  searchSources?: Array<{
+    title: string;
+    url: string;
+    provider: string;
+    query: string;
+    summary: string;
+    usedFallback?: boolean;
+  }>;
+  searchStatePatch?: {
+    effectiveProvider?: string;
+    lastFallbackReason?: string | null;
+    suppressFallbackNotice?: boolean;
+  };
+  searchFallbackNotice?: {
+    visible: boolean;
+    summary: string;
+  };
 };
 
 export type AssistantTaskExecutionContext = {
   snapshotAvailable?: boolean;
   signal?: AbortSignal;
+  rollbackContext?: RollbackContext;
+  searchConfig?: {
+    enabled: boolean;
+    customProviderLabel: string;
+    customBaseUrl: string;
+    customApiKey: string;
+    suppressFallbackNotice: boolean;
+  };
 };
 
 function throwIfExecutionAborted(context: AssistantTaskExecutionContext): void {
@@ -796,15 +823,72 @@ async function executeNetworkSearchGuidancePlan(
   context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   throwIfExecutionAborted(context);
+  const searchConfig = context.searchConfig ?? {
+    enabled: true,
+    customProviderLabel: "",
+    customBaseUrl: "",
+    customApiKey: "",
+    suppressFallbackNotice: false
+  };
+  const result = await awaitAbortable(
+    searchNetwork(query, {
+      providerLabel: searchConfig.customProviderLabel,
+      baseUrl: searchConfig.customBaseUrl,
+      apiKey: searchConfig.customApiKey,
+      suppressFallbackNotice: searchConfig.suppressFallbackNotice
+    }),
+    context
+  );
+
+  if (result.items.length === 0) {
+    return {
+      resultTitle: "联网搜索失败",
+      resultSummary: [
+        "本轮联网搜索没有返回可用来源。",
+        `请求：${query}。`,
+        "请检查自定义搜索配置是否可用，或稍后重试 OpenCow 默认搜索。"
+      ].join(" "),
+      searchStatePatch: {
+        effectiveProvider: result.effective_provider,
+        lastFallbackReason: result.fallback_reason ?? null
+      }
+    };
+  }
+
   return {
-    resultTitle: "联网搜索说明",
+    resultTitle: "联网搜索结果",
     resultSummary: [
-      `本轮没有执行外部联网搜索。`,
-      `搜索 Provider 尚未配置或尚未完成能力审批，已跳过网络调用。`,
-      `请求：${query}。`,
-      "联网检索已识别为受控助手能力；当前只记录请求并说明安全下一步。",
-      "下一步：在设置中配置 Provider、批准联网搜索能力后重试；如果答案应来自工作区资料，请优先使用本地 RAG。"
-    ].join(" ")
+      `已参考 ${result.items.length} 条联网资料。`,
+      result.used_fallback
+        ? `自定义搜索失败后已自动回退。${result.fallback_reason ?? ""}`.trim()
+        : "已结合当前联网结果整理答案。",
+      `请求：${query}。`
+    ].join(" "),
+    auditDetailLines: [
+      `Search provider: ${result.provider}`,
+      `Effective provider: ${result.effective_provider}`,
+      `Search fallback: ${result.used_fallback ? "used" : "not-used"}`
+    ],
+    searchSources: result.items.map((item) => ({
+      title: item.title,
+      url: item.url,
+      provider: result.effective_provider,
+      sourceLabel: item.source_label ?? result.effective_provider,
+      query,
+      summary: item.summary,
+      usedFallback: result.used_fallback
+    })),
+    searchStatePatch: {
+      effectiveProvider: result.effective_provider,
+      lastFallbackReason: result.fallback_reason ?? null,
+      suppressFallbackNotice: searchConfig.suppressFallbackNotice
+    },
+    searchFallbackNotice: result.used_fallback
+      ? {
+          visible: !searchConfig.suppressFallbackNotice,
+          summary: result.fallback_reason ?? "自定义搜索失败，已自动回退到 OpenCow 默认搜索。"
+        }
+      : undefined
   };
 }
 
@@ -2238,7 +2322,7 @@ async function runWorkspaceWriteShellCommandWithDiagnostics(
   context: AssistantTaskExecutionContext
 ) {
   try {
-    return await awaitAbortable(runWorkspaceWriteShellCommand(commandId), context);
+    return await awaitAbortable(runWorkspaceWriteShellCommand(commandId, context.rollbackContext), context);
   } catch (error: unknown) {
     throw createShellExecutionDiagnosticError({
       commandId,
@@ -2256,7 +2340,7 @@ async function runControlledFullShellCommandWithDiagnostics(
   assertControlledFullCommandSafety(commandId, context);
 
   try {
-    return await runControlledFullShellCommand(commandId);
+    return await runControlledFullShellCommand(commandId, context.rollbackContext);
   } catch (error: unknown) {
     throw createShellExecutionDiagnosticError({
       commandId,

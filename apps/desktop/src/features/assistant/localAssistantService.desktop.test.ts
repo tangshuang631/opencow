@@ -4,16 +4,24 @@ import {
   clearKnowledgeImports,
   createNpcWorkspaceConfig,
   createKnowledgeLibrary,
+  disableLocalSkill,
+  enableLocalSkill,
   importKnowledgeFile,
+  installLocalMcpPlugin,
+  installLocalSkill,
   loadRecommendedSkillManifest,
   loadNpcWorkspaceConfig,
   loadNpcWorkspace,
   loadKnowledgeInventory,
   loadOpenClawCapabilityOverview,
+  repairOpencowEnabledSkillsRegistry,
+  repairOpencowWorkspaceProjectRuntimeRegistry,
   removeKnowledgeFile,
   searchNetwork,
   selectKnowledgeLibrary,
-  updateNpcWorkspaceConfig
+  uninstallLocalMcpPlugin,
+  updateNpcWorkspaceConfig,
+  writeNpcLocalProjectShowcaseSite
 } from "./localAssistantService";
 import {
   runControlledFullShellCommand,
@@ -139,11 +147,18 @@ describe("localAssistantService desktop knowledge inventory", () => {
       return null;
     });
 
-    const result = await importKnowledgeFile("notes/guide.txt", "rules-library");
+    const result = await importKnowledgeFile("notes/guide.txt", "rules-library", {
+      conversationId: "conversation-1",
+      rollbackEntryId: "entry-1"
+    });
 
     expect(capturedPayload).toEqual({
       path: "notes/guide.txt",
-      libraryId: "rules-library"
+      libraryId: "rules-library",
+      rollbackContext: {
+        conversationId: "conversation-1",
+        rollbackEntryId: "entry-1"
+      }
     });
     expect(result.importedFiles[0]).toMatchObject({
       path: "notes/guide.txt",
@@ -178,11 +193,18 @@ describe("localAssistantService desktop knowledge inventory", () => {
       return null;
     });
 
-    const result = await removeKnowledgeFile("notes/guide.txt", "rules-library");
+    const result = await removeKnowledgeFile("notes/guide.txt", "rules-library", {
+      conversationId: "conversation-1",
+      rollbackEntryId: "entry-2"
+    });
 
     expect(capturedPayload).toEqual({
       path: "notes/guide.txt",
-      libraryId: "rules-library"
+      libraryId: "rules-library",
+      rollbackContext: {
+        conversationId: "conversation-1",
+        rollbackEntryId: "entry-2"
+      }
     });
     expect(result.importedFiles).toEqual([]);
     expect(result.availableFiles[0]).toMatchObject({
@@ -286,7 +308,10 @@ describe("localAssistantService desktop knowledge inventory", () => {
       return null;
     });
 
-    const result = await clearKnowledgeImports("rules-library");
+    const result = await clearKnowledgeImports("rules-library", {
+      conversationId: "conversation-1",
+      rollbackEntryId: "entry-3"
+    });
 
     expect(result).toEqual({
       importedFiles: [],
@@ -353,11 +378,18 @@ describe("localAssistantService desktop knowledge inventory", () => {
       return null;
     });
 
-    const result = await createKnowledgeLibrary("产品文档库", "整理产品需求、PRD 和交互说明。");
+    const result = await createKnowledgeLibrary("产品文档库", "整理产品需求、PRD 和交互说明。", {
+      conversationId: "conversation-1",
+      rollbackEntryId: "entry-4"
+    });
 
     expect(capturedPayload).toEqual({
       name: "产品文档库",
-      description: "整理产品需求、PRD 和交互说明。"
+      description: "整理产品需求、PRD 和交互说明。",
+      rollbackContext: {
+        conversationId: "conversation-1",
+        rollbackEntryId: "entry-4"
+      }
     });
     expect(result.activeLibraryId).toBe("product-docs");
     expect(result.activeLibraryLabel).toBe("产品文档库");
@@ -549,6 +581,141 @@ describe("localAssistantService desktop knowledge inventory", () => {
     });
   });
 
+  it("passes rollback context through desktop skill, mcp, self-repair, and showcase write commands", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    const capturedPayloads: Record<string, unknown> = {};
+    const rollbackContext = {
+      conversationId: "conversation-1",
+      rollbackEntryId: "entry-5"
+    };
+
+    mockIPC((cmd, payload) => {
+      capturedPayloads[cmd] = payload;
+
+      switch (cmd) {
+        case "local_skill_enable":
+          return {
+            query: "启用 coding-agent",
+            enabled_skill_name: "coding-agent",
+            registry_path: "skills/enabled-skills.json",
+            status: "enabled",
+            summary: "ok"
+          };
+        case "local_skill_install":
+          return {
+            query: "安装 coding-agent",
+            installed_skill_name: "coding-agent",
+            installed_skill_path: ".opencow/skills/installed/coding-agent/SKILL.md",
+            source_skill_path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+            status: "installed",
+            summary: "ok"
+          };
+        case "local_skill_disable":
+          return {
+            query: "禁用 coding-agent",
+            disabled_skill_name: "coding-agent",
+            registry_path: "skills/enabled-skills.json",
+            status: "disabled",
+            summary: "ok"
+          };
+        case "local_mcp_plugin_install":
+          return {
+            query: "安装 browser mcp",
+            installed_plugin_id: "browser",
+            installed_plugin_name: "浏览器控制",
+            installed_plugin_path: ".opencow/mcp/browser/openclaw.plugin.json",
+            source_plugin_path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
+            status: "installed",
+            summary: "ok"
+          };
+        case "local_mcp_plugin_uninstall":
+          return {
+            query: "卸载 browser mcp",
+            removed_plugin_id: "browser",
+            removed_plugin_name: "浏览器控制",
+            removed_plugin_path: ".opencow/mcp/browser/openclaw.plugin.json",
+            status: "removed",
+            summary: "ok"
+          };
+        case "opencow_self_repair_enabled_skills_registry":
+          return {
+            query: "修复技能注册表",
+            repair_target: "enabled-skills-registry",
+            repaired_path: "skills/enabled-skills.json",
+            status: "repaired",
+            preserved_entry_count: 1,
+            verified_version: 1,
+            verified_entry_count: 1,
+            summary: "ok"
+          };
+        case "opencow_self_repair_workspace_project_runtime_registry":
+          return {
+            query: "修复运行时注册表",
+            repair_target: "workspace-project-runtime-registry",
+            repaired_path: ".opencow/runtime/workspace-project-runs.json",
+            status: "repaired",
+            preserved_entry_count: 1,
+            verified_version: 1,
+            verified_run_count: 1,
+            summary: "ok"
+          };
+        case "workspace_project_npc_showcase_site_write":
+          return {
+            project_name: "cattle",
+            project_path: "apps/cattle",
+            expected_url: "http://127.0.0.1:3000",
+            artifact_path: ".opencow/artifacts/npc-showcase/cattle/index.html",
+            artifact_directory: ".opencow/artifacts/npc-showcase",
+            summary: "ok"
+          };
+        default:
+          return null;
+      }
+    });
+
+    await enableLocalSkill("启用 coding-agent", rollbackContext);
+    await installLocalSkill("安装 coding-agent", rollbackContext);
+    await disableLocalSkill("禁用 coding-agent", rollbackContext);
+    await installLocalMcpPlugin("安装 browser mcp", rollbackContext);
+    await uninstallLocalMcpPlugin("卸载 browser mcp", rollbackContext);
+    await repairOpencowEnabledSkillsRegistry("修复技能注册表", rollbackContext);
+    await repairOpencowWorkspaceProjectRuntimeRegistry("修复运行时注册表", rollbackContext);
+    await writeNpcLocalProjectShowcaseSite("生成展示站点", rollbackContext);
+
+    expect(capturedPayloads.local_skill_enable).toEqual({
+      query: "启用 coding-agent",
+      rollbackContext
+    });
+    expect(capturedPayloads.local_skill_install).toEqual({
+      query: "安装 coding-agent",
+      rollbackContext
+    });
+    expect(capturedPayloads.local_skill_disable).toEqual({
+      query: "禁用 coding-agent",
+      rollbackContext
+    });
+    expect(capturedPayloads.local_mcp_plugin_install).toEqual({
+      query: "安装 browser mcp",
+      rollbackContext
+    });
+    expect(capturedPayloads.local_mcp_plugin_uninstall).toEqual({
+      query: "卸载 browser mcp",
+      rollbackContext
+    });
+    expect(capturedPayloads.opencow_self_repair_enabled_skills_registry).toEqual({
+      query: "修复技能注册表",
+      rollbackContext
+    });
+    expect(capturedPayloads.opencow_self_repair_workspace_project_runtime_registry).toEqual({
+      query: "修复运行时注册表",
+      rollbackContext
+    });
+    expect(capturedPayloads.workspace_project_npc_showcase_site_write).toEqual({
+      query: "生成展示站点",
+      rollbackContext
+    });
+  });
+
   it("loads the desktop NPC workspace registry and normalizes snake_case fields", async () => {
     (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
 
@@ -677,17 +844,20 @@ describe("localAssistantService desktop knowledge inventory", () => {
 
     expect(capturedPayload).toEqual({
       payload: {
-        id: "research-bot",
-        name: "研究助手",
-        description: "负责资料整理",
-        default_model: "qwen2.5-coder:7b",
-        persona_title: "资料研究员",
-        persona_prompt: "你负责整理资料",
-        output_style: "简洁",
-        agent_draft: "",
-        rules_draft: "",
-        enabled_skill_names: ["本地检索增强"],
-        knowledge_library_ids: ["product-docs"]
+        payload: {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          default_model: "qwen2.5-coder:7b",
+          persona_title: "资料研究员",
+          persona_prompt: "你负责整理资料",
+          output_style: "简洁",
+          agent_draft: "",
+          rules_draft: "",
+          enabled_skill_names: ["本地检索增强"],
+          knowledge_library_ids: ["product-docs"]
+        },
+        rollbackContext: null
       }
     });
   });
@@ -725,17 +895,20 @@ describe("localAssistantService desktop knowledge inventory", () => {
 
     expect(capturedPayload).toEqual({
       payload: {
-        id: "research-bot",
-        name: "研究助手",
-        description: "负责资料整理",
-        default_model: "qwen2.5-coder:7b",
-        persona_title: "事实核验官",
-        persona_prompt: "你负责整理资料",
-        output_style: "简洁",
-        agent_draft: "",
-        rules_draft: "必须引用来源",
-        enabled_skill_names: ["本地检索增强"],
-        knowledge_library_ids: ["product-docs"]
+        payload: {
+          id: "research-bot",
+          name: "研究助手",
+          description: "负责资料整理",
+          default_model: "qwen2.5-coder:7b",
+          persona_title: "事实核验官",
+          persona_prompt: "你负责整理资料",
+          output_style: "简洁",
+          agent_draft: "",
+          rules_draft: "必须引用来源",
+          enabled_skill_names: ["本地检索增强"],
+          knowledge_library_ids: ["product-docs"]
+        },
+        rollbackContext: null
       }
     });
   });

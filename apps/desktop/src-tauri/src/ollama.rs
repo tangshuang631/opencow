@@ -44,6 +44,7 @@ pub struct OllamaOverview {
 pub struct OllamaChatRequest {
     model: String,
     message: String,
+    images: Option<Vec<String>>,
     #[serde(rename = "requestId")]
     request_id: Option<String>,
     #[serde(rename = "numPredict")]
@@ -87,6 +88,8 @@ struct OllamaChatOptions {
 struct OllamaChatMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    images: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,7 +126,10 @@ pub async fn ollama_overview() -> OllamaOverview {
 
 #[tauri::command]
 #[cfg(not(test))]
-pub async fn ollama_chat(app: AppHandle, request: OllamaChatRequest) -> Result<OllamaChatResult, String> {
+pub async fn ollama_chat(
+    app: AppHandle,
+    request: OllamaChatRequest,
+) -> Result<OllamaChatResult, String> {
     load_cancelable_ollama_chat(Some(app), request)
         .await
         .map_err(|error| format!("Ollama chat failed: {error}"))
@@ -196,7 +202,10 @@ fn select_default_chat_model(models: &[OllamaModelSummary]) -> Option<String> {
         .map(|model| model.name.clone())
 }
 
-async fn load_ollama_chat(app: Option<OllamaChunkEmitter>, request: OllamaChatRequest) -> Result<OllamaChatResult, String> {
+async fn load_ollama_chat(
+    app: Option<OllamaChunkEmitter>,
+    request: OllamaChatRequest,
+) -> Result<OllamaChatResult, String> {
     let selected_model = request.model.trim();
 
     if selected_model.is_empty() || selected_model == "未选择模型" {
@@ -240,7 +249,17 @@ async fn load_ollama_chat(app: Option<OllamaChunkEmitter>, request: OllamaChatRe
     merge_ollama_chat_stream_lines(response_text, &request.model)
 }
 
-fn create_ollama_chat_messages(message: String) -> Vec<OllamaChatMessage> {
+fn create_ollama_chat_messages(
+    message: String,
+    images: Option<Vec<String>>,
+) -> Vec<OllamaChatMessage> {
+    let normalized_images = images
+        .unwrap_or_default()
+        .into_iter()
+        .map(|image| image.trim().to_string())
+        .filter(|image| !image.is_empty())
+        .collect::<Vec<_>>();
+
     vec![OllamaChatMessage {
         role: "user".to_string(),
         content: [
@@ -251,13 +270,18 @@ fn create_ollama_chat_messages(message: String) -> Vec<OllamaChatMessage> {
             &message,
         ]
         .join("\n"),
+        images: if normalized_images.is_empty() {
+            None
+        } else {
+            Some(normalized_images)
+        },
     }]
 }
 
 fn create_ollama_chat_api_request(request: &OllamaChatRequest) -> OllamaChatApiRequest {
     OllamaChatApiRequest {
         model: request.model.clone(),
-        messages: create_ollama_chat_messages(request.message.clone()),
+        messages: create_ollama_chat_messages(request.message.clone(), request.images.clone()),
         options: OllamaChatOptions {
             num_predict: request.num_predict.unwrap_or(OLLAMA_CHAT_NUM_PREDICT),
         },
@@ -266,7 +290,10 @@ fn create_ollama_chat_api_request(request: &OllamaChatRequest) -> OllamaChatApiR
     }
 }
 
-fn merge_ollama_chat_stream_lines(response_text: String, fallback_model: &str) -> Result<OllamaChatResult, String> {
+fn merge_ollama_chat_stream_lines(
+    response_text: String,
+    fallback_model: &str,
+) -> Result<OllamaChatResult, String> {
     merge_ollama_chat_stream_lines_with_chunk_handler(response_text, fallback_model, |_| {})
 }
 
@@ -304,7 +331,11 @@ where
     let mut message = String::new();
     let mut stream_error = None;
 
-    for line in response_text.lines().map(str::trim).filter(|line| !line.is_empty()) {
+    for line in response_text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
         let Ok(payload) = serde_json::from_str::<OllamaChatResponse>(line) else {
             continue;
         };
@@ -349,11 +380,12 @@ where
     })
 }
 
-async fn load_cancelable_ollama_chat(app: Option<OllamaChunkEmitter>, request: OllamaChatRequest) -> Result<OllamaChatResult, String> {
+async fn load_cancelable_ollama_chat(
+    app: Option<OllamaChunkEmitter>,
+    request: OllamaChatRequest,
+) -> Result<OllamaChatResult, String> {
     let request_id = normalize_request_id(request.request_id.as_deref());
-    let mut cancellation_registration = request_id
-        .as_deref()
-        .map(register_chat_request);
+    let mut cancellation_registration = request_id.as_deref().map(register_chat_request);
 
     let result = match cancellation_registration.as_mut() {
         Some(registration) => {
@@ -394,9 +426,18 @@ fn emit_ollama_chat_chunk(app: Option<&OllamaChunkEmitter>, request_id: Option<&
 }
 
 #[cfg(test)]
-fn emit_ollama_chat_chunk(_app: Option<&OllamaChunkEmitter>, _request_id: Option<&str>, _chunk: &str) {}
+fn emit_ollama_chat_chunk(
+    _app: Option<&OllamaChunkEmitter>,
+    _request_id: Option<&str>,
+    _chunk: &str,
+) {
+}
 
-fn emit_ollama_chat_chunk_from_line(app: Option<&OllamaChunkEmitter>, request_id: Option<&str>, line: &str) {
+fn emit_ollama_chat_chunk_from_line(
+    app: Option<&OllamaChunkEmitter>,
+    request_id: Option<&str>,
+    line: &str,
+) {
     let Ok(payload) = serde_json::from_str::<OllamaChatResponse>(line.trim()) else {
         return;
     };
@@ -447,7 +488,8 @@ fn chat_cancellation_token_counter() -> &'static AtomicU64 {
 }
 
 fn chat_cancellations() -> &'static Mutex<HashMap<String, ChatCancellationEntry>> {
-    static CHAT_CANCELLATIONS: OnceLock<Mutex<HashMap<String, ChatCancellationEntry>>> = OnceLock::new();
+    static CHAT_CANCELLATIONS: OnceLock<Mutex<HashMap<String, ChatCancellationEntry>>> =
+        OnceLock::new();
     CHAT_CANCELLATIONS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -457,7 +499,10 @@ fn register_chat_request(request_id: &str) -> ChatCancellationRegistration {
     let replaced_sender = chat_cancellations()
         .lock()
         .expect("chat cancellation registry should be available")
-        .insert(request_id.to_string(), ChatCancellationEntry { token, sender });
+        .insert(
+            request_id.to_string(),
+            ChatCancellationEntry { token, sender },
+        );
     if let Some(replaced_entry) = replaced_sender {
         let _ = replaced_entry.sender.send(true);
     }
@@ -532,8 +577,9 @@ fn offline_overview() -> OllamaOverview {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_model_size, load_ollama_chat, normalize_model, ollama_chat_request_timeout, select_default_chat_model,
-        OllamaChatRequest, OllamaModelPayload, OllamaModelSummary, OllamaOverview, OLLAMA_ENDPOINT,
+        format_model_size, load_ollama_chat, normalize_model, ollama_chat_request_timeout,
+        select_default_chat_model, OllamaChatRequest, OllamaModelPayload, OllamaModelSummary,
+        OllamaOverview, OLLAMA_ENDPOINT,
     };
 
     #[test]
@@ -656,10 +702,9 @@ mod tests {
             messages: vec![super::OllamaChatMessage {
                 role: "user".to_string(),
                 content: "请回答 8 题单选和 8 题多选。".to_string(),
+                images: None,
             }],
-            options: super::OllamaChatOptions {
-                num_predict: 4096,
-            },
+            options: super::OllamaChatOptions { num_predict: 4096 },
             think: false,
             stream: true,
         };
@@ -675,6 +720,7 @@ mod tests {
         let request = OllamaChatRequest {
             model: "gemma:26b".to_string(),
             message: "请回答 8 题单选题和 8 题多选题。".to_string(),
+            images: None,
             request_id: Some("local-model-chat-long-quiz".to_string()),
             num_predict: Some(4096),
             timeout_ms: Some(480_000),
@@ -696,13 +742,18 @@ mod tests {
 
     #[test]
     fn ollama_chat_prompt_keeps_chinese_first_instruction_with_user_question() {
-        let messages = super::create_ollama_chat_messages("用一句中文解释 MIT 开源协议。".to_string());
+        let messages =
+            super::create_ollama_chat_messages("用一句中文解释 MIT 开源协议。".to_string(), None);
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "user");
         assert!(messages[0].content.contains("中文优先"));
-        assert!(messages[0].content.contains("不要把 MIT 开源协议误解为 MIT 学校介绍"));
-        assert!(messages[0].content.contains("用一句中文解释 MIT 开源协议。"));
+        assert!(messages[0]
+            .content
+            .contains("不要把 MIT 开源协议误解为 MIT 学校介绍"));
+        assert!(messages[0]
+            .content
+            .contains("用一句中文解释 MIT 开源协议。"));
     }
 
     #[test]
@@ -770,10 +821,8 @@ mod tests {
 
     #[test]
     fn preserves_ollama_http_error_body_detail() {
-        let error = super::format_ollama_http_error(
-            404,
-            r#"{"error":"model 'missing:latest' not found"}"#,
-        );
+        let error =
+            super::format_ollama_http_error(404, r#"{"error":"model 'missing:latest' not found"}"#);
 
         assert!(error.contains("HTTP 404"));
         assert!(error.contains("model 'missing:latest' not found"));
@@ -834,7 +883,10 @@ mod tests {
         }))
         .expect("frontend request should deserialize");
 
-        assert_eq!(request.request_id.as_deref(), Some("local-model-chat-task-1"));
+        assert_eq!(
+            request.request_id.as_deref(),
+            Some("local-model-chat-task-1")
+        );
         assert_eq!(request.num_predict, Some(1024));
         assert_eq!(request.timeout_ms, Some(480_000));
         assert_eq!(request.think, Some(false));
@@ -842,9 +894,11 @@ mod tests {
 
     #[test]
     fn cancelling_unknown_or_empty_chat_request_is_idempotent() {
-        let empty_result = tauri::async_runtime::block_on(super::ollama_cancel_chat("   ".to_string()));
-        let unknown_result =
-            tauri::async_runtime::block_on(super::ollama_cancel_chat("missing-request".to_string()));
+        let empty_result =
+            tauri::async_runtime::block_on(super::ollama_cancel_chat("   ".to_string()));
+        let unknown_result = tauri::async_runtime::block_on(super::ollama_cancel_chat(
+            "missing-request".to_string(),
+        ));
 
         assert!(empty_result.is_ok());
         assert!(unknown_result.is_ok());
@@ -853,8 +907,10 @@ mod tests {
     #[test]
     fn replacing_chat_request_registration_cancels_the_previous_receiver() {
         tauri::async_runtime::block_on(async {
-            let mut first_registration = super::register_chat_request("duplicate-local-model-request");
-            let mut second_registration = super::register_chat_request("duplicate-local-model-request");
+            let mut first_registration =
+                super::register_chat_request("duplicate-local-model-request");
+            let mut second_registration =
+                super::register_chat_request("duplicate-local-model-request");
 
             assert!(first_registration.receiver.changed().await.is_ok());
 
@@ -868,7 +924,8 @@ mod tests {
     fn unregistering_replaced_chat_request_keeps_the_current_receiver_cancelable() {
         tauri::async_runtime::block_on(async {
             let first_registration = super::register_chat_request("current-local-model-request");
-            let mut second_registration = super::register_chat_request("current-local-model-request");
+            let mut second_registration =
+                super::register_chat_request("current-local-model-request");
 
             super::unregister_chat_request("current-local-model-request", first_registration.token);
             super::cancel_chat_request("current-local-model-request");
@@ -885,14 +942,18 @@ mod tests {
 
     #[test]
     fn blocks_placeholder_model_before_sending_chat_request() {
-        let result = tauri::async_runtime::block_on(load_ollama_chat(None, OllamaChatRequest {
-            model: "未选择模型".to_string(),
-            message: "解释享元模式".to_string(),
-            request_id: None,
-            num_predict: Some(1024),
-            timeout_ms: Some(480_000),
-            think: Some(false),
-        }));
+        let result = tauri::async_runtime::block_on(load_ollama_chat(
+            None,
+            OllamaChatRequest {
+                model: "未选择模型".to_string(),
+                message: "解释享元模式".to_string(),
+                images: None,
+                request_id: None,
+                num_predict: Some(1024),
+                timeout_ms: Some(480_000),
+                think: Some(false),
+            },
+        ));
 
         assert!(result.is_err());
         assert!(result

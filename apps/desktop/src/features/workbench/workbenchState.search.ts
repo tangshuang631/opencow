@@ -11,6 +11,8 @@ export function createSearchEnabledState(
     sourceTitle: string;
     sourceUrl: string;
     summary: string;
+    usedFallback?: boolean;
+    fallbackReason?: string | null;
   }
 ): WorkbenchState {
   const rollbackEntryId = createWorkbenchEventId(state, "search-enabled", payload.provider.toLowerCase());
@@ -20,8 +22,11 @@ export function createSearchEnabledState(
       {
         ...state,
         search: {
+          ...state.search,
           enabled: true,
-          providerLabel: payload.provider
+          providerLabel: payload.provider,
+          effectiveProvider: payload.provider,
+          lastFallbackReason: payload.fallbackReason ?? null
         },
         sources: {
           items: [
@@ -30,7 +35,8 @@ export function createSearchEnabledState(
               url: payload.sourceUrl,
               provider: payload.provider,
               query: payload.query,
-              summary: payload.summary
+              summary: payload.summary,
+              usedFallback: payload.usedFallback ?? false
             },
             ...state.sources.items
           ].slice(0, 6)
@@ -40,7 +46,9 @@ export function createSearchEnabledState(
             id: rollbackEntryId,
             kind: "system",
             title: "联网搜索已开启",
-            summary: `${payload.provider} 已返回来源 ${payload.sourceTitle}。`,
+            summary: payload.usedFallback
+              ? `${payload.provider} 已作为回退搜索返回来源 ${payload.sourceTitle}。`
+              : `${payload.provider} 已返回来源 ${payload.sourceTitle}。`,
             actionLabel: `预览回退到 ${payload.provider} 搜索前`,
             rollbackTargetId: rollbackEntryId
           })
@@ -49,7 +57,7 @@ export function createSearchEnabledState(
           summary: payload.summary,
           lastEvent: {
             module: "search",
-            detail: `${payload.provider} 查询: ${payload.query}`,
+            detail: `${payload.provider} 查询: ${payload.query}${payload.usedFallback ? ` fallback=${payload.fallbackReason || "custom-provider-failed"}` : ""}`,
             timestamp: "已执行",
             source: "search_query"
           }

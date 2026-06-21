@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -695,101 +695,123 @@ describe("Workbench", () => {
 
   it("debounces overview edits before routing them through the NPC workspace update callback", async () => {
     vi.useFakeTimers();
-    const onUpdateNpcWorkspaceOverview = vi.fn();
-    const state = {
-      ...createInitialWorkbenchState(),
-      npcWorkspace: {
-        ...createInitialWorkbenchState().npcWorkspace,
-        selectedNpcId: "research-bot",
-        activeSection: "overview" as const,
-        items: [
-          {
-            id: "research-bot",
-            name: "研究助手",
-            description: "负责资料整理",
-            defaultModel: "qwen3.5:9b",
-            personaPrompt: "你负责整理资料",
-            outputStyle: "简洁",
-            agentDraft: "",
-            rulesDraft: "",
-            enabledSkillNames: [],
-            knowledgeLibraryIds: [],
-            updatedAt: "2026-06-19T10:00:00.000Z"
-          }
-        ]
-      }
-    };
+    try {
+      const onUpdateNpcWorkspaceOverview = vi.fn();
+      const state = {
+        ...createInitialWorkbenchState(),
+        npcWorkspace: {
+          ...createInitialWorkbenchState().npcWorkspace,
+          selectedNpcId: "research-bot",
+          activeSection: "overview" as const,
+          items: [
+            {
+              id: "research-bot",
+              name: "研究助手",
+              description: "负责资料整理",
+              defaultModel: "qwen3.5:9b",
+              personaPrompt: "你负责整理资料",
+              outputStyle: "简洁",
+              agentDraft: "",
+              rulesDraft: "",
+              enabledSkillNames: [],
+              knowledgeLibraryIds: [],
+              updatedAt: "2026-06-19T10:00:00.000Z"
+            }
+          ]
+        }
+      };
 
-    render(<Workbench {...createWorkbenchProps(state, { onUpdateNpcWorkspaceOverview })} />);
+      render(<Workbench {...createWorkbenchProps(state, { onUpdateNpcWorkspaceOverview })} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+      });
 
-    const npcPanel = screen.getByLabelText("NPC");
-    fireEvent.change(within(npcPanel).getByRole("textbox", { name: "NPC 名称" }), {
-      target: { value: "审计助手" }
-    });
+      const npcPanel = screen.getByLabelText("NPC");
+      await act(async () => {
+        fireEvent.change(within(npcPanel).getByRole("textbox", { name: "NPC 名称" }), {
+          target: { value: "审计助手" }
+        });
+      });
 
-    expect(onUpdateNpcWorkspaceOverview).not.toHaveBeenCalled();
+      expect(onUpdateNpcWorkspaceOverview).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(350);
+      await act(async () => {
+        vi.advanceTimersByTime(350);
+        await Promise.resolve();
+      });
 
-    expect(onUpdateNpcWorkspaceOverview).toHaveBeenCalledWith("research-bot", expect.objectContaining({
-      name: "审计助手"
-    }));
-
-    vi.useRealTimers();
+      expect(onUpdateNpcWorkspaceOverview).toHaveBeenCalledWith("research-bot", expect.objectContaining({
+        name: "审计助手"
+      }));
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("renders a dedicated persona title field and debounces persona edits through the NPC update callback", async () => {
     vi.useFakeTimers();
-    const onUpdateNpcWorkspacePersona = vi.fn();
-    const state = {
-      ...createInitialWorkbenchState(),
-      npcWorkspace: {
-        ...createInitialWorkbenchState().npcWorkspace,
-        selectedNpcId: "research-bot",
-        activeSection: "persona" as const,
-        items: [
-          {
-            id: "research-bot",
-            name: "研究助手",
-            description: "负责资料整理",
-            defaultModel: "qwen3.5:9b",
-            personaTitle: "资料研究员",
-            personaPrompt: "你负责整理资料",
-            outputStyle: "简洁",
-            agentDraft: "",
-            rulesDraft: "",
-            enabledSkillNames: [],
-            knowledgeLibraryIds: [],
-            updatedAt: "2026-06-19T10:00:00.000Z"
-          }
-        ]
-      }
-    };
+    try {
+      const onUpdateNpcWorkspacePersona = vi.fn();
+      const state = {
+        ...createInitialWorkbenchState(),
+        npcWorkspace: {
+          ...createInitialWorkbenchState().npcWorkspace,
+          selectedNpcId: "research-bot",
+          activeSection: "persona" as const,
+          items: [
+            {
+              id: "research-bot",
+              name: "研究助手",
+              description: "负责资料整理",
+              defaultModel: "qwen3.5:9b",
+              personaTitle: "资料研究员",
+              personaPrompt: "你负责整理资料",
+              outputStyle: "简洁",
+              agentDraft: "",
+              rulesDraft: "",
+              enabledSkillNames: [],
+              knowledgeLibraryIds: [],
+              updatedAt: "2026-06-19T10:00:00.000Z"
+            }
+          ]
+        }
+      };
 
-    render(<Workbench {...createWorkbenchProps(state, { onUpdateNpcWorkspacePersona })} />);
+      render(<Workbench {...createWorkbenchProps(state, { onUpdateNpcWorkspacePersona })} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
-    const npcPanel = screen.getByLabelText("NPC");
-    fireEvent.click(within(npcPanel).getByRole("button", { name: "人设" }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+      });
+      const npcPanel = screen.getByLabelText("NPC");
+      await act(async () => {
+        fireEvent.click(within(npcPanel).getByRole("button", { name: "人设" }));
+      });
 
-    expect(within(npcPanel).getByRole("textbox", { name: "人设标题" })).toHaveValue("资料研究员");
+      expect(within(npcPanel).getByRole("textbox", { name: "人设标题" })).toHaveValue("资料研究员");
 
-    fireEvent.change(within(npcPanel).getByRole("textbox", { name: "人设标题" }), {
-      target: { value: "事实核验官" }
-    });
+      await act(async () => {
+        fireEvent.change(within(npcPanel).getByRole("textbox", { name: "人设标题" }), {
+          target: { value: "事实核验官" }
+        });
+      });
 
-    expect(onUpdateNpcWorkspacePersona).not.toHaveBeenCalled();
+      expect(onUpdateNpcWorkspacePersona).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(350);
+      await act(async () => {
+        vi.advanceTimersByTime(350);
+        await Promise.resolve();
+      });
 
-    expect(onUpdateNpcWorkspacePersona).toHaveBeenCalledWith("research-bot", expect.objectContaining({
-      personaTitle: "事实核验官",
-      personaPrompt: "你负责整理资料"
-    }));
-
-    vi.useRealTimers();
+      expect(onUpdateNpcWorkspacePersona).toHaveBeenCalledWith("research-bot", expect.objectContaining({
+        personaTitle: "事实核验官",
+        personaPrompt: "你负责整理资料"
+      }));
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("renders compact skill metadata rows in the NPC workspace", async () => {
@@ -1519,49 +1541,59 @@ describe("Workbench", () => {
 
   it("debounces persona edits before routing them through the NPC workspace update callback", async () => {
     vi.useFakeTimers();
-    const onUpdateNpcWorkspacePersona = vi.fn();
-    const state = {
-      ...createInitialWorkbenchState(),
-      npcWorkspace: {
-        ...createInitialWorkbenchState().npcWorkspace,
-        selectedNpcId: "research-bot",
-        activeSection: "persona" as const,
-        items: [
-          {
-            id: "research-bot",
-            name: "研究助手",
-            description: "负责资料整理",
-            defaultModel: "qwen3.5:9b",
-            personaPrompt: "",
-            outputStyle: "简洁",
-            agentDraft: "",
-            rulesDraft: "",
-            enabledSkillNames: [],
-            knowledgeLibraryIds: [],
-            updatedAt: "2026-06-19T10:00:00.000Z"
-          }
-        ]
-      }
-    };
+    try {
+      const onUpdateNpcWorkspacePersona = vi.fn();
+      const state = {
+        ...createInitialWorkbenchState(),
+        npcWorkspace: {
+          ...createInitialWorkbenchState().npcWorkspace,
+          selectedNpcId: "research-bot",
+          activeSection: "persona" as const,
+          items: [
+            {
+              id: "research-bot",
+              name: "研究助手",
+              description: "负责资料整理",
+              defaultModel: "qwen3.5:9b",
+              personaPrompt: "",
+              outputStyle: "简洁",
+              agentDraft: "",
+              rulesDraft: "",
+              enabledSkillNames: [],
+              knowledgeLibraryIds: [],
+              updatedAt: "2026-06-19T10:00:00.000Z"
+            }
+          ]
+        }
+      };
 
-    render(<Workbench {...createWorkbenchProps(state, { onUpdateNpcWorkspacePersona })} />);
+      render(<Workbench {...createWorkbenchProps(state, { onUpdateNpcWorkspacePersona })} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+      });
 
-    const npcPanel = screen.getByLabelText("NPC");
-    fireEvent.change(within(npcPanel).getByRole("textbox", { name: "系统提示词" }), {
-      target: { value: "你是一个代码审计 NPC" }
-    });
+      const npcPanel = screen.getByLabelText("NPC");
+      await act(async () => {
+        fireEvent.change(within(npcPanel).getByRole("textbox", { name: "系统提示词" }), {
+          target: { value: "你是一个代码审计 NPC" }
+        });
+      });
 
-    expect(onUpdateNpcWorkspacePersona).not.toHaveBeenCalled();
+      expect(onUpdateNpcWorkspacePersona).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(350);
+      await act(async () => {
+        vi.advanceTimersByTime(350);
+        await Promise.resolve();
+      });
 
-    expect(onUpdateNpcWorkspacePersona).toHaveBeenCalledWith("research-bot", expect.objectContaining({
-      personaPrompt: "你是一个代码审计 NPC"
-    }));
-
-    vi.useRealTimers();
+      expect(onUpdateNpcWorkspacePersona).toHaveBeenCalledWith("research-bot", expect.objectContaining({
+        personaPrompt: "你是一个代码审计 NPC"
+      }));
+    } finally {
+      vi.runOnlyPendingTimers();
+      vi.useRealTimers();
+    }
   });
 
   it("routes both the NPC card body and the gear action into the same selection callback", async () => {

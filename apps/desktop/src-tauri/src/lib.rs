@@ -1,5 +1,6 @@
 mod chat_attachments;
 mod ollama;
+mod rollback_files;
 mod workbench_state;
 mod workspace;
 
@@ -117,6 +118,7 @@ pub fn run() {
             workspace::workspace_npc_config_update,
             workspace::workspace_npc_config_write,
             workspace::workspace_readonly_command,
+            rollback_files::rollback_files_restore,
             workbench_state::workbench_state_load,
             workbench_state::workbench_state_save,
             workbench_state::workbench_state_clear

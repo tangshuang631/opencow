@@ -25,9 +25,13 @@ export function createInitialWorkbenchState(): WorkbenchState {
       pending: null
     },
     conversation: {
+      id: "draft-conversation-1",
       entries: [],
       mode: "blank",
       restoredFromConversationId: null
+    },
+    composer: {
+      draftAttachments: []
     },
     history: {
       lastNonEmptyConversationEntries: [],
@@ -48,11 +52,35 @@ export function createInitialWorkbenchState(): WorkbenchState {
     },
     search: {
       enabled: false,
-      providerLabel: ""
+      defaultProviderEnabled: true,
+      providerLabel: "OpenCow 默认搜索",
+      customProviderLabel: "",
+      customBaseUrl: "",
+      customApiKey: "",
+      effectiveProvider: "OpenCow 默认搜索",
+      lastFallbackReason: null,
+      suppressFallbackNotice: false
     },
     knowledge: {
       importedFiles: [],
-      availableFiles: []
+      availableFiles: [],
+      activeLibraryId: "default-library",
+      activeLibraryLabel: "默认知识库",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库"
+        }
+      ]
+    },
+    npcWorkspace: {
+      items: [],
+      selectedNpcId: null,
+      activeSection: "overview",
+      selectedSkillName: null,
+      selectedSkillPreview: null,
+      selectedKnowledgeLibraryId: null,
+      saveStatus: null
     },
     sources: {
       items: []

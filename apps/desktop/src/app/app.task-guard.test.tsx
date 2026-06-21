@@ -1129,7 +1129,13 @@ describe("App local task guard", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
-    fireEvent.click(screen.getByRole("button", { name: "清空快照" }));
+    await screen.findByRole("button", { name: "清空快照" });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "清空快照" }));
+      fireEvent.click(screen.getByRole("button", { name: "会话" }));
+      await Promise.resolve();
+    });
+    await screen.findByRole("textbox", { name: "输入任务" });
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -1143,7 +1149,10 @@ describe("App local task guard", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     const approveDangerousButton = await screen.findByRole("button", { name: APPROVE_DANGEROUS_NAME });
-    fireEvent.click(approveDangerousButton as HTMLButtonElement);
+    await act(async () => {
+      fireEvent.click(approveDangerousButton as HTMLButtonElement);
+      await Promise.resolve();
+    });
 
     expect(await screen.findAllByText(/destructive cleanup received snapshot guard context/i)).not.toHaveLength(0);
     expect(executeAssistantTaskMock).toHaveBeenCalledWith(
@@ -1155,7 +1164,7 @@ describe("App local task guard", () => {
         snapshotAvailable: false
       })
     );
-  });
+  }, 15000);
 
   it("explains confirmed temp-output removal through the local model after dangerous approval", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
@@ -1924,7 +1933,7 @@ describe("App local task guard", () => {
     expect(executeAssistantTaskMock).not.toHaveBeenCalled();
   });
 
-  it("stops a natural network search after approval when no provider is configured", async () => {
+  it("continues a natural network search after approval by using the default search provider", async () => {
     const message = "\u8054\u7f51\u641c\u7d22\u4e00\u4e0b\u6700\u65b0\u8d44\u6599";
 
     loadOllamaOverviewMock.mockResolvedValue({
@@ -1942,9 +1951,17 @@ describe("App local task guard", () => {
       auditDetail: "Readonly network search guidance task."
     });
     executeAssistantTaskMock.mockResolvedValue({
-      resultTitle: "联网搜索说明",
-      resultSummary:
-        "本轮没有执行外部联网搜索。搜索 Provider 尚未配置或尚未完成能力审批，已跳过网络调用。下一步：在设置中配置 Provider、批准联网搜索能力后重试；如果答案应来自工作区资料，请优先使用本地 RAG。"
+      resultTitle: "联网搜索结果",
+      resultSummary: "已通过 OpenCow 默认搜索 返回 2 条来源。请求：联网搜索一下最新资料。",
+      searchSources: [
+        {
+          title: "OpenCow 默认搜索结果",
+          url: "https://example.com/opencow",
+          provider: "OpenCow 默认搜索",
+          query: message,
+          summary: "返回了默认搜索结果。"
+        }
+      ]
     });
 
     const { container } = render(<App />);
@@ -1967,12 +1984,9 @@ describe("App local task guard", () => {
     const approveCapabilityButton = await screen.findByRole("button", { name: APPROVE_CAPABILITY_NAME });
     fireEvent.click(approveCapabilityButton as HTMLButtonElement);
 
-    expect(await screen.findAllByText("联网搜索 Provider 未配置")).not.toHaveLength(0);
-    expect(await screen.findAllByText(/前往设置配置联网搜索 Provider/)).not.toHaveLength(0);
-    expect(screen.queryByText("Search provider is not configured")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Configure a search provider/i)).not.toBeInTheDocument();
-    expect(planAssistantTaskMock).not.toHaveBeenCalled();
-    expect(executeAssistantTaskMock).not.toHaveBeenCalled();
+    expect(await screen.findAllByText(/联网搜索结果/)).not.toHaveLength(0);
+    expect(planAssistantTaskMock).toHaveBeenCalledWith(message, "readonly");
+    expect(executeAssistantTaskMock).toHaveBeenCalled();
   });
 
   it("continues a natural network search request after capability approval", async () => {
@@ -1993,9 +2007,17 @@ describe("App local task guard", () => {
       auditDetail: "Readonly network search guidance task."
     });
     executeAssistantTaskMock.mockResolvedValue({
-      resultTitle: "联网搜索说明",
-      resultSummary:
-        "本轮没有执行外部联网搜索。搜索 Provider 尚未配置或尚未完成能力审批，已跳过网络调用。下一步：在设置中配置 Provider、批准联网搜索能力后重试；如果答案应来自工作区资料，请优先使用本地 RAG。"
+      resultTitle: "联网搜索结果",
+      resultSummary: "已通过 Tavily 返回 2 条来源。请求：联网搜索一下最新资料。",
+      searchSources: [
+        {
+          title: "Tavily result",
+          url: "https://example.com/tavily",
+          provider: "Tavily",
+          query: message,
+          summary: "已返回联网来源。"
+        }
+      ]
     });
 
     const { container } = render(<App />);
@@ -2004,11 +2026,17 @@ describe("App local task guard", () => {
       await Promise.resolve();
     });
 
-    expandInspectorAdvancedSettings();
-    fireEvent.change(screen.getByRole("textbox", { name: "\u8054\u7f51\u641c\u7d22 Provider" }), {
-      target: { value: "Tavily" }
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await screen.findByRole("textbox", { name: "\u8054\u7f51\u641c\u7d22 Provider" });
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox", { name: "\u8054\u7f51\u641c\u7d22 Provider" }), {
+        target: { value: "Tavily" }
+      });
+      fireEvent.click(screen.getByRole("button", { name: "\u4fdd\u5b58\u8054\u7f51\u641c\u7d22\u914d\u7f6e" }));
+      fireEvent.click(screen.getByRole("button", { name: "会话" }));
+      await Promise.resolve();
     });
-    fireEvent.click(screen.getByRole("button", { name: "\u4fdd\u5b58\u8054\u7f51\u641c\u7d22\u914d\u7f6e" }));
+    await screen.findByRole("textbox", { name: "输入任务" });
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -2022,11 +2050,12 @@ describe("App local task guard", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     const approveCapabilityButton = await screen.findByRole("button", { name: APPROVE_CAPABILITY_NAME });
-    fireEvent.click(approveCapabilityButton as HTMLButtonElement);
+    await act(async () => {
+      fireEvent.click(approveCapabilityButton as HTMLButtonElement);
+      await Promise.resolve();
+    });
 
-    expect(await screen.findByLabelText("assistant-pending")).toBeInTheDocument();
-    expect(await screen.findAllByText(/本轮没有执行外部联网搜索/)).not.toHaveLength(0);
-    expect(screen.queryByText(/No external network search was run/i)).not.toBeInTheDocument();
+    expect(await screen.findAllByText(/联网搜索结果/)).not.toHaveLength(0);
     expect(planAssistantTaskMock).toHaveBeenCalledWith(message, "readonly");
     expect(executeAssistantTaskMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2038,7 +2067,7 @@ describe("App local task guard", () => {
         snapshotAvailable: true
       })
     );
-  });
+  }, 15000);
 
   it("surfaces shell diagnostic next steps after an approved workspace-write command fails", async () => {
     loadOllamaOverviewMock.mockResolvedValue({

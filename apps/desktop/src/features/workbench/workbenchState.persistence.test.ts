@@ -183,4 +183,74 @@ describe("workbenchState.persistence", () => {
     expect(restored.conversation.mode).toBe("restored");
     expect(restored.conversation.restoredFromConversationId).toBe("recent-conversation-1");
   });
+
+  it("restores persisted conversation attachments after reload", async () => {
+    const persistedState = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "恢复带附件的历史",
+      attachments: [
+        {
+          id: "attachment-1",
+          name: "capture.png",
+          mimeType: "image/png",
+          sizeBytes: 4096,
+          kind: "image",
+          filePath: "/tmp/capture.png",
+          previewUrl: "blob:capture-preview",
+          source: "drop"
+        }
+      ]
+    });
+
+    await persistWorkbenchState(persistedState);
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.conversation.entries[0]?.attachments?.[0]?.name).toBe("capture.png");
+  });
+
+  it("deduplicates repeated draft conversations during persistence restore", async () => {
+    const repeatedEntries = [
+      {
+        id: "recent-entry-user",
+        kind: "user" as const,
+        title: "用户",
+        summary: "哈吉米是什么"
+      }
+    ];
+    const persistedState = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        entries: repeatedEntries,
+        mode: "restored" as const,
+        restoredFromConversationId: "recent-conversation-1"
+      },
+      history: {
+        lastNonEmptyConversationEntries: repeatedEntries,
+        draftConversations: [
+          {
+            id: "recent-conversation-1",
+            title: "哈吉米是什么",
+            summary: "同一条最近会话被重复写入。",
+            entries: repeatedEntries,
+            archivedAt: null
+          },
+          {
+            id: "recent-conversation-1",
+            title: "哈吉米是什么",
+            summary: "同一条最近会话被重复写入。",
+            entries: repeatedEntries,
+            archivedAt: null
+          }
+        ],
+        archivedConversations: []
+      }
+    };
+
+    await persistWorkbenchState(persistedState);
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.history.draftConversations).toHaveLength(1);
+    expect(restored.history.draftConversations[0]?.id).toBe("recent-conversation-1");
+  });
 });

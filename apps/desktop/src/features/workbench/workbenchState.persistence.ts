@@ -15,6 +15,19 @@ type NativeWorkbenchStateReadResult = {
   payload: PersistedWorkbenchStateEnvelope | null;
 };
 
+function deduplicateRecentConversations(records: WorkbenchState["history"]["draftConversations"]) {
+  const seen = new Set<string>();
+
+  return records.filter((record) => {
+    if (seen.has(record.id)) {
+      return false;
+    }
+
+    seen.add(record.id);
+    return true;
+  });
+}
+
 function isBrowserStorageAvailable() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
@@ -65,6 +78,10 @@ function clearLegacyBrowserEnvelope() {
 
   window.localStorage.removeItem(WORKBENCH_STATE_STORAGE_KEY);
 }
+
+type LegacyHistoryState = WorkbenchState["history"] & {
+  recentConversations?: WorkbenchState["history"]["draftConversations"];
+};
 
 function revivePersistedTasks(tasks: WorkbenchState["tasks"]): WorkbenchState["tasks"] {
   const revivedItems = tasks.items.map((item) => revivePersistedTask(item));
@@ -130,13 +147,35 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
     state.history?.lastNonEmptyConversationEntries
     ?? (state.conversation.entries.length > 0 ? state.conversation.entries : []);
   const revivedDraftConversations =
-    state.history?.draftConversations
-    ?? state.history?.recentConversations
-    ?? [];
+    deduplicateRecentConversations(
+      state.history?.draftConversations
+      ?? (state.history as LegacyHistoryState | undefined)?.recentConversations
+      ?? []
+    );
   const revivedArchivedConversations = state.history?.archivedConversations ?? [];
   const revivedKnowledge = state.knowledge ?? {
     importedFiles: [],
-    availableFiles: []
+    availableFiles: [],
+    activeLibraryId: "default-library",
+    activeLibraryLabel: "默认知识库",
+    libraries: [
+      {
+        id: "default-library",
+        label: "默认知识库"
+      }
+    ]
+  };
+  const revivedNpcWorkspace = state.npcWorkspace ?? {
+    items: [],
+    selectedNpcId: null,
+    activeSection: "overview",
+    selectedSkillName: null,
+    selectedSkillPreview: null,
+    selectedKnowledgeLibraryId: null,
+    saveStatus: null
+  };
+  const revivedComposer = state.composer ?? {
+    draftAttachments: []
   };
   const revivedConversationEntries =
     state.conversation.entries.length > 0 || state.conversation.mode === "blank"
@@ -154,12 +193,14 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
       mode: revivedConversationMode,
       restoredFromConversationId: revivedRestoredFromConversationId
     },
+    composer: revivedComposer,
     history: {
       lastNonEmptyConversationEntries: revivedHistoryEntries,
       draftConversations: revivedDraftConversations,
       archivedConversations: revivedArchivedConversations
     },
     knowledge: revivedKnowledge,
+    npcWorkspace: revivedNpcWorkspace,
     tasks: revivePersistedTasks(state.tasks),
     confirmation: {
       pending: null
@@ -167,6 +208,37 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
     permission: {
       ...state.permission,
       pendingModeChange: null
+    },
+    search: {
+      enabled: state.search?.enabled ?? false,
+      defaultProviderEnabled: state.search?.defaultProviderEnabled ?? true,
+      providerLabel:
+        state.search?.providerLabel
+        ?? state.search?.effectiveProvider
+        ?? state.search?.customProviderLabel
+        ?? "OpenCow 默认搜索",
+      customProviderLabel: state.search?.customProviderLabel ?? "",
+      customBaseUrl: state.search?.customBaseUrl ?? "",
+      customApiKey: state.search?.customApiKey ?? "",
+      effectiveProvider:
+        state.search?.effectiveProvider
+        ?? state.search?.providerLabel
+        ?? state.search?.customProviderLabel
+        ?? "OpenCow 默认搜索",
+      lastFallbackReason: state.search?.lastFallbackReason ?? null,
+      suppressFallbackNotice: state.search?.suppressFallbackNotice ?? false
+    },
+    settings: {
+      remoteApi: {
+        collapsed: state.settings?.remoteApi?.collapsed ?? true,
+        enabled: state.settings?.remoteApi?.enabled ?? false,
+        baseUrl: state.settings?.remoteApi?.baseUrl ?? "",
+        providerLabel: state.settings?.remoteApi?.providerLabel ?? "",
+        apiKey: state.settings?.remoteApi?.apiKey ?? ""
+      },
+      npc: {
+        localModel: state.settings?.npc?.localModel ?? ""
+      }
     },
     rollback: {
       ...state.rollback,

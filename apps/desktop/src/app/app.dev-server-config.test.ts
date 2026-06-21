@@ -52,6 +52,30 @@ describe("desktop dev server contract", () => {
     expect(libRs).toContain(".data_directory(");
   });
 
+  it("declares dedicated desktop icon assets in the tauri source tree", () => {
+    const tauriConfig = JSON.parse(readDesktopFile("src-tauri/tauri.conf.json")) as {
+      bundle?: {
+        icon?: string[];
+      };
+    };
+
+    expect(tauriConfig.bundle?.icon).toEqual([
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ]);
+  });
+
+  it("keeps a repo script for refreshing the desktop app copy from the latest mac bundle", () => {
+    const rootPackage = JSON.parse(readRepoFile("package.json")) as {
+      scripts: Record<string, string>;
+    };
+
+    expect(rootPackage.scripts["desktop:sync:mac"]).toBeDefined();
+    expect(rootPackage.scripts["desktop:sync:mac"]).toContain("sync-opencow-mac-apps.py");
+    expect(rootPackage.scripts["desktop:run:mac"]).toBe("zsh scripts/start-opencow-latest-desktop-mac.command");
+  });
+
   it("does not mix static and dynamic imports for the same Ollama service module", () => {
     const appTsx = readDesktopFile("src/app/App.tsx");
 
@@ -94,6 +118,38 @@ describe("desktop dev server contract", () => {
 
     expect(rootPackage.scripts["predesktop:dev"]).toBe("npm --workspace packages/openclaw-adapter run build");
     expect(rootPackage.scripts["desktop:dev"]).toBe("npm --workspace apps/desktop run tauri:dev");
+  });
+
+  it("refreshes the mac desktop app bundle through the sync script before copying the app", () => {
+    const syncScript = readRepoFile("scripts/sync-opencow-mac-apps.py");
+
+    expect(syncScript).toContain('["npm", "--workspace", "apps/desktop", "run", "build"]');
+    expect(syncScript).toContain('["npm", "run", "tauri:build"]');
+    expect(syncScript).toContain('LATEST_TEST_APP = Path("/Users/apple/Desktop/opencow最新测试版.app")');
+    expect(syncScript).toContain("write_latest_test_launcher_app()");
+    expect(syncScript.indexOf('["npm", "--workspace", "apps/desktop", "run", "build"]')).toBeLessThan(
+      syncScript.indexOf("copy_app_bundle")
+    );
+    expect(syncScript.indexOf('["npm", "run", "tauri:build"]')).toBeLessThan(
+      syncScript.indexOf("copy_app_bundle")
+    );
+  });
+
+  it("starts the mac latest-test launcher by syncing before opening the desktop app", () => {
+    const launcher = readRepoFile("scripts/start-opencow-latest-desktop-mac.command");
+    const launcherApp = readRepoFile("scripts/OpenCow最新测试版启动器.applescript");
+
+    expect(launcher).toContain('SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"');
+    expect(launcher).toContain('python3 "${SYNC_SCRIPT}"');
+    expect(launcher).not.toContain("python3 scripts/sync-opencow-mac-apps.py");
+    expect(launcher).toContain('APP_BINARY="${DESKTOP_APP}/Contents/MacOS/${APP_EXECUTABLE}"');
+    expect(launcher).toContain('"${APP_BINARY}" >/dev/null 2>&1 &');
+    expect(launcher.indexOf('python3 "${SYNC_SCRIPT}"')).toBeLessThan(
+      launcher.indexOf('"${APP_BINARY}" >/dev/null 2>&1 &')
+    );
+    expect(launcher).toContain("APP_BUNDLE_ID=\"cn.opencow.desktop\"");
+    expect(launcher).toContain("APP_EXECUTABLE=\"opencow-desktop\"");
+    expect(launcherApp).toContain("start-opencow-latest-desktop-mac.command");
   });
 
   it("exposes a local-only WebView2 debugging port for desktop smoke automation", () => {

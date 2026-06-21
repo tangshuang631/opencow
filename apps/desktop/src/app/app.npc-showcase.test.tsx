@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -46,6 +47,12 @@ async function waitForSelectedLocalModel() {
   await screen.findByRole("button", { name: SELECTED_LOCAL_MODEL_NAME });
 }
 
+function setupUser() {
+  return typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+    ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    : userEvent.setup();
+}
+
 describe("App npc local run flow", () => {
   beforeEach(() => {
     loadOllamaOverviewMock.mockReset();
@@ -58,6 +65,7 @@ describe("App npc local run flow", () => {
   });
 
   it("continues from npc showcase run permission approval into the final run result", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -86,18 +94,16 @@ describe("App npc local run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "use npc collaboration to run the matched cattle project now" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(composerInput as HTMLTextAreaElement, "use npc collaboration to run the matched cattle project now");
+    await user.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准提权" });
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText("工作区读写")).toBeInTheDocument();
 
-    fireEvent.click(approvePermissionButton);
+    await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(
@@ -108,6 +114,7 @@ describe("App npc local run flow", () => {
   });
 
   it("continues from npc screenshot permission approval into the final screenshot result", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -135,18 +142,19 @@ describe("App npc local run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "use npc collaboration to capture a screenshot from the matched cattle project now" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(
+      composerInput as HTMLTextAreaElement,
+      "use npc collaboration to capture a screenshot from the matched cattle project now"
+    );
+    await user.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准提权" });
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText("工作区读写")).toBeInTheDocument();
 
-    fireEvent.click(approvePermissionButton);
+    await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(
@@ -158,6 +166,7 @@ describe("App npc local run flow", () => {
   });
 
   it("continues from npc showcase-site permission approval into the final changed-file result", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -185,18 +194,19 @@ describe("App npc local run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "use npc collaboration to generate the showcase site for the matched cattle project now" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(
+      composerInput as HTMLTextAreaElement,
+      "use npc collaboration to generate the showcase site for the matched cattle project now"
+    );
+    await user.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准提权" });
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getByText("工作区读写")).toBeInTheDocument();
 
-    fireEvent.click(approvePermissionButton);
+    await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(
@@ -208,6 +218,7 @@ describe("App npc local run flow", () => {
   });
 
   it("continues from readonly npc showcase publish-preview into the final result", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -240,10 +251,11 @@ describe("App npc local run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "use npc collaboration to preview the generated showcase output for the matched cattle project before git" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(
+      composerInput as HTMLTextAreaElement,
+      "use npc collaboration to preview the generated showcase output for the matched cattle project before git"
+    );
+    await user.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
       expect(
@@ -269,6 +281,7 @@ describe("App npc local run flow", () => {
   });
 
   it("continues from readonly npc showcase git confirmation preview into the final result without permission prompts", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -302,10 +315,11 @@ describe("App npc local run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "use npc collaboration to prepare the showcase changes for commit for the matched cattle project" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(
+      composerInput as HTMLTextAreaElement,
+      "use npc collaboration to prepare the showcase changes for commit for the matched cattle project"
+    );
+    await user.click(sendButton as HTMLButtonElement);
 
     await waitFor(() => {
       expect(

@@ -1,5 +1,7 @@
 export type {
   AvailableKnowledgeFile,
+  ChatAttachment,
+  ChatAttachmentSource,
   ConversationMode,
   ConversationEntry,
   ImportedKnowledgeFile,

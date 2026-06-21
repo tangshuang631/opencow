@@ -1,6 +1,7 @@
-import { Bot, LoaderCircle, RotateCcw } from "lucide-react";
-import { useState } from "react";
-import type { WorkbenchState } from "../workbenchState";
+import { Bot, ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
+import type { ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ChatAttachment, WorkbenchState } from "../workbenchState";
 import {
   getLocalizedPermissionReason,
   getVisibleLocalTaskFailureActionLabel,
@@ -9,14 +10,17 @@ import {
   isLocalAssistantPlannerFailureSource,
   normalizeWorkbenchText
 } from "../workbenchText";
+import { AttachmentPreview } from "./AttachmentPreview";
 
 type MainConversationProps = {
   state: WorkbenchState;
   onPreviewRollback: (targetEntryId: string) => void;
   onCancelActiveTask: () => void;
+  onRetryLocalTask?: (taskId?: string) => void;
   onRestoreRecentConversation?: (conversationId: string) => void;
   onDeleteRecentConversation?: (conversationId: string) => void;
   onSubmitTask?: (message: string) => void;
+  onOpenAttachment?: (attachment: ChatAttachment) => void;
 };
 
 const TEXT = {
@@ -24,14 +28,9 @@ const TEXT = {
   rollbackToUserMessage: "回退到这条消息之前",
   user: "你",
   system: "系统",
-  thinkingTitle: "助手处理中",
-  localModelThinkingTitle: "Ollama 正在生成",
-  npcConfigThinkingTitle: "Ollama 正在生成 NPC 配置",
+  thinkingTitle: "正在思考",
   queuedLabel: "已进入本地任务队列",
-  runningLabel: "正在本地执行链中处理",
-  localModelRunningLabel: "正在等待本地模型输出",
-  npcConfigRunningLabel: "正在等待本地模型生成 NPC 配置",
-  localModelSlowStartHint: "本地模型首轮响应可能较慢，OpenCow 会保持界面响应，并持续等待真实输出返回。"
+  runningLabel: "正在思考"
 } as const;
 
 const LONG_TEXT_LIMIT = 220;
@@ -47,6 +46,8 @@ const SUCCESS_TRACE_PREFIXES = [
   "Search context items:",
   "Search context status:",
   "Search provider:",
+  "Effective provider:",
+  "Search fallback:",
   "Result summary:"
 ];
 
@@ -86,6 +87,15 @@ type KnowledgeHitCard = {
   followUpQuery: string;
 };
 
+type SearchReferenceCard = {
+  title: string;
+  provider: string;
+  sourceLabel: string;
+  query: string;
+  url: string;
+  summary: string;
+};
+
 function parseKnowledgeHitCards(detailLines: string[]) {
   const cards: KnowledgeHitCard[] = [];
   const remainingLines: string[] = [];
@@ -109,6 +119,53 @@ function parseKnowledgeHitCards(detailLines: string[]) {
   return { cards, remainingLines };
 }
 
+function parseSearchReferenceCards(detailLines: string[]) {
+  const cards: SearchReferenceCard[] = [];
+  const remainingLines: string[] = [];
+
+  for (const line of detailLines) {
+    const match = line.match(/^搜索来源：标题=(.+?)；(?:来源|提供方)=(.+?)；查询=(.+?)；地址=(.+?)；摘要=(.+)$/);
+
+    if (!match) {
+      remainingLines.push(line);
+      continue;
+    }
+
+    cards.push({
+      title: match[1]?.trim() ?? "",
+      provider: match[2]?.trim() ?? "",
+      sourceLabel: match[2]?.trim() ?? "",
+      query: match[3]?.trim() ?? "",
+      url: match[4]?.trim() ?? "",
+      summary: match[5]?.trim() ?? ""
+    });
+  }
+
+  return { cards, remainingLines };
+}
+
+function isKnowledgeMetadataLine(line: string) {
+  return line.startsWith("Knowledge library:")
+    || line.startsWith("Knowledge library sources:")
+    || line.startsWith("Indexed documents:");
+}
+
+function localizeKnowledgeMetadataLine(line: string) {
+  if (line.startsWith("Knowledge library sources:")) {
+    return `知识库来源：${line.replace("Knowledge library sources:", "").trim()}`;
+  }
+
+  if (line.startsWith("Knowledge library:")) {
+    return `知识库：${line.replace("Knowledge library:", "").trim()}`;
+  }
+
+  if (line.startsWith("Indexed documents:")) {
+    return `已索引文档：${line.replace("Indexed documents:", "").trim()}`;
+  }
+
+  return normalizeWorkbenchText(line);
+}
+
 function isDuplicatePendingApprovalSkippedEntry(entry: WorkbenchState["conversation"]["entries"][number]) {
   return entry.detailLines?.some((line) => line === "Source: duplicate_pending_approval_skipped") ?? false;
 }
@@ -124,6 +181,7 @@ function isDuplicateLocalTaskSkippedEntry(entry: WorkbenchState["conversation"][
 
 function isVisibleSystemEntry(entry: WorkbenchState["conversation"]["entries"][number]) {
   return entry.id === COMPRESSED_CONVERSATION_ENTRY_ID
+    || entry.id.startsWith("rollback-preview-")
     || isDuplicatePendingApprovalSkippedEntry(entry)
     || isDuplicateLocalTaskSkippedEntry(entry)
     || isDuplicatePlanningFailureSkippedEntry(entry);
@@ -289,7 +347,11 @@ function createConversationHeader(entries: WorkbenchState["conversation"]["entri
   const latestResultEntry = latestFirstEntries.find((entry) => entry.kind !== "user");
   const title = latestUserEntry?.summary.trim() || "";
   const resultTitle = latestResultEntry ? getVisibleTitle(latestResultEntry, false).trim() : "";
-  const overview = resultTitle ? `概览：${resultTitle}` : "";
+  const shouldHideOverview =
+    resultTitle === "本地模型答复"
+    || resultTitle === "本地模型回答"
+    || resultTitle === "联网搜索结果";
+  const overview = resultTitle && !shouldHideOverview ? `概览：${resultTitle}` : "";
 
   if (!title) {
     return null;
@@ -313,6 +375,18 @@ function createCompactText(text: string, limit = LONG_TEXT_LIMIT) {
 
 function isLongWorkbenchText(text: string) {
   return normalizeWorkbenchText(text).trim().length > LONG_TEXT_LIMIT;
+}
+
+async function openReferenceUrl(url: string) {
+  const normalized = url.trim();
+
+  if (!normalized) {
+    return;
+  }
+
+  if (typeof window !== "undefined" && normalized.startsWith("http")) {
+    window.open(normalized, "_blank", "noopener,noreferrer");
+  }
 }
 
 function isLocalModelPendingTask(executionKind: string | undefined) {
@@ -349,6 +423,273 @@ function CollapsibleWorkbenchText({
   );
 }
 
+function renderInlineMarkdown(text: string) {
+  const normalized = normalizeWorkbenchText(text);
+  const parts = normalized.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+
+  return parts.map((part, index) => {
+    const boldMatch = part.match(/^\*\*([^*]+)\*\*$/);
+
+    if (boldMatch) {
+      return (
+        <strong key={`${part}-${index}`}>
+          {boldMatch[1]}
+        </strong>
+      );
+    }
+
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
+}
+
+type MarkdownBlock =
+  | { type: "heading"; content: string }
+  | { type: "paragraph"; content: string }
+  | { type: "ordered-list"; items: Array<{ content: string; children: string[] }> };
+
+function parseMarkdownBlocks(text: string): MarkdownBlock[] {
+  const lines = normalizeWorkbenchText(text).replace(/\r\n/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let paragraphLines: string[] = [];
+  let orderedListItems: Array<{ content: string; children: string[] }> = [];
+
+  function flushParagraph() {
+    if (paragraphLines.length === 0) {
+      return;
+    }
+
+    blocks.push({
+      type: "paragraph",
+      content: paragraphLines.join(" ").trim()
+    });
+    paragraphLines = [];
+  }
+
+  function flushOrderedList() {
+    if (orderedListItems.length === 0) {
+      return;
+    }
+
+    blocks.push({
+      type: "ordered-list",
+      items: orderedListItems
+    });
+    orderedListItems = [];
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushParagraph();
+      flushOrderedList();
+      continue;
+    }
+
+    const orderedMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
+
+    if (orderedMatch) {
+      flushParagraph();
+      orderedListItems.push({
+        content: orderedMatch[2]?.trim() ?? "",
+        children: []
+      });
+      continue;
+    }
+
+    const unorderedMatch = trimmed.match(/^[*-]\s+(.+)$/);
+
+    if (unorderedMatch && orderedListItems.length > 0) {
+      orderedListItems[orderedListItems.length - 1]?.children.push(unorderedMatch[1]?.trim() ?? "");
+      continue;
+    }
+
+    if (/^\*\*[^*]+:\*\*$/.test(trimmed)) {
+      flushParagraph();
+      flushOrderedList();
+      blocks.push({
+        type: "heading",
+        content: trimmed.replace(/^\*\*|\*\*$/g, "")
+      });
+      continue;
+    }
+
+    flushOrderedList();
+    paragraphLines.push(trimmed);
+  }
+
+  flushParagraph();
+  flushOrderedList();
+
+  return blocks;
+}
+
+function AssistantMarkdownMessage({ text }: { text: string }) {
+  const blocks = parseMarkdownBlocks(text);
+
+  return (
+    <div className="message-rich-content">
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          return (
+            <p className="message-rich-heading" key={`${block.type}-${index}`}>
+              {renderInlineMarkdown(block.content)}
+            </p>
+          );
+        }
+
+        if (block.type === "ordered-list") {
+          return (
+            <ol className="message-rich-list" key={`${block.type}-${index}`}>
+              {block.items.map((item, itemIndex) => (
+                <li className="message-rich-list-item" key={`${item.content}-${itemIndex}`}>
+                  <span>{renderInlineMarkdown(item.content)}</span>
+                  {item.children.length > 0 ? (
+                    <ul className="message-rich-sublist">
+                      {item.children.map((child, childIndex) => (
+                        <li key={`${child}-${childIndex}`}>{renderInlineMarkdown(child)}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          );
+        }
+
+        return (
+          <p className="message-summary" key={`${block.type}-${index}`}>
+            {renderInlineMarkdown(block.content)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function renderAssistantSummary(text: string): ReactNode {
+  if (!text.includes("**") && !/^\s*\d+\.\s+/m.test(text) && !/^\s*[*-]\s+/m.test(text)) {
+    return <p className="message-summary">{normalizeWorkbenchText(text)}</p>;
+  }
+
+  return <AssistantMarkdownMessage text={text} />;
+}
+
+function getPendingAssistantSummaryText(pendingTask: NonNullable<ReturnType<typeof getPendingTaskLike>>): string {
+  if (pendingTask.streamingSummary?.trim()) {
+    return pendingTask.streamingSummary;
+  }
+
+  if (pendingTask.progressSummary?.trim()) {
+    return pendingTask.progressSummary;
+  }
+
+  return "";
+}
+
+function getPendingTaskLike(state: WorkbenchState) {
+  const activeTask = state.tasks.activeTaskId
+    ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
+    : null;
+  const queuedTask = state.tasks.items.find((item) => item.status === "queued") ?? null;
+
+  return activeTask ?? queuedTask;
+}
+
+function getLatestFailedTask(state: WorkbenchState) {
+  return state.tasks.items.find((item) => item.status === "failed") ?? null;
+}
+
+function InformationReferences({
+  entryId,
+  knowledgeCards,
+  searchCards,
+  metadataLines,
+  expanded,
+  onToggle,
+  onSubmitTask
+}: {
+  entryId: string;
+  knowledgeCards: KnowledgeHitCard[];
+  searchCards: SearchReferenceCard[];
+  metadataLines: string[];
+  expanded: boolean;
+  onToggle: (entryId: string) => void;
+  onSubmitTask?: (message: string) => void;
+}) {
+  const totalCount = knowledgeCards.length + searchCards.length;
+
+  return (
+    <section className="message-knowledge-results" aria-label="信息引用">
+      <button
+        aria-expanded={expanded}
+        aria-label={expanded ? "收起信息引用" : "展开信息引用"}
+        className={`message-knowledge-toggle ${expanded ? "message-knowledge-toggle-open" : ""}`}
+        type="button"
+        onClick={() => onToggle(entryId)}
+      >
+        <ChevronDown aria-hidden="true" size={20} />
+        <span>{totalCount} 条信息引用</span>
+      </button>
+      {expanded ? (
+        <div className="message-knowledge-expanded">
+          {metadataLines.length > 0 ? (
+            <div className="message-knowledge-metadata">
+              {metadataLines.map((line) => (
+                <p className="message-detail" key={`${entryId}-${line}`}>
+                  {localizeKnowledgeMetadataLine(line)}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {searchCards.length > 0 ? (
+            <>
+              <p className="message-detail-title">联网搜索</p>
+              {searchCards.map((card) => (
+                <div className="message-knowledge-item" key={`${entryId}-${card.url}-${card.title}`}>
+                  <p className="message-detail">{normalizeWorkbenchText(card.title)}</p>
+                  <p className="message-detail">来源：{normalizeWorkbenchText(card.sourceLabel || card.provider)}</p>
+                  <p className="message-detail">{normalizeWorkbenchText(card.summary)}</p>
+                  <button
+                    className="message-link-button"
+                    type="button"
+                    onClick={() => {
+                      void openReferenceUrl(card.url);
+                    }}
+                  >
+                    原文链接
+                  </button>
+                </div>
+              ))}
+            </>
+          ) : null}
+          {knowledgeCards.length > 0 ? (
+            <>
+              <p className="message-detail-title">知识库检索</p>
+              {knowledgeCards.map((card) => (
+                <div className="message-knowledge-item" key={`${entryId}-${card.sourceTitle}-${card.score}`}>
+                  <p className="message-detail">来源文件：{normalizeWorkbenchText(card.sourceTitle)}</p>
+                  <p className="message-detail">匹配分数：{normalizeWorkbenchText(card.score)}</p>
+                  <p className="message-detail">{normalizeWorkbenchText(card.snippet)}</p>
+                  <button
+                    className="action-button"
+                    type="button"
+                    aria-label={`只看来源：${card.sourceTitle}`}
+                    onClick={() => onSubmitTask?.(card.followUpQuery)}
+                  >
+                    只看来源：{normalizeWorkbenchText(card.sourceTitle)}
+                  </button>
+                </div>
+              ))}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function getRollbackTargetBeforeUserEntry(
   entry: WorkbenchState["conversation"]["entries"][number],
   state: WorkbenchState
@@ -357,9 +698,13 @@ function getRollbackTargetBeforeUserEntry(
     return null;
   }
 
+  if (entry.rollbackTargetId) {
+    return entry.rollbackTargetId;
+  }
+
   const submitRollbackId = entry.id.endsWith("-user")
     ? entry.id.slice(0, -"user".length - 1)
-    : entry.rollbackTargetId;
+    : null;
 
   if (!submitRollbackId) {
     return null;
@@ -379,16 +724,16 @@ export function MainConversation({
   onPreviewRollback,
   onRestoreRecentConversation,
   onDeleteRecentConversation,
-  onSubmitTask
+  onRetryLocalTask,
+  onSubmitTask,
+  onOpenAttachment
 }: MainConversationProps) {
-  const activeTask = state.tasks.activeTaskId
-    ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
-    : null;
-  const queuedTask = state.tasks.items.find((item) => item.status === "queued") ?? null;
-  const pendingTask = activeTask ?? queuedTask;
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [expandedKnowledgeEntryIds, setExpandedKnowledgeEntryIds] = useState<Set<string>>(() => new Set());
+  const pendingTask = getPendingTaskLike(state);
+  const latestFailedTask = getLatestFailedTask(state);
   const hasPendingTask = pendingTask !== null;
   const isLocalModelPending = isLocalModelPendingTask(pendingTask?.executionKind);
-  const isNpcConfigPending = pendingTask?.executionKind === "npc-config-write";
   const entries = state.conversation.entries.slice().reverse();
   const visibleEntries = entries.filter((entry) => {
     if (entry.kind === "system") {
@@ -402,21 +747,32 @@ export function MainConversation({
     || state.audit.lastEvent.source === "permission_mode_change_cancelled"
     || state.audit.lastEvent.source === "capability_toggle_cancelled";
   const showsActionableErrorRecovery = state.error !== null && state.error.module !== "ollama";
-  const pendingStatusLabel = isLocalModelPending
-    ? isNpcConfigPending
-      ? TEXT.npcConfigRunningLabel
-      : TEXT.localModelRunningLabel
-    : activeTask
-      ? TEXT.runningLabel
-      : TEXT.queuedLabel;
-  const pendingTitle = isLocalModelPending
-    ? isNpcConfigPending
-      ? TEXT.npcConfigThinkingTitle
-      : TEXT.localModelThinkingTitle
-    : TEXT.thinkingTitle;
-  const pendingLocalModelProgress = isLocalModelPending
-    ? pendingTask?.progressSummary?.trim() || TEXT.localModelSlowStartHint
-    : "";
+  const pendingStatusLabel = pendingTask ? TEXT.runningLabel : TEXT.queuedLabel;
+  const pendingTitle = TEXT.thinkingTitle;
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }, [state.conversation.entries, state.tasks.items, state.tasks.activeTaskId]);
+
+  function toggleKnowledgeDetails(entryId: string) {
+    setExpandedKnowledgeEntryIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(entryId)) {
+        next.delete(entryId);
+      } else {
+        next.add(entryId);
+      }
+
+      return next;
+    });
+  }
 
   return (
     <section className="conversation" aria-label={TEXT.conversation}>
@@ -432,11 +788,19 @@ export function MainConversation({
           </div>
         </header>
       ) : null}
-      <div className="conversation-scroll">
+      <div className="conversation-scroll" ref={scrollContainerRef}>
         {visibleEntries.map((entry) => {
           const isUser = entry.kind === "user";
-          const { cards: knowledgeHitCards, remainingLines: visibleDetailLines } = parseKnowledgeHitCards(getVisibleDetailLines(entry));
+          const { cards: searchReferenceCards, remainingLines: linesWithoutSearch } =
+            parseSearchReferenceCards(getVisibleDetailLines(entry));
+          const { cards: knowledgeHitCards, remainingLines } = parseKnowledgeHitCards(linesWithoutSearch);
+          const knowledgeMetadataLines = remainingLines.filter(isKnowledgeMetadataLine);
+          const visibleDetailLines = remainingLines.filter((line) => !isKnowledgeMetadataLine(line));
           const userRollbackTargetId = getRollbackTargetBeforeUserEntry(entry, state);
+          const hasKnowledgeDetails =
+            knowledgeHitCards.length > 0
+            || knowledgeMetadataLines.length > 0
+            || searchReferenceCards.length > 0;
 
           return (
             <article
@@ -454,26 +818,33 @@ export function MainConversation({
                     {normalizeWorkbenchText(getVisibleTitle(entry, isUser))}
                   </p>
                 )}
-                <CollapsibleWorkbenchText text={getVisibleSummary(entry)} isUser={isUser} />
-                {knowledgeHitCards.length > 0 ? (
-                  <section className="message-knowledge-results" aria-label="检索命中">
-                    <p className="message-detail-title">检索命中</p>
-                    {knowledgeHitCards.map((card) => (
-                      <div className="message-knowledge-card" key={`${entry.id}-${card.sourceTitle}-${card.score}`}>
-                        <p className="message-detail">来源文件：{normalizeWorkbenchText(card.sourceTitle)}</p>
-                        <p className="message-detail">匹配分数：{normalizeWorkbenchText(card.score)}</p>
-                        <p className="message-detail">{normalizeWorkbenchText(card.snippet)}</p>
-                        <button
-                          className="action-button"
-                          type="button"
-                          aria-label={`只看来源：${card.sourceTitle}`}
-                          onClick={() => onSubmitTask?.(card.followUpQuery)}
-                        >
-                          只看来源：{normalizeWorkbenchText(card.sourceTitle)}
-                        </button>
-                      </div>
+                {entry.attachments && entry.attachments.length > 0 ? (
+                  <div className="message-attachment-strip" aria-label="消息附件">
+                    {entry.attachments.map((attachment) => (
+                      <AttachmentPreview
+                        attachment={attachment}
+                        classNamePrefix="message"
+                        key={attachment.id}
+                        onOpen={onOpenAttachment}
+                      />
                     ))}
-                  </section>
+                  </div>
+                ) : null}
+                {isUser ? (
+                  <CollapsibleWorkbenchText text={getVisibleSummary(entry)} isUser={isUser} />
+                ) : (
+                  renderAssistantSummary(getVisibleSummary(entry))
+                )}
+                {hasKnowledgeDetails ? (
+                  <InformationReferences
+                    entryId={entry.id}
+                    expanded={expandedKnowledgeEntryIds.has(entry.id)}
+                    knowledgeCards={knowledgeHitCards}
+                    metadataLines={knowledgeMetadataLines}
+                    searchCards={searchReferenceCards}
+                    onSubmitTask={onSubmitTask}
+                    onToggle={toggleKnowledgeDetails}
+                  />
                 ) : null}
                 {visibleDetailLines.map((line) => (
                   <p className="message-detail" key={`${entry.id}-${line}`}>
@@ -524,6 +895,20 @@ export function MainConversation({
               {state.error ? (
                 <p className="message-detail">{normalizeWorkbenchText(getVisibleErrorDetail(state.error))}</p>
               ) : null}
+              {state.error
+                && latestFailedTask
+                && state.error.module === "tasks"
+                && onRetryLocalTask ? (
+                  <div className="action-row">
+                    <button
+                      className="action-button action-button-primary"
+                      type="button"
+                      onClick={() => onRetryLocalTask(latestFailedTask.id)}
+                    >
+                      重试本地任务
+                    </button>
+                  </div>
+                ) : null}
             </div>
           </article>
         ) : null}
@@ -552,7 +937,7 @@ export function MainConversation({
                 </div>
               ) : (
                 <div className="thinking-summary-group">
-                  <p className="message-summary">{pendingLocalModelProgress}</p>
+                  {renderAssistantSummary(getPendingAssistantSummaryText(pendingTask))}
                 </div>
               )}
             </div>

@@ -2,7 +2,7 @@ import { recordRollbackEntry } from "./workbenchState.rollback";
 import { createWorkbenchEventId, prependConversationEntry } from "./workbenchState.shared";
 import { withStorageDelta } from "./workbenchState.storage";
 import { getShellDialogRecoveryNarrative } from "./shellCapability";
-import type { LocalTaskExecutionKind, WorkbenchState } from "./workbenchState.types";
+import type { ChatAttachment, LocalTaskExecutionKind, WorkbenchState } from "./workbenchState.types";
 
 const MAX_LOCAL_TASK_ATTEMPTS = 3;
 const PREVIOUS_FAILURE_DIAGNOSTICS_SUMMARY = "上次失败诊断已保留在日志和展开详情中。";
@@ -49,6 +49,7 @@ export function createUserTaskSubmittedState(
   state: WorkbenchState,
   payload: {
     message: string;
+    attachments?: ChatAttachment[];
     executionKind?: LocalTaskExecutionKind;
     executionTitle?: string;
     executionAuditSummary?: string;
@@ -60,6 +61,7 @@ export function createUserTaskSubmittedState(
   }
 ): WorkbenchState {
   const normalizedMessage = payload.message.trim();
+  const normalizedAttachments = payload.attachments ?? state.composer.draftAttachments;
   const failedTaskToResume = payload.allowResumeFromFailedTask
     ? state.tasks.items.find(
         (item) => item.status === "failed" && item.summary.trim().toLowerCase() === normalizedMessage.toLowerCase()
@@ -182,6 +184,7 @@ export function createUserTaskSubmittedState(
                     ...item,
                     status: "queued" as const,
                     executionMessage: payload.executionMessage?.trim() || undefined,
+                    attachments: normalizedAttachments,
                     executionKind: payload.executionKind,
                     executionTitle: payload.executionTitle,
                     executionAuditSummary: payload.executionAuditSummary,
@@ -196,6 +199,7 @@ export function createUserTaskSubmittedState(
                 source: "composer" as const,
                 status: "queued" as const,
                 summary: normalizedMessage,
+                attachments: normalizedAttachments,
                 executionMessage: payload.executionMessage?.trim() || undefined,
                 attemptCount: 0,
                 executionKind: payload.executionKind,
@@ -213,6 +217,7 @@ export function createUserTaskSubmittedState(
       },
       conversation: {
         ...state.conversation,
+        id: state.conversation.id || (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`),
         mode: "history",
         restoredFromConversationId: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`,
         entries: payload.preserveExistingUserMessage
@@ -221,14 +226,19 @@ export function createUserTaskSubmittedState(
               id: `${rollbackEntryId}-user`,
               kind: "user",
               title: "用户",
-              summary: normalizedMessage
+              summary: normalizedMessage,
+              attachments: normalizedAttachments,
+              rollbackTargetId: nextTaskId
             })
+      },
+      composer: {
+        draftAttachments: []
       },
       history: {
         ...state.history,
         draftConversations: [
           {
-            id: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`,
+            id: state.conversation.id || (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`),
             ...createDraftConversationSummaryFromEntries(
               payload.preserveExistingUserMessage
                 ? state.conversation.entries
@@ -236,7 +246,8 @@ export function createUserTaskSubmittedState(
                     id: `${rollbackEntryId}-user`,
                     kind: "user",
                     title: "用户",
-                    summary: normalizedMessage
+                    summary: normalizedMessage,
+                    attachments: normalizedAttachments
                   })
             ),
             entries: payload.preserveExistingUserMessage
@@ -245,11 +256,13 @@ export function createUserTaskSubmittedState(
                   id: `${rollbackEntryId}-user`,
                   kind: "user",
                   title: "用户",
-                  summary: normalizedMessage
+                  summary: normalizedMessage,
+                  attachments: normalizedAttachments,
+                  rollbackTargetId: nextTaskId
                 }),
             archivedAt: null
           },
-          ...state.history.draftConversations.filter((item) => item.id !== (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`))
+          ...state.history.draftConversations.filter((item) => item.id !== (state.conversation.id || (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`)))
         ].slice(0, 8)
       },
       audit: {
@@ -575,6 +588,12 @@ export function createTaskExecutionSucceededState(
     resultSummary: string;
     auditDetailLines?: string[];
     auditOnlyDetailLines?: string[];
+    searchSources?: WorkbenchState["sources"]["items"];
+    searchStatePatch?: Partial<WorkbenchState["search"]>;
+    searchFallbackNotice?: {
+      visible: boolean;
+      summary: string;
+    };
   }
 ): WorkbenchState {
   const activeTaskId = state.tasks.activeTaskId;
@@ -604,6 +623,9 @@ export function createTaskExecutionSucceededState(
     activeTask.lastFailureDetail ? `Previous failure detail: ${activeTask.lastFailureDetail}` : null,
     activeTask.lastFailureActionLabel ? `Previous failure recovery hint: ${activeTask.lastFailureActionLabel}` : null,
     ...(payload.auditDetailLines ?? []),
+    ...(payload.searchSources ?? []).map((source) =>
+      `搜索来源：标题=${source.title}；来源=${source.sourceLabel || source.provider}；查询=${source.query}；地址=${source.url}；摘要=${source.summary}`
+    ),
     `Result summary: ${payload.resultSummary}`
   ].filter((line): line is string => line !== null);
   const completionTraceLines = [
@@ -616,6 +638,15 @@ export function createTaskExecutionSucceededState(
     withStorageDelta(
       {
         ...state,
+        search: {
+          ...state.search,
+          ...(payload.searchStatePatch ?? {})
+        },
+        sources: payload.searchSources
+          ? {
+              items: payload.searchSources.slice(0, 6)
+            }
+          : state.sources,
         tasks: {
           pendingCount: state.tasks.pendingCount,
           activeTaskId: null,
@@ -641,7 +672,9 @@ export function createTaskExecutionSucceededState(
             id: `${taskEventId}-assistant`,
             kind: "assistant",
             title: payload.resultTitle,
-            summary: payload.resultSummary,
+            summary: payload.searchFallbackNotice?.visible
+              ? `${payload.resultSummary}\n\n${payload.searchFallbackNotice.summary}`
+              : payload.resultSummary,
             actionLabel: "预览回退到本次任务执行前",
             rollbackTargetId: taskEventId,
             detailLines: visibleCompletionTraceLines

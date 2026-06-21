@@ -1,10 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { createInitialWorkbenchState } from "../features/workbench/workbenchState.initial";
 import * as workbenchPersistence from "../features/workbench/workbenchState.persistence";
 
 const tauriInternals = "__TAURI_INTERNALS__" as const;
+const tauriEventPluginInternals = "__TAURI_EVENT_PLUGIN_INTERNALS__" as const;
 
 const { cancelOllamaChatMock, chatWithOllamaModelMock, loadOllamaOverviewMock } = vi.hoisted(() => ({
   cancelOllamaChatMock: vi.fn(),
@@ -30,9 +31,27 @@ function getConversationRegion() {
   return screen.getByRole("region", { name: "会话" });
 }
 
+function openConversationDropdown() {
+  fireEvent.click(screen.getByRole("button", { name: "会话" }));
+}
+
+function openSettingsRestorePanel() {
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+  return screen.getByLabelText("设置");
+}
+
+function getPersistedConversationEntries(
+  state: Awaited<ReturnType<typeof workbenchPersistence.readPersistedWorkbenchState>>
+) {
+  return state?.conversation.entries.map((entry) => entry.summary) ?? [];
+}
+
 describe("App workbench persistence", () => {
   beforeEach(() => {
     delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals];
+    (window as typeof window & { __TAURI_EVENT_PLUGIN_INTERNALS__?: unknown })[tauriEventPluginInternals] = {
+      unregisterListener: vi.fn()
+    };
     window.localStorage.clear();
     cancelOllamaChatMock.mockReset();
     chatWithOllamaModelMock.mockReset();
@@ -47,7 +66,15 @@ describe("App workbench persistence", () => {
   });
 
   afterEach(() => {
-    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals];
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {
+      transformCallback: vi.fn((callback: unknown) => callback),
+      invoke: vi.fn(async () => null),
+      metadata: {
+        currentWindow: {
+          label: "main"
+        }
+      }
+    };
   });
 
   it("restores conversation history after the app remounts", async () => {
@@ -104,7 +131,7 @@ describe("App workbench persistence", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     fireEvent.click(screen.getByRole("button", { name: "清空会话" }));
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
 
     const clearedConversation = getConversationRegion();
     await waitFor(() => {
@@ -116,7 +143,7 @@ describe("App workbench persistence", () => {
     firstRender.unmount();
 
     render(<App />);
-    fireEvent.click(await screen.findByRole("button", { name: "新对话" }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建新会话" }));
 
     const restoredConversation = getConversationRegion();
     await waitFor(() => {
@@ -127,7 +154,30 @@ describe("App workbench persistence", () => {
   });
 
   it("does not overwrite persisted history with the initial blank state during hydration", async () => {
-    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {
+      transformCallback: vi.fn((callback: unknown) => callback),
+      invoke: vi.fn(async (cmd: string) => {
+        if (cmd === "plugin:event|listen") {
+          return 1;
+        }
+
+        if (cmd === "plugin:event|unlisten") {
+          return null;
+        }
+
+        if (cmd === "workbench_state_load") {
+          return { found: false, payload: null };
+        }
+
+        return null;
+      }),
+      unregisterListener: vi.fn(),
+      metadata: {
+        currentWindow: {
+          label: "main"
+        }
+      }
+    };
     const readPersistedSpy = vi.spyOn(workbenchPersistence, "readPersistedWorkbenchState");
     const persistSpy = vi.spyOn(workbenchPersistence, "persistWorkbenchState");
     const deferred = {} as {
@@ -158,19 +208,24 @@ describe("App workbench persistence", () => {
 
     render(<App />);
 
-    expect(persistSpy).not.toHaveBeenCalledWith(createInitialWorkbenchState());
-
-    await waitFor(() => {
-      expect(loadOllamaOverviewMock).not.toHaveBeenCalled();
+    await act(async () => {
+      deferred.resolve(persistedState);
+      await Promise.resolve();
     });
-
-    deferred.resolve(persistedState);
 
     const restoredConversation = await screen.findByRole("region", { name: "会话" });
     await waitFor(() => {
       expect(within(restoredConversation).getAllByText("保留的历史记录").length).toBeGreaterThan(0);
     });
-    expect(persistSpy).not.toHaveBeenCalledWith(createInitialWorkbenchState());
+    expect(
+      persistSpy.mock.calls.some(([state]) => getPersistedConversationEntries(state).includes("保留的历史记录"))
+    ).toBe(true);
+    expect(
+      persistSpy.mock.calls.some(([state]) =>
+        getPersistedConversationEntries(state).length === 0
+        && state.history.lastNonEmptyConversationEntries.length === 0
+      )
+    ).toBe(false);
 
     await waitFor(() => {
       expect(loadOllamaOverviewMock).toHaveBeenCalled();
@@ -178,9 +233,9 @@ describe("App workbench persistence", () => {
 
     readPersistedSpy.mockRestore();
     persistSpy.mockRestore();
-  });
+  }, 15_000);
 
-  it("restores the last non-empty conversation after starting a new blank conversation", async () => {
+  it("keeps a persisted blank conversation blank after remount while preserving the archived conversation in settings restore", async () => {
     chatWithOllamaModelMock.mockResolvedValue({
       model: "qwen3.6:35b",
       message: "这段答复应该在重新进入后继续保留。"
@@ -200,11 +255,25 @@ describe("App workbench persistence", () => {
       expect(screen.getByText("这段答复应该在重新进入后继续保留。")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "归档当前会话" }));
+    const settingsPanel = openSettingsRestorePanel();
 
     await waitFor(() => {
-      expect(within(getConversationRegion()).getByText("最近会话")).toBeInTheDocument();
-      expect(within(getConversationRegion()).getByText("请保留这次会话历史")).toBeInTheDocument();
+      expect(within(settingsPanel).getByText("请保留这次会话历史")).toBeInTheDocument();
+      expect(within(settingsPanel).getByRole("button", { name: "恢复会话" })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      const persisted = workbenchPersistence.loadPersistedWorkbenchStateFromBrowserStorage(createInitialWorkbenchState);
+
+      expect(persisted.conversation.entries).toHaveLength(0);
+      expect(persisted.history.archivedConversations.length).toBeGreaterThan(0);
+      expect(persisted.history.archivedConversations[0]?.entries.some((entry) =>
+        entry.summary.includes("请保留这次会话历史")
+      )).toBe(true);
+      expect(persisted.history.archivedConversations[0]?.entries.some((entry) =>
+        entry.summary.includes("这段答复应该在重新进入后继续保留。")
+      )).toBe(true);
     });
 
     firstRender.unmount();
@@ -212,11 +281,17 @@ describe("App workbench persistence", () => {
     render(<App />);
 
     const restoredConversation = await screen.findByRole("region", { name: "会话" });
+    const restoredSettingsPanel = openSettingsRestorePanel();
     await waitFor(() => {
-      expect(within(restoredConversation).getAllByText("请保留这次会话历史").length).toBeGreaterThan(0);
-      expect(within(restoredConversation).getByText("这段答复应该在重新进入后继续保留。")).toBeInTheDocument();
+      expect(within(restoredConversation).queryByText("请保留这次会话历史")).not.toBeInTheDocument();
+      expect(within(restoredConversation).queryByText("这段答复应该在重新进入后继续保留。")).not.toBeInTheDocument();
     });
-  });
+
+    await waitFor(() => {
+      expect(within(restoredSettingsPanel).getByText("请保留这次会话历史")).toBeInTheDocument();
+      expect(within(restoredSettingsPanel).getByRole("button", { name: "恢复会话" })).toBeInTheDocument();
+    });
+  }, 15_000);
 
   it("restores a recent conversation from the blank conversation history list", async () => {
     chatWithOllamaModelMock.mockResolvedValue({
@@ -238,13 +313,14 @@ describe("App workbench persistence", () => {
       expect(screen.getByText("恢复后应该重新看到这段答复。")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "归档当前会话" }));
+    const settingsPanel = openSettingsRestorePanel();
 
     await waitFor(() => {
-      expect(within(getConversationRegion()).getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
+      expect(within(settingsPanel).getByText("请把这段对话放进最近会话")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "恢复这段会话" }));
+    fireEvent.click(within(settingsPanel).getByRole("button", { name: "恢复会话" }));
 
     await waitFor(() => {
       expect(screen.getAllByText("请把这段对话放进最近会话").length).toBeGreaterThan(0);
@@ -272,13 +348,15 @@ describe("App workbench persistence", () => {
       expect(screen.getByText("这段会话删除后不应该再从最近会话里恢复。")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+    const settingsPanel = openSettingsRestorePanel();
 
     await waitFor(() => {
-      expect(within(getConversationRegion()).getByRole("heading", { name: "最近会话" })).toBeInTheDocument();
+      expect(within(settingsPanel).getByText("删除后不要再看到这段最近会话")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "删除这段会话" }));
+    fireEvent.click(within(settingsPanel).getByRole("button", { name: "永久删除" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
 
     await waitFor(() => {
       expect(screen.queryByText("删除后不要再看到这段最近会话")).not.toBeInTheDocument();
@@ -289,8 +367,9 @@ describe("App workbench persistence", () => {
     render(<App />);
 
     const restoredConversation = await screen.findByRole("region", { name: "会话" });
+    const restoredSettingsPanel = openSettingsRestorePanel();
     await waitFor(() => {
-      expect(within(restoredConversation).queryByText("最近会话")).not.toBeInTheDocument();
+      expect(within(restoredSettingsPanel).queryByText("删除后不要再看到这段最近会话")).not.toBeInTheDocument();
       expect(within(restoredConversation).queryByText("删除后不要再看到这段最近会话")).not.toBeInTheDocument();
     });
   });

@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -38,12 +39,16 @@ vi.mock("../features/assistant/localAssistantService", async () => {
 });
 
 const INSPECTOR_PANEL_NAME = "右侧面板";
-const PERMISSION_HEADING_NAME = "权限确认";
-const APPROVE_PERMISSION_NAME = "批准提权";
 const SELECTED_LOCAL_MODEL_NAME = "\u9009\u62e9\u6a21\u578b\uff1aqwen2.5-coder:7b";
 
 async function waitForSelectedLocalModel() {
   await screen.findByRole("button", { name: SELECTED_LOCAL_MODEL_NAME });
+}
+
+function setupUser() {
+  return typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+    ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    : userEvent.setup();
 }
 
 describe("App project run flow", () => {
@@ -57,6 +62,7 @@ describe("App project run flow", () => {
   });
 
   it("runs a matched local project through permission approval and final assistant output", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -90,21 +96,16 @@ describe("App project run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "run the desktop app locally" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(composerInput as HTMLTextAreaElement, "run the desktop app locally");
+    await user.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
+    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: "批准" });
+    const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
-
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: APPROVE_PERMISSION_NAME
-    });
-    fireEvent.click(approvePermissionButton);
+    expect(within(permissionSection as HTMLElement).getByText("工作区读写")).toBeInTheDocument();
+    await user.click(approvePermissionButton);
 
     const conversation = screen.getByRole("region", { name: "会话" });
 
@@ -123,6 +124,7 @@ describe("App project run flow", () => {
   });
 
   it("shows the final matched local project status result for an explicit readonly lifecycle request", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -156,10 +158,8 @@ describe("App project run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "show the status of the desktop app local run" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(composerInput as HTMLTextAreaElement, "show the status of the desktop app local run");
+    await user.click(sendButton as HTMLButtonElement);
 
     const conversation = screen.getByRole("region", { name: "会话" });
 
@@ -177,6 +177,7 @@ describe("App project run flow", () => {
   });
 
   it("continues from matched local project stop permission approval into the final stopped result", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -210,21 +211,16 @@ describe("App project run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "stop the desktop app local run" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(composerInput as HTMLTextAreaElement, "stop the desktop app local run");
+    await user.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
+    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: "批准" });
+    const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/待切换权限: 工作区读写/i)).toBeInTheDocument();
-
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: APPROVE_PERMISSION_NAME
-    });
-    fireEvent.click(approvePermissionButton);
+    expect(within(permissionSection as HTMLElement).getByText("工作区读写")).toBeInTheDocument();
+    await user.click(approvePermissionButton);
 
     const conversation = screen.getByRole("region", { name: "会话" });
 
@@ -240,6 +236,7 @@ describe("App project run flow", () => {
   });
 
   it("falls back to verified project run facts when post-approval explanation stalls", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -269,20 +266,15 @@ describe("App project run flow", () => {
     expect(composerInput).not.toBeNull();
     expect(sendButton).not.toBeNull();
 
-    fireEvent.change(composerInput as HTMLTextAreaElement, {
-      target: { value: "run the desktop app locally" }
-    });
-    fireEvent.click(sendButton as HTMLButtonElement);
+    await user.type(composerInput as HTMLTextAreaElement, "run the desktop app locally");
+    await user.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
+    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: "批准" });
+    const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
-
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: APPROVE_PERMISSION_NAME
-    });
-    fireEvent.click(approvePermissionButton);
+    await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({

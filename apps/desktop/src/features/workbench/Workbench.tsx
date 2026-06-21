@@ -8,23 +8,26 @@ import { openChatAttachment } from "./chatAttachments";
 import {
   disableLocalSkill,
   enableLocalSkill,
+  installLocalMcpPlugin,
   inspectLocalMcpPlugin,
   installLocalSkill,
+  loadRecommendedMcpManifest,
+  loadRecommendedSkillManifest,
   listEnabledLocalSkills,
-  loadOpenClawCapabilityOverview,
   matchEnabledLocalSkills,
   previewLocalMcpPluginStart,
   startLocalMcpPlugin,
   scanLocalMcpPlugins,
   scanLocalSkills,
-  writeNpcConfig,
+  uninstallLocalMcpPlugin,
   type EnabledLocalSkillMatchResult,
   type EnabledLocalSkillsResult,
   type LocalMcpPluginInspectResult,
   type LocalMcpPluginScanResult,
   type LocalMcpPluginStartPreviewResult,
+  type RecommendedMcpManifestResult,
+  type RecommendedSkillManifestResult,
   type LocalSkillScanResult,
-  type OpenClawCapabilityOverview
 } from "../assistant/localAssistantService";
 import {
   getLocalizedPermissionModeLabel,
@@ -56,7 +59,12 @@ type WorkbenchProps = {
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
-  onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
+  onSaveSearchProviderConfig: (payload: {
+    providerLabel: string;
+    baseUrl?: string;
+    apiKey?: string;
+    suppressFallbackNotice?: boolean;
+  }) => void;
   onSelectModel: (modelName: string) => void;
   onSelectNpcModel?: (modelName: string) => void;
   onNewConversation: () => void;
@@ -64,7 +72,7 @@ type WorkbenchProps = {
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
   onImportKnowledgeFile: (path: string) => void;
-  onImportLocalKnowledgeFiles?: (files: File[]) => void;
+  onImportLocalKnowledgeFiles?: () => void;
   onRemoveKnowledgeFile: (path: string) => void;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
@@ -72,9 +80,35 @@ type WorkbenchProps = {
     label: string;
     description?: string;
     active: boolean;
+    documentCount?: number;
   }>;
   onCreateKnowledgeLibrary?: (name: string, description?: string) => void;
   onSelectKnowledgeLibrary?: (libraryId: string) => void;
+  onCreateNpcWorkspace?: (name: string, description?: string) => void;
+  onSelectNpcWorkspace?: (npcId: string) => void;
+  onSelectNpcWorkspaceSection?: (section: WorkbenchState["npcWorkspace"]["activeSection"]) => void;
+  onUpdateNpcWorkspaceOverview?: (
+    npcId: string,
+    payload: {
+      name: string;
+      description: string;
+      defaultModel: string;
+    }
+  ) => void;
+  onUpdateNpcWorkspacePersona?: (
+    npcId: string,
+    payload: {
+      personaTitle?: string;
+      personaPrompt: string;
+      outputStyle: string;
+      agentDraft: string;
+      rulesDraft: string;
+    }
+  ) => void;
+  onToggleNpcWorkspaceSkill?: (npcId: string, skillName: string) => void;
+  onToggleNpcWorkspaceKnowledgeLibrary?: (npcId: string, libraryId: string) => void;
+  onSelectNpcWorkspaceKnowledgeLibrary?: (libraryId: string | null) => void;
+  onSelectNpcWorkspaceSkill?: (skillName: string) => void;
   onSubmitTask: (message: string, attachments?: ChatAttachment[]) => void;
   onAddComposerAttachments?: (attachments: ChatAttachment[]) => void;
   onRemoveComposerAttachment?: (attachmentId: string) => void;
@@ -107,8 +141,8 @@ const viewContent: Record<StaticWorkbenchViewId, { title: string; summary: strin
   },
   mcp: {
     title: "MCP",
-    summary: "管理本地 MCP 插件扫描、检查和受控启动。",
-    details: ["启动本地插件需要权限与高风险确认。", "扫描和检查保持只读优先。"]
+    summary: "管理 OpenCow 自有 MCP 安装、推荐清单和受控启动状态。",
+    details: ["只展示 OpenCow 已安装的 MCP。", "推荐清单和受支持状态由 OpenCow 本地产品清单统一管理。"]
   },
   settings: {
     title: "设置",
@@ -129,35 +163,83 @@ type SkillsPanelState = {
   error: string | null;
   scan: LocalSkillScanResult | null;
   enabled: EnabledLocalSkillsResult | null;
+  recommended: RecommendedSkillManifestResult | null;
   match: EnabledLocalSkillMatchResult | null;
   query: string;
   actionQuery: string;
+  activeTab: "installed" | "recommended";
+  expandedSkillName: string | null;
+};
+
+type SearchPanelState = {
+  query: string;
+  customProviderLabel: string;
+  customBaseUrl: string;
+  customApiKey: string;
 };
 
 type MspPanelState = {
   loading: boolean;
   error: string | null;
   scan: LocalMcpPluginScanResult | null;
+  recommended: RecommendedMcpManifestResult | null;
   inspect: LocalMcpPluginInspectResult | null;
   preview: LocalMcpPluginStartPreviewResult | null;
   query: string;
   actionQuery: string;
+  activeTab: "installed" | "recommended";
+  expandedPluginId: string | null;
 };
 
 type NpcPanelState = {
   loading: boolean;
   error: string | null;
-  capability: OpenClawCapabilityOverview | null;
-  promptDraft: string;
-  saveStatus: string | null;
+  skills: LocalSkillScanResult | null;
 };
+
+const NPC_AUTOSAVE_DELAY_MS = 300;
+
+function formatNpcUpdatedAt(value?: string) {
+  if (!value) {
+    return "最近更新 暂无记录";
+  }
+
+  return `最近更新 ${value.replace("T", " ").slice(0, 16)}`;
+}
+
+function formatNpcSkillSource(source: string) {
+  if (source.startsWith("workspace")) {
+    return "工作区";
+  }
+
+  if (source.startsWith("user")) {
+    return "用户目录";
+  }
+
+  return source;
+}
+
+function getNpcSaveStatusTone(status: string | null | undefined) {
+  if (!status) {
+    return null;
+  }
+
+  if (status.includes("失败")) {
+    return "error";
+  }
+
+  if (status.includes("保存中") || status.includes("创建中")) {
+    return "pending";
+  }
+
+  return "success";
+}
 
 function createAuditEventId(event: WorkbenchState["audit"]["lastEvent"]) {
   return `${event.timestamp}::${event.module}::${event.source}::${event.detail}`;
 }
 
 function SkillsPanel({
-  state,
   panelState,
   onRefresh,
   onQueryChange,
@@ -165,9 +247,11 @@ function SkillsPanel({
   onSkillActionQueryChange,
   onEnableSkill,
   onInstallSkill,
-  onDisableSkill
+  onDisableSkill,
+  onToggleTab,
+  onToggleExpand,
+  onInstallRecommendedSkill
 }: {
-  state: WorkbenchState;
   panelState: SkillsPanelState;
   onRefresh: () => void;
   onQueryChange: (query: string) => void;
@@ -176,54 +260,150 @@ function SkillsPanel({
   onEnableSkill: () => void;
   onInstallSkill: () => void;
   onDisableSkill: () => void;
+  onToggleTab: (tab: "installed" | "recommended") => void;
+  onToggleExpand: (skillName: string) => void;
+  onInstallRecommendedSkill: (query: string) => void;
 }) {
   const enabledItems = panelState.enabled?.items ?? [];
-  const scannedItems = panelState.scan?.items ?? [];
   const matchedItems = panelState.match?.items ?? [];
-  const actionItems = panelState.scan?.items ?? panelState.enabled?.items ?? [];
+  const installedItems = panelState.scan?.items ?? [];
+  const recommendedItems = panelState.recommended?.items ?? [];
+
+  function renderRows(
+    items: Array<{ name: string; description: string; detail: string }>,
+    emptyText: string
+  ) {
+    if (items.length === 0) {
+      return <p className="npc-empty-state">{emptyText}</p>;
+    }
+
+    return items.map((item) => {
+      const expanded = panelState.expandedSkillName === item.name;
+
+      return (
+        <button
+          key={item.name}
+          className={expanded ? "npc-row-button active" : "npc-row-button"}
+          type="button"
+          onClick={() => onToggleExpand(item.name)}
+        >
+          <span className="npc-row-leading">
+            <span className="npc-row-title">{item.name}</span>
+            <span className="npc-row-description">{item.description}</span>
+            {expanded ? <span className="npc-row-description">{item.detail}</span> : null}
+          </span>
+          <span className="npc-row-trailing">
+            <span className="npc-row-status">{expanded ? "收起" : "展开"}</span>
+          </span>
+        </button>
+      );
+    });
+  }
 
   return (
     <section className="workspace-panel" aria-label="Skills">
       <header className="workspace-panel-header">
-        <h1>Skills</h1>
-        <p>查看本地 Skill 列表、已启用项和当前请求的匹配建议，不再只显示占位说明。</p>
+        <h1>技能</h1>
+        <p>统一管理 OpenCow 自己的技能目录。NPC 页面只负责勾选绑定，不处理安装。</p>
       </header>
       <div className="workspace-panel-list">
-        <div className="workspace-history-card">
-          <p>已启用 Skills</p>
+        <div className="workspace-history-card workspace-history-card-current">
+          <p>技能中心</p>
           <p className="muted">
-            {panelState.enabled?.summary ?? "读取工作区已启用 Skill 注册表。"}
+            {panelState.activeTab === "installed"
+              ? (panelState.scan?.summary ?? "读取 OpenCow 已安装技能。")
+              : (panelState.recommended?.summary ?? "读取 OpenCow 推荐安装清单。")}
           </p>
           <div className="action-row">
+            <button
+              className={panelState.activeTab === "installed" ? "action-button action-button-primary" : "action-button"}
+              type="button"
+              onClick={() => onToggleTab("installed")}
+            >
+              已安装
+            </button>
+            <button
+              className={panelState.activeTab === "recommended" ? "action-button action-button-primary" : "action-button"}
+              type="button"
+              onClick={() => onToggleTab("recommended")}
+            >
+              推荐安装
+            </button>
             <button className="action-button action-button-primary" type="button" onClick={onRefresh}>
-              {panelState.loading ? "刷新中" : "刷新 Skills"}
+              {panelState.loading ? "刷新中" : "刷新技能"}
             </button>
           </div>
         </div>
         {panelState.error ? <p className="workspace-knowledge-warning">{panelState.error}</p> : null}
-        <p>已启用 {enabledItems.length}</p>
-        {enabledItems.length === 0 ? (
-          <p>当前还没有已启用 Skill。</p>
-        ) : enabledItems.map((item) => (
-          <div className="workspace-history-card" key={`${item.name}-${item.path}`}>
-            <p>{item.name}</p>
-            <p className="muted">{item.description}</p>
-            <p className="workspace-knowledge-source">{item.path}</p>
+        <div className="npc-main-section">
+          <div className="npc-section-header">
+            <div>
+              <p className="knowledge-section-eyebrow">{panelState.activeTab === "installed" ? "已安装" : "精选推荐"}</p>
+              <h2>{panelState.activeTab === "installed" ? "OpenCow 技能" : "OpenCow 精选推荐"}</h2>
+            </div>
+            <span className="workspace-history-badge">
+              {panelState.activeTab === "installed" ? installedItems.length : recommendedItems.length} 项
+            </span>
           </div>
-        ))}
-        <p>已扫描 {scannedItems.length}</p>
-        {scannedItems.length === 0 ? (
-          <p>当前还没有扫描到本地 Skill。</p>
-        ) : scannedItems.map((item) => (
-          <div className="workspace-history-card" key={`${item.name}-${item.path}`}>
-            <p>{item.name}{item.enabled ? " · 已启用" : ""}</p>
-            <p className="muted">{item.description}</p>
-            <p className="workspace-knowledge-source">{item.path}</p>
+          <div className="npc-compact-list">
+            {panelState.activeTab === "installed"
+              ? renderRows(
+                installedItems.map((item) => ({
+                  name: item.name,
+                  description: item.description,
+                  detail: `${enabledItems.some((enabled) => enabled.name === item.name) ? "已启用" : "未启用"} · ${item.path}`,
+                })),
+                "你还没有 skills，去 Skills 页面安装。"
+              )
+              : renderRows(
+                recommendedItems.map((item) => ({
+                  name: item.name,
+                  description: item.description,
+                  detail: `${item.rationale ?? "OpenCow 精选推荐能力。"} · 安装标识：${item.install_query}`,
+                })),
+                "当前没有推荐安装技能。"
+              )}
           </div>
-        ))}
+          {panelState.activeTab === "recommended" && recommendedItems.length > 0 ? (
+            <div className="action-row">
+              {recommendedItems.map((item) => (
+                <button
+                  key={`${item.name}-install`}
+                  className="action-button"
+                  type="button"
+                  onClick={() => onInstallRecommendedSkill(item.install_query)}
+                >
+                  安装 {item.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="workspace-history-card">
-          <p>Skill 匹配建议</p>
-          <p className="muted">输入一句任务描述，查看当前桌面端会推荐哪些已启用 Skill。</p>
+          <p>技能操作</p>
+          <p className="muted">默认显示已安装列表。每行只展示名称和一行简介，点击行再展开详情。</p>
+          <input
+            aria-label="Skill 操作查询"
+            className="settings-textarea"
+            type="text"
+            value={panelState.actionQuery}
+            onChange={(event) => onSkillActionQueryChange(event.target.value)}
+          />
+          <div className="action-row">
+            <button className="action-button" type="button" onClick={onInstallSkill}>
+              安装
+            </button>
+            <button className="action-button" type="button" onClick={onEnableSkill}>
+              启用
+            </button>
+            <button className="action-button" type="button" onClick={onDisableSkill}>
+              删除
+            </button>
+          </div>
+        </div>
+        <div className="workspace-history-card">
+          <p>技能匹配建议</p>
+          <p className="muted">输入任务描述，查看当前已启用技能里最适合分配给会话的候选项。</p>
           <input
             aria-label="Skill 匹配查询"
             className="settings-textarea"
@@ -237,31 +417,6 @@ function SkillsPanel({
             </button>
           </div>
         </div>
-        <div className="workspace-history-card">
-          <p>Skill 操作</p>
-          <p className="muted">先输入 Skill 名称，再启用、安装或禁用。</p>
-          <input
-            aria-label="Skill 操作查询"
-            className="settings-textarea"
-            type="text"
-            value={panelState.actionQuery}
-            onChange={(event) => onSkillActionQueryChange(event.target.value)}
-          />
-          <div className="action-row">
-            <button className="action-button" type="button" onClick={onEnableSkill}>
-              启用
-            </button>
-            <button className="action-button" type="button" onClick={onInstallSkill}>
-              安装
-            </button>
-            <button className="action-button" type="button" onClick={onDisableSkill}>
-              禁用
-            </button>
-          </div>
-        </div>
-        {actionItems.length > 0 ? (
-          <p className="muted">当前可操作项: {actionItems.map((item) => item.name).join("、")}</p>
-        ) : null}
         {matchedItems.length > 0 ? (
           <>
             <p>推荐结果 {matchedItems.length}</p>
@@ -288,82 +443,137 @@ function SkillsPanel({
 function McpPanel({
   panelState,
   onRefresh,
-  onQueryChange,
+  onSelectTab,
+  onToggleExpand,
   onInspect,
-  onStart
+  onStart,
+  onInstall,
+  onRemove
 }: {
   panelState: MspPanelState;
   onRefresh: () => void;
-  onQueryChange: (query: string) => void;
-  onInspect: () => void;
-  onStart: () => void;
+  onSelectTab: (tab: "installed" | "recommended") => void;
+  onToggleExpand: (pluginId: string) => void;
+  onInspect: (pluginId: string) => void;
+  onStart: (pluginId: string) => void;
+  onInstall: (pluginId: string) => void;
+  onRemove: (pluginId: string) => void;
 }) {
-  const scannedItems = panelState.scan?.items ?? [];
-  const inspectedItems = panelState.inspect?.items ?? [];
-  const previewItems = panelState.preview?.items ?? [];
+  const installedItems = panelState.scan?.items ?? [];
+  const recommendedItems = panelState.recommended?.items ?? [];
+  const previewById = new Map((panelState.preview?.items ?? []).map((item) => [item.id, item]));
+  const inspectById = new Map((panelState.inspect?.items ?? []).map((item) => [item.id, item]));
+  const activeItems = panelState.activeTab === "installed" ? installedItems : recommendedItems;
 
   return (
     <section className="workspace-panel" aria-label="MCP">
       <header className="workspace-panel-header">
         <h1>MCP</h1>
-        <p>展示本地 MCP 扫描结果、插件详情和启动预览，替代原来的纯说明页。</p>
+        <p>统一管理 OpenCow 自有 MCP 安装、推荐清单和受控启动状态。</p>
       </header>
       <div className="workspace-panel-list">
-        <div className="workspace-history-card">
-          <p>本地 MCP 插件扫描</p>
-          <p className="muted">{panelState.scan?.summary ?? "扫描本地 MCP 插件入口。"}</p>
+        <div className="workspace-section-card">
+          <div className="workspace-inline-tabs" role="tablist" aria-label="MCP 分类">
+            <button
+              className={`workspace-inline-tab${panelState.activeTab === "installed" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => onSelectTab("installed")}
+            >
+              已安装
+            </button>
+            <button
+              className={`workspace-inline-tab${panelState.activeTab === "recommended" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => onSelectTab("recommended")}
+            >
+              推荐安装
+            </button>
+          </div>
+          <p className="muted">
+            {panelState.activeTab === "installed"
+              ? panelState.scan?.summary ?? "读取 OpenCow 已安装 MCP。"
+              : panelState.recommended?.summary ?? "读取 OpenCow 推荐 MCP 清单。"}
+          </p>
           <div className="action-row">
             <button className="action-button action-button-primary" type="button" onClick={onRefresh}>
-              {panelState.loading ? "刷新中" : "刷新 MCP"}
+              {panelState.loading ? "刷新中" : "刷新列表"}
             </button>
           </div>
         </div>
         {panelState.error ? <p className="workspace-knowledge-warning">{panelState.error}</p> : null}
-        <p>扫描到 {scannedItems.length} 个插件入口</p>
-        {scannedItems.map((item) => (
-          <div className="workspace-history-card" key={`${item.id}-${item.path}`}>
-            <p>{item.id}</p>
-            <p className="muted">激活方式: {item.activation}</p>
-            <p className="muted">工具 {item.tool_count} · Skills {item.skill_count}</p>
-            <p className="workspace-knowledge-source">{item.path}</p>
+        <p>
+          {panelState.activeTab === "installed"
+            ? `已安装 ${installedItems.length} 个 MCP`
+            : `推荐 ${recommendedItems.length} 个 MCP`}
+        </p>
+        {activeItems.length === 0 ? (
+          <div className="workspace-empty-state">
+            <p>{panelState.activeTab === "installed" ? "你还没有安装 MCP，请先去推荐安装。" : "当前没有可推荐的 MCP。"}</p>
           </div>
-        ))}
-        <div className="workspace-history-card">
-          <p>插件详情查询</p>
-          <p className="muted">输入插件名，查看详情与启动预览。</p>
-          <input
-            aria-label="MCP 插件查询"
-            className="settings-textarea"
-            type="text"
-            value={panelState.query}
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-          <div className="action-row">
-            <button className="action-button" type="button" onClick={onInspect}>
-              查看详情
-            </button>
-            <button className="action-button action-button-primary" type="button" onClick={onStart}>
-              启动插件
-            </button>
-          </div>
-        </div>
-        {inspectedItems.map((item) => (
-          <div className="workspace-history-card" key={`${item.id}-${item.path}-detail`}>
-            <p>{item.id} · 详情</p>
-            <p className="muted">{item.description}</p>
-            <p className="muted">工具: {item.tool_names.join("、") || "无"}</p>
-            <p className="muted">Skill 路径: {item.skill_paths.join("、") || "无"}</p>
-            <p className="workspace-knowledge-source">{item.path}</p>
-          </div>
-        ))}
-        {previewItems.map((item) => (
-          <div className="workspace-history-card" key={`${item.id}-${item.path}-preview`}>
-            <p>{item.id} · 启动预览</p>
-            <p className="muted">{item.risk_summary}</p>
-            <p className="muted">命令预览: {item.command_preview}</p>
-            <p className="muted">工作目录: {item.working_directory}</p>
-          </div>
-        ))}
+        ) : null}
+        {activeItems.map((item) => {
+          const expanded = panelState.expandedPluginId === item.id;
+          const inspectItem = inspectById.get(item.id);
+          const previewItem = previewById.get(item.id);
+          const isInstalled = panelState.activeTab === "installed";
+          return (
+            <div
+              className="workspace-list-row"
+              key={`${item.id}-${"path" in item ? item.path : item.install_query}`}
+            >
+              <button
+                className="workspace-list-row-main"
+                type="button"
+                onClick={() => onToggleExpand(item.id)}
+              >
+                <span className="workspace-list-row-title">
+                  {item.name}
+                </span>
+                <span className="workspace-list-row-subtitle">
+                  {item.description}
+                </span>
+              </button>
+              <div className="workspace-list-row-actions">
+                {isInstalled ? (
+                  <>
+                    <button className="action-button" type="button" onClick={() => onInspect(item.id)}>
+                      查看
+                    </button>
+                    <button className="action-button action-button-primary" type="button" onClick={() => onStart(item.id)}>
+                      启动
+                    </button>
+                    <button className="action-button" type="button" onClick={() => onRemove(item.id)}>
+                      删除
+                    </button>
+                  </>
+                ) : (
+                  <button className="action-button action-button-primary" type="button" onClick={() => onInstall(item.id)}>
+                    安装
+                  </button>
+                )}
+              </div>
+              {expanded ? (
+                <div className="workspace-inline-detail">
+                  {"supported" in item ? <p className="muted">支持状态: {item.supported ? "已支持" : "规划中"}</p> : null}
+                  {isInstalled ? <p className="muted">状态: {"status" in item ? item.status : "stopped"}</p> : null}
+                  {inspectItem ? (
+                    <>
+                      <p className="muted">工具: {inspectItem.tool_names.join("、") || "无"}</p>
+                      <p className="muted">技能目录: {inspectItem.skill_paths.join("、") || "无"}</p>
+                    </>
+                  ) : null}
+                  {previewItem ? (
+                    <>
+                      <p className="muted">命令预览: {previewItem.command_preview}</p>
+                      <p className="muted">说明: {previewItem.risk_summary}</p>
+                    </>
+                  ) : null}
+                  {"rationale" in item && item.rationale ? <p className="muted">推荐理由: {item.rationale}</p> : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
@@ -372,77 +582,582 @@ function McpPanel({
 function NpcPanel({
   state,
   panelState,
-  knowledgeLibraryLabel,
   knowledgeLibraries,
-  onPromptDraftChange,
-  onSelectKnowledgeLibrary,
-  onSaveNpcConfig
+  onCreateNpcWorkspace,
+  onSelectNpcWorkspace,
+  onSelectNpcWorkspaceSection,
+  onUpdateNpcWorkspaceOverview,
+  onUpdateNpcWorkspacePersona,
+  onToggleNpcWorkspaceSkill,
+  onToggleNpcWorkspaceKnowledgeLibrary,
+  onSelectNpcWorkspaceKnowledgeLibrary,
+  onSelectNpcWorkspaceSkill
 }: {
   state: WorkbenchState;
   panelState: NpcPanelState;
-  knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
     id: string;
     label: string;
+    description?: string;
     active: boolean;
+    documentCount?: number;
   }>;
-  onPromptDraftChange: (value: string) => void;
-  onSelectKnowledgeLibrary?: (libraryId: string) => void;
-  onSaveNpcConfig: () => void;
+  onCreateNpcWorkspace?: (name: string, description?: string) => void;
+  onSelectNpcWorkspace?: (npcId: string) => void;
+  onSelectNpcWorkspaceSection?: (section: WorkbenchState["npcWorkspace"]["activeSection"]) => void;
+  onUpdateNpcWorkspaceOverview?: (
+    npcId: string,
+    payload: {
+      name: string;
+      description: string;
+      defaultModel: string;
+    }
+  ) => void;
+  onUpdateNpcWorkspacePersona?: (
+    npcId: string,
+    payload: {
+      personaTitle?: string;
+      personaPrompt: string;
+      outputStyle: string;
+      agentDraft: string;
+      rulesDraft: string;
+    }
+  ) => void;
+  onToggleNpcWorkspaceSkill?: (npcId: string, skillName: string) => void;
+  onToggleNpcWorkspaceKnowledgeLibrary?: (npcId: string, libraryId: string) => void;
+  onSelectNpcWorkspaceKnowledgeLibrary?: (libraryId: string | null) => void;
+  onSelectNpcWorkspaceSkill?: (skillName: string) => void;
 }) {
-  const selectedLibraries = (knowledgeLibraries ?? []).filter((library) => library.active);
+  const [draftName, setDraftName] = useState("");
+  const [draftDescription, setDraftDescription] = useState("");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [overviewDraft, setOverviewDraft] = useState({
+    name: "",
+    description: "",
+    defaultModel: ""
+  });
+  const [personaDraft, setPersonaDraft] = useState({
+    personaTitle: "",
+    personaPrompt: "",
+    outputStyle: "",
+    agentDraft: "",
+    rulesDraft: ""
+  });
+  const selectedNpc = state.npcWorkspace.items.find((item) => item.id === state.npcWorkspace.selectedNpcId) ?? null;
+  const activeSection = state.npcWorkspace.activeSection;
+  const skillRows = panelState.skills?.items ?? [];
+  const selectedSkill = state.npcWorkspace.selectedSkillName
+    ? skillRows.find((skill) => skill.name === state.npcWorkspace.selectedSkillName) ?? null
+    : null;
+  const hasSelectedNpcSkill = state.npcWorkspace.selectedSkillName
+    ? skillRows.some((skill) => skill.name === state.npcWorkspace.selectedSkillName)
+    : false;
+  const boundKnowledgeIds = new Set(selectedNpc?.knowledgeLibraryIds ?? []);
+  const npcModel = selectedNpc?.defaultModel || state.settings.npc.localModel || state.model.activeModel;
+  const selectedKnowledgeLibrary = (knowledgeLibraries ?? []).find(
+    (library) => library.id === state.npcWorkspace.selectedKnowledgeLibraryId
+  ) ?? null;
+
+  useEffect(() => {
+    setOverviewDraft({
+      name: selectedNpc?.name ?? "",
+      description: selectedNpc?.description ?? "",
+      defaultModel: selectedNpc?.defaultModel ?? ""
+    });
+  }, [selectedNpc?.id, selectedNpc?.name, selectedNpc?.description, selectedNpc?.defaultModel]);
+
+  useEffect(() => {
+    setPersonaDraft({
+      personaTitle: selectedNpc?.personaTitle ?? "",
+      personaPrompt: selectedNpc?.personaPrompt ?? "",
+      outputStyle: selectedNpc?.outputStyle ?? "",
+      agentDraft: selectedNpc?.agentDraft ?? "",
+      rulesDraft: selectedNpc?.rulesDraft ?? ""
+    });
+  }, [
+    selectedNpc?.id,
+    selectedNpc?.personaTitle,
+    selectedNpc?.personaPrompt,
+    selectedNpc?.outputStyle,
+    selectedNpc?.agentDraft,
+    selectedNpc?.rulesDraft
+  ]);
+
+  useEffect(() => {
+    if (!selectedNpc) {
+      return;
+    }
+
+    if (
+      overviewDraft.name === selectedNpc.name
+      && overviewDraft.description === selectedNpc.description
+      && overviewDraft.defaultModel === selectedNpc.defaultModel
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      onUpdateNpcWorkspaceOverview?.(selectedNpc.id, overviewDraft);
+    }, NPC_AUTOSAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [overviewDraft, onUpdateNpcWorkspaceOverview, selectedNpc]);
+
+  useEffect(() => {
+    if (!selectedNpc) {
+      return;
+    }
+
+    if (
+      personaDraft.personaTitle === selectedNpc.personaTitle
+      && personaDraft.personaPrompt === selectedNpc.personaPrompt
+      && personaDraft.outputStyle === selectedNpc.outputStyle
+      && personaDraft.agentDraft === selectedNpc.agentDraft
+      && personaDraft.rulesDraft === selectedNpc.rulesDraft
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      onUpdateNpcWorkspacePersona?.(selectedNpc.id, personaDraft);
+    }, NPC_AUTOSAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeout);
+  }, [onUpdateNpcWorkspacePersona, personaDraft, selectedNpc]);
+
+  function submitCreateNpc() {
+    const nextName = draftName.trim();
+
+    if (!nextName) {
+      return;
+    }
+
+    onCreateNpcWorkspace?.(nextName, draftDescription.trim() || undefined);
+    setDraftName("");
+    setDraftDescription("");
+    setIsCreateOpen(false);
+  }
+
+  function renderOverviewSection() {
+    if (!selectedNpc) {
+      return (
+        <div className="npc-main-section npc-main-section-empty">
+          <div className="npc-section-header">
+            <div>
+              <p className="knowledge-section-eyebrow">概览</p>
+              <h2>先创建一个 NPC</h2>
+            </div>
+          </div>
+          <p className="npc-empty-state">给它一个名字、简介和默认模型，后面的人设、技能、知识库都会在这里继续配置。</p>
+          <div className="action-row">
+            <button className="action-button action-button-primary" type="button" onClick={() => setIsCreateOpen(true)}>
+              立即创建
+            </button>
+          </div>
+          {isCreateOpen ? <p className="muted">左侧 NPC 列表顶部已打开创建表单。</p> : null}
+        </div>
+      );
+    }
+
+    return (
+      <div className="npc-main-section">
+        <div className="npc-section-header">
+          <div>
+            <p className="knowledge-section-eyebrow">概览</p>
+            <h2>{selectedNpc.name}</h2>
+          </div>
+          <span className="workspace-history-badge">技能 {selectedNpc.enabledSkillNames.length} · 知识库 {selectedNpc.knowledgeLibraryIds.length}</span>
+        </div>
+        <div className="npc-overview-summary">
+          <p>{formatNpcUpdatedAt(selectedNpc.updatedAt)}</p>
+          <p>当前默认模型 {npcModel || "未选择"}</p>
+        </div>
+        <label className="knowledge-field">
+          <span>NPC 名称</span>
+          <input
+            aria-label="NPC 名称"
+            className="knowledge-inline-input"
+            type="text"
+            value={overviewDraft.name}
+            onChange={(event) => setOverviewDraft((current) => ({
+              ...current,
+              name: event.target.value
+            }))}
+          />
+        </label>
+        <label className="knowledge-field">
+          <span>简介</span>
+          <textarea
+            aria-label="NPC 简介"
+            className="settings-textarea"
+            value={overviewDraft.description}
+            onChange={(event) => setOverviewDraft((current) => ({
+              ...current,
+              description: event.target.value
+            }))}
+          />
+        </label>
+        <div className="npc-compact-list">
+          <p className="npc-list-title">默认模型</p>
+          {getChatCapableOllamaModels(state.model.availableModels).map((model) => (
+            <button
+              key={model.name}
+              className={model.name === overviewDraft.defaultModel ? "npc-row-button active" : "npc-row-button"}
+              type="button"
+              onClick={() => setOverviewDraft((current) => ({
+                ...current,
+                defaultModel: model.name
+              }))}
+            >
+              <span>{model.name}</span>
+              <span>{model.name === overviewDraft.defaultModel ? "当前" : model.sizeLabel}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderPersonaSection() {
+    if (!selectedNpc) {
+      return <p className="npc-empty-state">先创建一个 NPC，再补充人设、系统提示词和规则。</p>;
+    }
+
+    return (
+      <div className="npc-main-section">
+        <div className="npc-section-header">
+          <div>
+            <p className="knowledge-section-eyebrow">人设</p>
+            <h2>{selectedNpc.personaTitle || selectedNpc.name}</h2>
+          </div>
+        </div>
+        <label className="knowledge-field">
+          <span>人设标题</span>
+          <input
+            aria-label="人设标题"
+            className="knowledge-inline-input"
+            type="text"
+            value={personaDraft.personaTitle}
+            onChange={(event) => setPersonaDraft((current) => ({
+              ...current,
+              personaTitle: event.target.value
+            }))}
+          />
+        </label>
+        <label className="knowledge-field">
+          <span>系统提示词</span>
+          <textarea
+            aria-label="系统提示词"
+            className="settings-textarea"
+            value={personaDraft.personaPrompt}
+            onChange={(event) => setPersonaDraft((current) => ({
+              ...current,
+              personaPrompt: event.target.value
+            }))}
+          />
+        </label>
+        <label className="knowledge-field">
+          <span>输出风格</span>
+          <input
+            aria-label="输出风格"
+            className="knowledge-inline-input"
+            type="text"
+            value={personaDraft.outputStyle}
+            onChange={(event) => setPersonaDraft((current) => ({
+              ...current,
+              outputStyle: event.target.value
+            }))}
+          />
+        </label>
+        <label className="knowledge-field">
+          <span>Agent 草案</span>
+          <textarea
+            aria-label="Agent 草案"
+            className="settings-textarea"
+            value={personaDraft.agentDraft}
+            onChange={(event) => setPersonaDraft((current) => ({
+              ...current,
+              agentDraft: event.target.value
+            }))}
+          />
+        </label>
+        <label className="knowledge-field">
+          <span>规则草案</span>
+          <textarea
+            aria-label="规则草案"
+            className="settings-textarea"
+            value={personaDraft.rulesDraft}
+            onChange={(event) => setPersonaDraft((current) => ({
+              ...current,
+              rulesDraft: event.target.value
+            }))}
+          />
+        </label>
+      </div>
+    );
+  }
+
+  function renderSkillsSection() {
+    if (!selectedNpc) {
+      return <p className="npc-empty-state">先创建一个 NPC，再把工作区技能绑定到它。</p>;
+    }
+
+    return (
+      <div className="npc-main-section">
+        <div className="npc-section-header">
+          <div>
+            <p className="knowledge-section-eyebrow">技能</p>
+            <h2>已绑定技能</h2>
+          </div>
+          <span className="workspace-history-badge">{selectedNpc.enabledSkillNames.length} 项</span>
+        </div>
+        {panelState.error ? <p className="workspace-knowledge-warning">{panelState.error}</p> : null}
+        <div className="npc-compact-list">
+          {skillRows.map((skill) => {
+            const bound = selectedNpc.enabledSkillNames.includes(skill.name);
+            const selected = state.npcWorkspace.selectedSkillName === skill.name;
+
+            return (
+              <button
+                key={skill.name}
+                className={bound || selected ? "npc-row-button active" : "npc-row-button"}
+                type="button"
+                onClick={() => onSelectNpcWorkspaceSkill?.(skill.name)}
+              >
+                <span className="npc-row-leading">
+                  <span className={bound ? "npc-checkbox active" : "npc-checkbox"} aria-hidden="true" />
+                  <span className="npc-row-title">{skill.name}</span>
+                  <span className="npc-row-description">{skill.description || "这个技能还没有补充简介。"}</span>
+                </span>
+                <span className="npc-row-trailing">
+                  <span className="npc-row-status">{bound ? "已选择" : "可选择"}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {skillRows.length === 0 ? (
+          <p className="npc-empty-state">你还没有 skills，去 Skills 页面安装。</p>
+        ) : null}
+        {state.npcWorkspace.selectedSkillPreview && hasSelectedNpcSkill ? (
+          <div className="npc-detail-panel">
+            <p>{state.npcWorkspace.selectedSkillPreview.description}</p>
+            <p className="workspace-knowledge-source">{state.npcWorkspace.selectedSkillPreview.path}</p>
+            <p className="muted">{state.npcWorkspace.selectedSkillPreview.contentPreview}</p>
+            <p className="npc-detail-status">
+              {selectedNpc.enabledSkillNames.includes(state.npcWorkspace.selectedSkillName ?? "")
+                ? "共享技能 · 当前 NPC 已绑定"
+                : "共享技能 · 当前 NPC 未绑定"}
+            </p>
+            <p className="npc-detail-status">
+              {selectedSkill?.enabled ? "OpenCow 已安装" : "OpenCow 未安装"}
+            </p>
+            <div className="action-row">
+              <button
+                className="action-button action-button-primary"
+                type="button"
+                onClick={() => onToggleNpcWorkspaceSkill?.(selectedNpc.id, state.npcWorkspace.selectedSkillName ?? "")}
+              >
+                {selectedNpc.enabledSkillNames.includes(state.npcWorkspace.selectedSkillName ?? "") ? "移除绑定" : "绑定技能"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderKnowledgeSection() {
+    if (!selectedNpc) {
+      return <p className="npc-empty-state">先创建一个 NPC，再为它选择要加载的知识库。</p>;
+    }
+
+    return (
+      <div className="npc-main-section">
+        <div className="npc-section-header">
+          <div>
+            <p className="knowledge-section-eyebrow">知识库</p>
+            <h2>已绑定知识库</h2>
+          </div>
+          <span className="workspace-history-badge">{selectedNpc.knowledgeLibraryIds.length} 项</span>
+        </div>
+        <div className="npc-compact-list">
+          {(knowledgeLibraries ?? []).map((library) => {
+            const bound = boundKnowledgeIds.has(library.id);
+
+            return (
+              <button
+                key={library.id}
+                className={bound ? "npc-row-button active" : "npc-row-button"}
+                type="button"
+                onClick={() => onSelectNpcWorkspaceKnowledgeLibrary?.(library.id)}
+              >
+                <span className="npc-row-leading">
+                  <span className="npc-row-title">{library.label}</span>
+                  <span className="npc-row-description">{library.description || "这个知识库还没有补充简介。"}</span>
+                </span>
+                <span className="npc-row-trailing">
+                  <span className="npc-row-meta">
+                    {typeof library.documentCount === "number" ? `${library.documentCount} 篇文件` : "文件数待同步"}
+                  </span>
+                  <span className="npc-row-status">{bound ? "已绑定" : "可绑定"}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {(knowledgeLibraries ?? []).length === 0 ? (
+          <p className="npc-empty-state">还没有可绑定的知识库，先到知识库页面新建。</p>
+        ) : null}
+        {selectedKnowledgeLibrary ? (
+          <div className="npc-detail-panel">
+            <p>{selectedKnowledgeLibrary.description || "这个知识库还没有补充简介。"}</p>
+            <p className="npc-detail-status">
+              {boundKnowledgeIds.has(selectedKnowledgeLibrary.id) ? "共享知识库 · 当前 NPC 已绑定" : "共享知识库 · 当前 NPC 未绑定"}
+            </p>
+            {typeof selectedKnowledgeLibrary.documentCount === "number" ? (
+              <p className="muted">当前共 {selectedKnowledgeLibrary.documentCount} 篇文件</p>
+            ) : null}
+            <div className="action-row">
+              <button
+                className="action-button action-button-primary"
+                type="button"
+                onClick={() => onToggleNpcWorkspaceKnowledgeLibrary?.(selectedNpc.id, selectedKnowledgeLibrary.id)}
+              >
+                {boundKnowledgeIds.has(selectedKnowledgeLibrary.id) ? "取消绑定" : "绑定知识库"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <section className="workspace-panel" aria-label="NPC">
       <header className="workspace-panel-header">
         <h1>NPC</h1>
-        <p>在这里选择 NPC 要加载的知识库，再保存提示词和配置。</p>
+        <p>左侧保留紧凑 NPC 卡片，中间是低代码配置区，右侧只做轻量分区导航。</p>
       </header>
-      <div className="workspace-panel-list">
-        <div className="workspace-history-card">
-          <p>NPC 能力概览</p>
-          <p className="muted">{panelState.capability?.summary ?? "读取本地 NPC 能力基础。"}</p>
-          <p className="muted">当前 NPC 模型: {state.settings.npc.localModel || state.model.activeModel}</p>
-          <p className="muted">状态: {panelState.capability?.status ?? "未读取"}</p>
-        </div>
-        <div className="workspace-history-card">
-          <p>NPC 提示词草案</p>
-          <p className="muted">先在这里编辑 NPC 的职责、边界和工作流，后续再接保存配置。</p>
-          <textarea
-            aria-label="NPC 提示词草案"
-            className="settings-textarea"
-            value={panelState.promptDraft}
-            onChange={(event) => onPromptDraftChange(event.target.value)}
-          />
-          <div className="action-row">
-            <button className="action-button action-button-primary" type="button" onClick={onSaveNpcConfig}>
-              保存 NPC 配置
+      <div className="npc-workspace">
+        <aside className="npc-rail" aria-label="NPC 列表">
+          <div className="knowledge-section-heading">
+            <div>
+              <p>NPC</p>
+              <span>{state.npcWorkspace.items.length} 个</span>
+            </div>
+            <button
+              aria-label="新建 NPC"
+              className="knowledge-create-button"
+              type="button"
+              onClick={() => setIsCreateOpen(true)}
+            >
+              +
             </button>
           </div>
-          {panelState.saveStatus ? <p className="muted">{panelState.saveStatus}</p> : null}
-        </div>
-        <div className="workspace-history-card">
-          <p>知识库绑定</p>
-          <p className="muted">当前知识库: {knowledgeLibraryLabel ?? "默认知识库"}</p>
-          <p className="muted">在这里选择 NPC 要加载的知识库。</p>
-          <div className="action-row" aria-label="NPC 知识库切换">
-            {(knowledgeLibraries ?? []).map((library) => (
-              <button
-                key={library.id}
-                className="action-button"
-                type="button"
-                onClick={() => onSelectKnowledgeLibrary?.(library.id)}
+          {isCreateOpen ? (
+            <div className="knowledge-create-dialog">
+              <label className="knowledge-field">
+                <span>NPC 名称</span>
+                <input
+                  aria-label="新 NPC 名称"
+                  className="knowledge-inline-input"
+                  type="text"
+                  value={draftName}
+                  onChange={(event) => setDraftName(event.target.value)}
+                />
+              </label>
+              <label className="knowledge-field">
+                <span>NPC 简介</span>
+                <textarea
+                  aria-label="新 NPC 简介"
+                  className="settings-textarea"
+                  value={draftDescription}
+                  onChange={(event) => setDraftDescription(event.target.value)}
+                />
+              </label>
+              <div className="action-row">
+                <button className="action-button action-button-primary" type="button" onClick={submitCreateNpc}>
+                  创建
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <div className="npc-card-list">
+            {state.npcWorkspace.items.map((npc) => (
+              <div
+                key={npc.id}
+                className={npc.id === state.npcWorkspace.selectedNpcId ? "npc-card-item active" : "npc-card-item"}
               >
-                {library.active ? `${library.label}（当前）` : library.label}
-              </button>
+                <button
+                  aria-label={npc.name}
+                  className="npc-card-main"
+                  type="button"
+                  onClick={() => onSelectNpcWorkspace?.(npc.id)}
+                >
+                  <span className="npc-card-title">{npc.name}</span>
+                  <span className="npc-card-summary">{npc.personaTitle || npc.description || "未填写人设"}</span>
+                </button>
+                <button
+                  aria-label={`配置 ${npc.name}`}
+                  className="npc-card-gear"
+                  type="button"
+                  onClick={() => onSelectNpcWorkspace?.(npc.id)}
+                >
+                  ⚙
+                </button>
+              </div>
             ))}
           </div>
-          {selectedLibraries.length > 0 ? (
-            <p className="muted">
-              已选中: {selectedLibraries.map((library) => library.label).join("、")}
+        </aside>
+        <section className="npc-main" aria-label="NPC 配置区">
+          {activeSection === "overview"
+            ? renderOverviewSection()
+            : activeSection === "persona"
+              ? renderPersonaSection()
+              : activeSection === "skills"
+                ? renderSkillsSection()
+                : renderKnowledgeSection()}
+          {state.npcWorkspace.saveStatus ? (
+            <p className={`npc-save-status npc-save-status-${getNpcSaveStatusTone(state.npcWorkspace.saveStatus)}`}>
+              {state.npcWorkspace.saveStatus}
             </p>
           ) : null}
-        </div>
+        </section>
+        <aside className="npc-context-rail" aria-label="NPC 配置导航">
+          <div className="npc-context-title">
+            <strong>{selectedNpc?.name ?? "未选择 NPC"}</strong>
+            <span>{selectedNpc?.personaTitle || selectedNpc?.description || "选择左侧 NPC 进入配置。"}</span>
+          </div>
+          <button
+            className={activeSection === "overview" ? "npc-nav-row active" : "npc-nav-row"}
+            type="button"
+            onClick={() => onSelectNpcWorkspaceSection?.("overview")}
+          >
+            概览
+          </button>
+          <button
+            className={activeSection === "persona" ? "npc-nav-row active" : "npc-nav-row"}
+            type="button"
+            onClick={() => onSelectNpcWorkspaceSection?.("persona")}
+          >
+            人设
+          </button>
+          <button
+            className={activeSection === "skills" ? "npc-nav-row active" : "npc-nav-row"}
+            type="button"
+            onClick={() => onSelectNpcWorkspaceSection?.("skills")}
+          >
+            技能
+          </button>
+          <button
+            className={activeSection === "knowledge" ? "npc-nav-row active" : "npc-nav-row"}
+            type="button"
+            onClick={() => onSelectNpcWorkspaceSection?.("knowledge")}
+          >
+            知识库
+          </button>
+        </aside>
       </div>
     </section>
   );
@@ -518,6 +1233,147 @@ function WorkbenchContentPanel({ viewId }: { viewId: StaticWorkbenchViewId }) {
         {content.details.map((detail) => (
           <p key={detail}>{detail}</p>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function SearchPanel({
+  state,
+  panelState,
+  onToggleSearch,
+  onQueryChange,
+  onRunSearch,
+  onProviderChange,
+  onBaseUrlChange,
+  onApiKeyChange,
+  onSaveConfig,
+  onDismissFallbackNotice,
+  onSuppressFallbackNotice
+}: {
+  state: WorkbenchState;
+  panelState: SearchPanelState;
+  onToggleSearch: (enabled: boolean) => void;
+  onQueryChange: (query: string) => void;
+  onRunSearch: () => void;
+  onProviderChange: (value: string) => void;
+  onBaseUrlChange: (value: string) => void;
+  onApiKeyChange: (value: string) => void;
+  onSaveConfig: () => void;
+  onDismissFallbackNotice: () => void;
+  onSuppressFallbackNotice: () => void;
+}) {
+  const visibleSources = state.sources.items;
+  const fallbackVisible = Boolean(state.search.lastFallbackReason && !state.search.suppressFallbackNotice);
+
+  return (
+    <section className="workspace-panel" aria-label="搜索">
+      <header className="workspace-panel-header">
+        <h1>搜索</h1>
+        <p>默认使用 OpenCow 默认搜索。保存自定义搜索 API 后会优先使用用户配置，失败时自动回退。</p>
+      </header>
+      <div className="workspace-panel-list">
+        <div className="workspace-history-card workspace-history-card-current">
+          <p>当前状态</p>
+          <p className="muted">
+            {state.search.enabled ? "联网搜索已开启" : "联网搜索已关闭"} · 当前生效提供方：{state.search.effectiveProvider}
+          </p>
+          <div className="action-row">
+            <button className="action-button action-button-primary" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
+              {state.search.enabled ? "关闭联网搜索" : "开启联网搜索"}
+            </button>
+          </div>
+        </div>
+
+        {fallbackVisible ? (
+          <div className="workspace-history-card">
+            <p>回退提示</p>
+            <p className="muted">{state.search.lastFallbackReason}</p>
+            <div className="action-row">
+              <button className="action-button" type="button" onClick={onDismissFallbackNotice}>
+                知道了
+              </button>
+              <button className="action-button" type="button" onClick={onSuppressFallbackNotice}>
+                以后不再提示
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="workspace-history-card">
+          <p>OpenCow 默认搜索</p>
+          <p className="muted">免 API，可直接启用，适合作为开箱即用和失败回退方案。</p>
+        </div>
+
+        <div className="workspace-history-card">
+          <p>自定义搜索 API</p>
+          <div className="settings-form">
+            <label>
+              <span>搜索 Provider</span>
+              <input aria-label="联网搜索 Provider" type="text" value={panelState.customProviderLabel} onChange={(event) => onProviderChange(event.target.value)} />
+            </label>
+            <label>
+              <span>搜索 Base URL</span>
+              <input aria-label="联网搜索 Base URL" type="text" value={panelState.customBaseUrl} onChange={(event) => onBaseUrlChange(event.target.value)} />
+            </label>
+            <label>
+              <span>搜索 API Key</span>
+              <input aria-label="联网搜索 API Key" type="password" value={panelState.customApiKey} onChange={(event) => onApiKeyChange(event.target.value)} />
+            </label>
+          </div>
+          <div className="action-row">
+            <button className="action-button action-button-primary" type="button" onClick={onSaveConfig}>
+              保存联网搜索配置
+            </button>
+          </div>
+        </div>
+
+        <div className="workspace-history-card">
+          <p>手动测试</p>
+          <input
+            aria-label="搜索测试输入"
+            className="settings-textarea"
+            type="text"
+            value={panelState.query}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          <div className="action-row">
+            <button className="action-button action-button-primary" type="button" onClick={onRunSearch}>
+              测试联网搜索
+            </button>
+          </div>
+        </div>
+
+        <div className="npc-main-section">
+          <div className="npc-section-header">
+            <div>
+              <p className="knowledge-section-eyebrow">最近来源</p>
+              <h2>搜索来源</h2>
+            </div>
+            <span className="workspace-history-badge">{visibleSources.length} 项</span>
+          </div>
+          <div className="npc-compact-list">
+            {visibleSources.length === 0 ? (
+              <p className="npc-empty-state">当前还没有搜索记录。开启后可直接在这里测试或在会话里触发联网搜索。</p>
+            ) : visibleSources.map((source) => (
+              <div key={`${source.provider}-${source.url}`} className="npc-row-button search-source-row">
+                <span className="npc-row-leading">
+                  <span className="npc-row-title">{source.title}</span>
+                  <span className="npc-row-description">{source.summary}</span>
+                  <span className="npc-row-meta">来源：{source.sourceLabel || source.provider}</span>
+                </span>
+                <a
+                  className="message-link-button"
+                  href={source.url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  原文链接
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -608,7 +1464,7 @@ function KnowledgePanel({
 }: {
   state: WorkbenchState;
   onImportKnowledgeFile: (path: string) => void;
-  onImportLocalKnowledgeFiles?: (files: File[]) => void;
+  onImportLocalKnowledgeFiles?: () => void;
   onRemoveKnowledgeFile: (path: string) => void;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
@@ -616,6 +1472,7 @@ function KnowledgePanel({
     label: string;
     description?: string;
     active: boolean;
+    documentCount?: number;
   }>;
   onCreateKnowledgeLibrary?: (name: string, description?: string) => void;
   onSelectKnowledgeLibrary?: (libraryId: string) => void;
@@ -625,7 +1482,6 @@ function KnowledgePanel({
   const [draftLibraryName, setDraftLibraryName] = useState("");
   const [draftLibraryDescription, setDraftLibraryDescription] = useState("");
   const [isCreateLibraryDialogOpen, setIsCreateLibraryDialogOpen] = useState(false);
-  const filePoolInputRef = useRef<HTMLInputElement | null>(null);
   const stateKnowledgeLibraries = state.knowledge.libraries ?? [];
   const derivedKnowledgeLibraries =
     knowledgeLibraries ??
@@ -633,6 +1489,7 @@ function KnowledgePanel({
       id: library.id,
       label: library.label,
       description: library.description,
+      documentCount: library.documentCount,
       active: library.id === state.knowledge.activeLibraryId
     }));
   const currentKnowledgeLibraryLabel =
@@ -647,16 +1504,6 @@ function KnowledgePanel({
   const canCreateKnowledgeLibrary = Boolean(onCreateKnowledgeLibrary);
   const importedFiles = state.knowledge.importedFiles;
   const availableFiles = state.knowledge.availableFiles;
-
-  function handleImportLocalFiles(files: FileList | File[]) {
-    const fileList = Array.from(files);
-
-    if (fileList.length === 0) {
-      return;
-    }
-
-    onImportLocalKnowledgeFiles?.(fileList);
-  }
 
   function submitKnowledgeLibraryDraft() {
     const nextName = draftLibraryName.trim();
@@ -810,37 +1657,11 @@ function KnowledgePanel({
               aria-label="上传文件到文件库"
               className="knowledge-create-button"
               type="button"
-              onClick={() => filePoolInputRef.current?.click()}
+              onClick={() => onImportLocalKnowledgeFiles?.()}
             >
               +
             </button>
           </div>
-          <input
-            ref={filePoolInputRef}
-            aria-label="导入本地 md/txt 文件"
-            className="knowledge-hidden-file-input"
-            accept=".md,.txt,text/markdown,text/plain"
-            hidden
-            type="file"
-            multiple
-            onChange={(event) => {
-              const files = event.target.files;
-
-              if (!files || files.length === 0) {
-                return;
-              }
-
-              handleImportLocalFiles(files);
-              event.currentTarget.value = "";
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              handleImportLocalFiles(event.dataTransfer.files);
-            }}
-            onDragOver={(event) => {
-              event.preventDefault();
-            }}
-          />
           <p className="knowledge-file-pool-hint">点击右上角加号，把本机文档直接纳入文件库。</p>
           <div className="knowledge-file-list">
             {availableFiles.length === 0 ? (
@@ -975,9 +1796,7 @@ function SettingsPanel({
   focusTarget,
   onRetryOllamaCheck,
   onToggleRemoteApi,
-  onToggleSearch,
   onSaveRemoteApiConfig,
-  onSaveSearchProviderConfig,
   onSelectNpcModel,
   onUpdateRollbackLimit,
   onCleanupStorage,
@@ -988,9 +1807,7 @@ function SettingsPanel({
   focusTarget: ModelSettingsTarget | null;
   onRetryOllamaCheck: () => void;
   onToggleRemoteApi: (enabled: boolean) => void;
-  onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
-  onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
   onSelectNpcModel: (modelName: string) => void;
   onUpdateRollbackLimit: (limit: number) => void;
   onCleanupStorage: (target: StorageCleanupTarget) => void;
@@ -1000,7 +1817,6 @@ function SettingsPanel({
   const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
   const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
   const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
-  const [searchProviderLabel, setSearchProviderLabel] = useState(state.search.providerLabel);
   const [archivedConversationQuery, setArchivedConversationQuery] = useState("");
   const activeFocusLabel = focusTarget === "remote-api" ? "大模型 API 设置" : "Ollama 设置";
   const archivedConversations = state.history.archivedConversations ?? [];
@@ -1036,10 +1852,6 @@ function SettingsPanel({
     state.settings.remoteApi.baseUrl,
     state.settings.remoteApi.providerLabel
   ]);
-
-  useEffect(() => {
-    setSearchProviderLabel(state.search.providerLabel);
-  }, [state.search.providerLabel]);
 
   return (
     <section className="workspace-panel settings-panel" aria-label="设置">
@@ -1128,40 +1940,6 @@ function SettingsPanel({
             }
           >
             保存大模型 API 配置
-          </button>
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <h2>联网搜索设置</h2>
-        <p>联网搜索默认关闭。开启后，搜索来源、Provider 和结果摘要仍会进入记录。</p>
-        <div className="action-row" aria-label="联网搜索开关">
-          <button className="action-button" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
-            {state.search.enabled ? "关闭联网搜索" : "开启联网搜索"}
-          </button>
-        </div>
-        <div className="settings-form">
-          <label>
-            <span>联网搜索 Provider</span>
-            <input
-              aria-label="联网搜索 Provider"
-              type="text"
-              value={searchProviderLabel}
-              onChange={(event) => setSearchProviderLabel(event.target.value)}
-            />
-          </label>
-        </div>
-        <div className="action-row">
-          <button
-            className="action-button action-button-primary"
-            type="button"
-            onClick={() =>
-              onSaveSearchProviderConfig({
-                providerLabel: searchProviderLabel
-              })
-            }
-          >
-            保存联网搜索配置
           </button>
         </div>
       </section>
@@ -1341,6 +2119,15 @@ export function Workbench({
   knowledgeLibraries,
   onCreateKnowledgeLibrary,
   onSelectKnowledgeLibrary,
+  onCreateNpcWorkspace,
+  onSelectNpcWorkspace,
+  onSelectNpcWorkspaceSection,
+  onUpdateNpcWorkspaceOverview,
+  onUpdateNpcWorkspacePersona,
+  onToggleNpcWorkspaceSkill,
+  onToggleNpcWorkspaceKnowledgeLibrary,
+  onSelectNpcWorkspaceKnowledgeLibrary,
+  onSelectNpcWorkspaceSkill,
   onSubmitTask,
   onAddComposerAttachments,
   onRemoveComposerAttachment
@@ -1364,25 +2151,35 @@ export function Workbench({
     error: null,
     scan: null,
     enabled: null,
+    recommended: null,
     match: null,
     query: "",
-    actionQuery: ""
+    actionQuery: "",
+    activeTab: "installed",
+    expandedSkillName: null
   });
   const [mcpPanelState, setMcpPanelState] = useState<MspPanelState>({
     loading: false,
     error: null,
     scan: null,
+    recommended: null,
     inspect: null,
     preview: null,
     query: "",
-    actionQuery: ""
+    actionQuery: "",
+    activeTab: "installed",
+    expandedPluginId: null
+  });
+  const [searchPanelState, setSearchPanelState] = useState<SearchPanelState>({
+    query: "",
+    customProviderLabel: state.search.customProviderLabel,
+    customBaseUrl: state.search.customBaseUrl,
+    customApiKey: state.search.customApiKey
   });
   const [npcPanelState, setNpcPanelState] = useState<NpcPanelState>({
     loading: false,
     error: null,
-    capability: null,
-    promptDraft: "",
-    saveStatus: null
+    skills: null
   });
   const [auditFilter, setAuditFilter] = useState("");
   const isChatView = activeView === "chat";
@@ -1405,16 +2202,40 @@ export function Workbench({
     });
   }, [state.audit.lastEvent, state.audit.summary]);
 
+  useEffect(() => {
+    setSearchPanelState((current) => ({
+      ...current,
+      customProviderLabel: state.search.customProviderLabel,
+      customBaseUrl: state.search.customBaseUrl,
+      customApiKey: state.search.customApiKey
+    }));
+  }, [
+    state.search.customApiKey,
+    state.search.customBaseUrl,
+    state.search.customProviderLabel
+  ]);
+
   async function refreshSkillsPanel() {
     setSkillsPanelState((current) => ({ ...current, loading: true, error: null }));
 
     try {
-      const [scan, enabled] = await Promise.all([scanLocalSkills(), listEnabledLocalSkills()]);
+      const [scan, enabled, recommended] = await Promise.all([
+        scanLocalSkills(),
+        listEnabledLocalSkills(),
+        loadRecommendedSkillManifest()
+      ]);
       setSkillsPanelState((current) => ({
         ...current,
         loading: false,
         scan,
-        enabled
+        enabled,
+        recommended
+      }));
+      setNpcPanelState((current) => ({
+        ...current,
+        skills: scan,
+        loading: false,
+        error: null
       }));
     } catch (error) {
       setSkillsPanelState((current) => ({
@@ -1455,11 +2276,12 @@ export function Workbench({
     setMcpPanelState((current) => ({ ...current, loading: true, error: null }));
 
     try {
-      const scan = await scanLocalMcpPlugins();
+      const [scan, recommended] = await Promise.all([scanLocalMcpPlugins(), loadRecommendedMcpManifest()]);
       setMcpPanelState((current) => ({
         ...current,
         loading: false,
-        scan
+        scan,
+        recommended
       }));
     } catch (error) {
       setMcpPanelState((current) => ({
@@ -1474,11 +2296,11 @@ export function Workbench({
     setNpcPanelState((current) => ({ ...current, loading: true, error: null }));
 
     try {
-      const capability = await loadOpenClawCapabilityOverview("npc");
+      const skills = await scanLocalSkills();
       setNpcPanelState((current) => ({
         ...current,
         loading: false,
-        capability
+        skills
       }));
     } catch (error) {
       setNpcPanelState((current) => ({
@@ -1542,6 +2364,32 @@ export function Workbench({
     }
   }
 
+  async function installRecommendedSkill(query: string) {
+    const normalized = query.trim();
+
+    if (!normalized) {
+      return;
+    }
+
+    setSkillsPanelState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      actionQuery: normalized
+    }));
+
+    try {
+      await installLocalSkill(normalized);
+      await refreshSkillsPanel();
+    } catch (error) {
+      setSkillsPanelState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "执行 Skill 安装失败"
+      }));
+    }
+  }
+
   async function runMcpStart() {
     const query = mcpPanelState.query.trim();
 
@@ -1563,29 +2411,99 @@ export function Workbench({
     }
   }
 
-  async function saveNpcConfigDraft() {
-    const modelOutput = npcPanelState.promptDraft.trim();
-
-    if (!modelOutput) {
-      setNpcPanelState((current) => ({ ...current, saveStatus: "请先填写 NPC 提示词草案。" }));
-      return;
-    }
+  async function inspectMcpPluginById(pluginId: string) {
+    setMcpPanelState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      query: pluginId,
+      expandedPluginId: pluginId
+    }));
 
     try {
-      await writeNpcConfig({
-        query: "NPC 配置草案",
-        modelOutput,
-        config: {
-          local_model: state.settings?.npc?.localModel || state.model.activeModel,
-          knowledge_library_id: state.knowledge.activeLibraryId ?? "default-library",
-          knowledge_library_label: state.knowledge.activeLibraryLabel ?? "默认知识库"
-        }
-      });
-      setNpcPanelState((current) => ({ ...current, saveStatus: "NPC 配置已保存。" }));
-    } catch (error) {
-      setNpcPanelState((current) => ({
+      const [inspect, preview] = await Promise.all([inspectLocalMcpPlugin(pluginId), previewLocalMcpPluginStart(pluginId)]);
+      setMcpPanelState((current) => ({
         ...current,
-        saveStatus: error instanceof Error ? error.message : "保存 NPC 配置失败"
+        loading: false,
+        inspect,
+        preview,
+        query: pluginId
+      }));
+    } catch (error) {
+      setMcpPanelState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "读取 MCP 详情失败"
+      }));
+    }
+  }
+
+  async function startMcpPluginById(pluginId: string) {
+    setMcpPanelState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      query: pluginId
+    }));
+
+    try {
+      await startLocalMcpPlugin(pluginId);
+      await inspectMcpPluginById(pluginId);
+      await refreshMcpPanel();
+    } catch (error) {
+      setMcpPanelState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "启动 MCP 插件失败"
+      }));
+    }
+  }
+
+  async function installMcpPluginById(pluginId: string) {
+    setMcpPanelState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      actionQuery: pluginId
+    }));
+
+    try {
+      await installLocalMcpPlugin(pluginId);
+      await refreshMcpPanel();
+      setMcpPanelState((current) => ({
+        ...current,
+        activeTab: "installed",
+        expandedPluginId: pluginId
+      }));
+    } catch (error) {
+      setMcpPanelState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "安装 MCP 失败"
+      }));
+    }
+  }
+
+  async function removeMcpPluginById(pluginId: string) {
+    setMcpPanelState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      actionQuery: pluginId
+    }));
+
+    try {
+      await uninstallLocalMcpPlugin(pluginId);
+      await refreshMcpPanel();
+      setMcpPanelState((current) => ({
+        ...current,
+        expandedPluginId: current.expandedPluginId === pluginId ? null : current.expandedPluginId
+      }));
+    } catch (error) {
+      setMcpPanelState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : "删除 MCP 失败"
       }));
     }
   }
@@ -1597,32 +2515,18 @@ export function Workbench({
     if (activeView === "mcp" && !mcpPanelState.scan && !mcpPanelState.loading) {
       void refreshMcpPanel();
     }
-    if (activeView === "npc" && !npcPanelState.capability && !npcPanelState.loading) {
+    if (activeView === "npc" && !npcPanelState.skills && !npcPanelState.loading) {
       void refreshNpcPanel();
     }
   }, [
     activeView,
     mcpPanelState.loading,
     mcpPanelState.scan,
-    npcPanelState.capability,
+    npcPanelState.skills,
     npcPanelState.loading,
     skillsPanelState.loading,
     skillsPanelState.scan
   ]);
-
-  useEffect(() => {
-    if (activeView === "npc") {
-      setNpcPanelState((current) => ({
-        ...current,
-        promptDraft:
-          current.promptDraft || [
-            `你是 ${state.settings?.npc?.localModel || state.model.activeModel} 驱动的 NPC。`,
-            `知识库：${state.knowledge.activeLibraryLabel ?? "默认知识库"}。`,
-            "职责：优先给出可执行、可追踪、可回退的本地工作流。"
-          ].join(" ")
-      }));
-    }
-  }, [activeView, state.knowledge.activeLibraryLabel, state.model.activeModel, state.settings?.npc?.localModel]);
 
   function handleSelectView(viewId: WorkbenchViewId) {
     setActiveView(viewId);
@@ -1720,6 +2624,7 @@ export function Workbench({
             state={state}
             onPreviewRollback={onPreviewRollback}
             onCancelActiveTask={onCancelActiveTask}
+            onRetryLocalTask={handleRetryLocalTask}
             onRestoreRecentConversation={onRestoreRecentConversation}
             onDeleteRecentConversation={onDeleteRecentConversation}
             onSubmitTask={onSubmitTask}
@@ -1740,7 +2645,6 @@ export function Workbench({
         />
         ) : activeView === "skills" ? (
           <SkillsPanel
-            state={state}
             panelState={skillsPanelState}
             onRefresh={() => void refreshSkillsPanel()}
             onQueryChange={(query) => setSkillsPanelState((current) => ({ ...current, query }))}
@@ -1751,24 +2655,49 @@ export function Workbench({
             onEnableSkill={() => void runSkillAction("enable")}
             onInstallSkill={() => void runSkillAction("install")}
             onDisableSkill={() => void runSkillAction("disable")}
+            onInstallRecommendedSkill={(query) => void installRecommendedSkill(query)}
+            onToggleTab={(activeTab) =>
+              setSkillsPanelState((current) => ({ ...current, activeTab, expandedSkillName: null }))
+            }
+            onToggleExpand={(skillName) =>
+              setSkillsPanelState((current) => ({
+                ...current,
+                expandedSkillName: current.expandedSkillName === skillName ? null : skillName
+              }))
+            }
           />
         ) : activeView === "npc" ? (
           <NpcPanel
             state={state}
             panelState={npcPanelState}
-            knowledgeLibraryLabel={knowledgeLibraryLabel}
             knowledgeLibraries={knowledgeLibraries}
-            onPromptDraftChange={(promptDraft) => setNpcPanelState((current) => ({ ...current, promptDraft }))}
-            onSelectKnowledgeLibrary={onSelectKnowledgeLibrary}
-            onSaveNpcConfig={() => void saveNpcConfigDraft()}
+            onCreateNpcWorkspace={onCreateNpcWorkspace}
+            onSelectNpcWorkspace={onSelectNpcWorkspace}
+            onSelectNpcWorkspaceSection={onSelectNpcWorkspaceSection}
+            onUpdateNpcWorkspaceOverview={onUpdateNpcWorkspaceOverview}
+            onUpdateNpcWorkspacePersona={onUpdateNpcWorkspacePersona}
+            onToggleNpcWorkspaceSkill={onToggleNpcWorkspaceSkill}
+            onToggleNpcWorkspaceKnowledgeLibrary={onToggleNpcWorkspaceKnowledgeLibrary}
+            onSelectNpcWorkspaceKnowledgeLibrary={onSelectNpcWorkspaceKnowledgeLibrary}
+            onSelectNpcWorkspaceSkill={onSelectNpcWorkspaceSkill}
           />
         ) : activeView === "mcp" ? (
           <McpPanel
             panelState={mcpPanelState}
             onRefresh={() => void refreshMcpPanel()}
-            onQueryChange={(query) => setMcpPanelState((current) => ({ ...current, query }))}
-            onInspect={() => void inspectMcpPanel()}
-            onStart={() => void runMcpStart()}
+            onSelectTab={(activeTab) =>
+              setMcpPanelState((current) => ({ ...current, activeTab, expandedPluginId: null }))
+            }
+            onToggleExpand={(pluginId) =>
+              setMcpPanelState((current) => ({
+                ...current,
+                expandedPluginId: current.expandedPluginId === pluginId ? null : pluginId
+              }))
+            }
+            onInspect={(pluginId) => void inspectMcpPluginById(pluginId)}
+            onStart={(pluginId) => void startMcpPluginById(pluginId)}
+            onInstall={(pluginId) => void installMcpPluginById(pluginId)}
+            onRemove={(pluginId) => void removeMcpPluginById(pluginId)}
           />
         ) : activeView === "audit" ? (
           <AuditTimelinePanel
@@ -1785,15 +2714,69 @@ export function Workbench({
             onApprovePermissionRequest={onApprovePermissionRequest}
             onCancelPermissionRequest={onCancelPermissionRequest}
           />
+        ) : activeView === "search" ? (
+          <SearchPanel
+            state={state}
+            panelState={searchPanelState}
+            onToggleSearch={onToggleSearch}
+            onQueryChange={(query) => setSearchPanelState((current) => ({ ...current, query }))}
+            onRunSearch={() => {
+              const query = searchPanelState.query.trim();
+              if (!query) {
+                return;
+              }
+              handleSubmitTask(query);
+            }}
+            onProviderChange={(value) => setSearchPanelState((current) => ({ ...current, customProviderLabel: value }))}
+            onBaseUrlChange={(value) => setSearchPanelState((current) => ({ ...current, customBaseUrl: value }))}
+            onApiKeyChange={(value) => setSearchPanelState((current) => ({ ...current, customApiKey: value }))}
+            onSaveConfig={() =>
+            onSaveSearchProviderConfig({
+              providerLabel: searchPanelState.customProviderLabel,
+              baseUrl: searchPanelState.customBaseUrl,
+              apiKey: searchPanelState.customApiKey
+              } as {
+                providerLabel: string;
+                baseUrl: string;
+                apiKey: string;
+              })
+            }
+            onDismissFallbackNotice={() => {
+              onSaveSearchProviderConfig({
+                providerLabel: state.search.customProviderLabel,
+                baseUrl: state.search.customBaseUrl,
+                apiKey: state.search.customApiKey,
+                clearFallbackNotice: true
+              } as {
+                providerLabel: string;
+                baseUrl: string;
+                apiKey: string;
+                clearFallbackNotice: boolean;
+              });
+            }}
+            onSuppressFallbackNotice={() =>
+              onSaveSearchProviderConfig({
+                providerLabel: state.search.customProviderLabel,
+                baseUrl: state.search.customBaseUrl,
+                apiKey: state.search.customApiKey,
+                suppressFallbackNotice: true,
+                clearFallbackNotice: true
+              } as {
+                providerLabel: string;
+                baseUrl: string;
+                apiKey: string;
+                suppressFallbackNotice: boolean;
+                clearFallbackNotice: boolean;
+              })
+            }
+          />
         ) : isSettingsView ? (
           <SettingsPanel
             state={state}
             focusTarget={settingsFocus}
             onRetryOllamaCheck={onRetryOllamaCheck}
             onToggleRemoteApi={onToggleRemoteApi}
-            onToggleSearch={onToggleSearch}
             onSaveRemoteApiConfig={onSaveRemoteApiConfig}
-            onSaveSearchProviderConfig={onSaveSearchProviderConfig}
             onSelectNpcModel={onSelectNpcModel ?? (() => undefined)}
             onUpdateRollbackLimit={onUpdateRollbackLimit}
             onCleanupStorage={onCleanupStorage}
@@ -1853,6 +2836,30 @@ export function Workbench({
                 type="button"
                 className="action-button"
                 onClick={() => setPendingDeleteConversationId(null)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {state.rollback.pendingPreview ? (
+        <div className="app-close-overlay" role="dialog" aria-label="回退确认">
+          <div className="app-close-dialog">
+            <h2>确认回退</h2>
+            <p>将回退到“{state.rollback.pendingPreview.targetLabel}”，撤销 {state.rollback.pendingPreview.willRevertCount} 个后续状态。</p>
+            <div className="action-row">
+              <button
+                type="button"
+                className="action-button action-button-primary"
+                onClick={onApplyRollback}
+              >
+                确认回退
+              </button>
+              <button
+                type="button"
+                className="action-button"
+                onClick={onCancelRollback}
               >
                 取消
               </button>

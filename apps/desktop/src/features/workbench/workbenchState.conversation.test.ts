@@ -14,6 +14,28 @@ import {
 } from "./workbenchState";
 
 describe("createNewConversationState", () => {
+  it("keeps sent user attachments inside archived conversation history", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "把这些附件带进历史",
+      attachments: [
+        {
+          id: "attachment-1",
+          name: "draft.png",
+          mimeType: "image/png",
+          sizeBytes: 1024,
+          kind: "image",
+          filePath: "/tmp/draft.png",
+          previewUrl: "blob:draft-preview",
+          source: "paste"
+        }
+      ]
+    });
+
+    const next = createNewConversationState(submitted);
+
+    expect(next.history.archivedConversations[0]?.entries[0]?.attachments?.[0]?.name).toBe("draft.png");
+  });
+
   it("starts a blank conversation without carrying over old permission or dangerous confirmations", () => {
     const pendingPermission = requestPermissionModeChangeState(createInitialWorkbenchState(), {
       targetMode: "workspace-write",
@@ -96,6 +118,28 @@ describe("createNewConversationState", () => {
     expect(next.tasks.pendingCount).toBe(1);
     expect(next.tasks.items).toHaveLength(2);
     expect(next.audit.lastEvent.detail).toContain("Preserved active local task queue: queued=1, running=1.");
+  });
+
+  it("keeps the previous conversation in the left recent list after creating a new blank conversation", () => {
+    const completed = createTaskExecutionSucceededState(
+      createTaskExecutionStartedState(
+        createUserTaskSubmittedState(createInitialWorkbenchState(), {
+          message: "帮我上网搜索豆包"
+        })
+      ),
+      {
+        resultTitle: "联网搜索结果",
+        resultSummary: "已通过 OpenCow 默认搜索 返回 1 条来源。"
+      }
+    );
+
+    const next = createNewConversationState(completed);
+
+    expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.mode).toBe("blank");
+    expect(next.history.draftConversations[0]?.title).toBe("新会话");
+    expect(next.history.draftConversations[1]?.title).toContain("帮我上网搜索豆包");
+    expect(next.history.archivedConversations[0]?.title).toContain("帮我上网搜索豆包");
   });
 
   it("keeps the latest non-empty conversation in history when starting a blank new conversation", () => {

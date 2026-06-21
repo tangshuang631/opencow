@@ -68,6 +68,7 @@ export function captureRollbackSnapshot(state: WorkbenchState): RollbackSnapshot
     confirmation: state.confirmation,
     conversation: state.conversation,
     search: state.search,
+    npcWorkspace: state.npcWorkspace,
     sources: state.sources,
     tools: state.tools,
     tasks: state.tasks,

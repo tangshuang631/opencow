@@ -177,7 +177,7 @@ describe("assistantTaskService local rag search", () => {
     );
   });
 
-  it("executes readonly network search guidance without making a network call", async () => {
+  it("executes network search through the search adapter without touching local knowledge search", async () => {
     const message = "search the web for latest local RAG indexing approaches";
 
     const result = await executeAssistantTask({
@@ -189,11 +189,10 @@ describe("assistantTaskService local rag search", () => {
     } as const);
 
     expect(searchLocalKnowledgeMock).not.toHaveBeenCalled();
-    expect(result.resultTitle).toBe("联网搜索说明");
-    expect(result.resultSummary).toContain("本轮没有执行外部联网搜索");
-    expect(result.resultSummary).toContain("搜索 Provider 尚未配置或尚未完成能力审批");
-    expect(result.resultSummary).toContain("已跳过网络调用");
-    expect(result.resultSummary).toContain("下一步");
+    expect(result.resultTitle).toBe("联网搜索结果");
+    expect(result.resultSummary).toContain("已参考");
     expect(result.resultSummary).toContain(message);
+    expect(result.searchSources?.length).toBeGreaterThan(0);
+    expect(result.searchSources?.[0]?.provider).toBe("OpenCow 默认搜索");
   });
 });

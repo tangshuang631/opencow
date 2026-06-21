@@ -54,13 +54,16 @@ export type ConversationEntry = {
 };
 
 export type ConversationMode = "blank" | "history" | "restored";
+export type RollbackLimit = 5 | 10 | 20;
 
 export type SearchSourceItem = {
   title: string;
   url: string;
   provider: string;
+  sourceLabel?: string;
   query: string;
   summary: string;
+  usedFallback?: boolean;
 };
 
 export type KnowledgeFileStatus = "ready" | "missing";
@@ -94,6 +97,24 @@ export type KnowledgeLibraryRecord = {
   id: string;
   label: string;
   description?: string;
+  documentCount?: number;
+};
+
+export type NpcWorkspaceSection = "overview" | "persona" | "skills" | "knowledge";
+
+export type NpcWorkspaceRecord = {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel: string;
+  personaTitle?: string;
+  personaPrompt: string;
+  outputStyle: string;
+  agentDraft: string;
+  rulesDraft: string;
+  enabledSkillNames: string[];
+  knowledgeLibraryIds: string[];
+  updatedAt?: string;
 };
 
 export type RecentConversationRecord = {
@@ -220,6 +241,7 @@ export type WorkbenchState = {
     pending: PendingConfirmation | null;
   };
   conversation: {
+    id?: string;
     entries: ConversationEntry[];
     mode?: ConversationMode;
     restoredFromConversationId?: string | null;
@@ -243,7 +265,14 @@ export type WorkbenchState = {
   };
   search: {
     enabled: boolean;
+    defaultProviderEnabled: boolean;
     providerLabel: string;
+    customProviderLabel: string;
+    customBaseUrl: string;
+    customApiKey: string;
+    effectiveProvider: string;
+    lastFallbackReason: string | null;
+    suppressFallbackNotice: boolean;
   };
   knowledge: {
     importedFiles: ImportedKnowledgeFile[];
@@ -251,6 +280,21 @@ export type WorkbenchState = {
     activeLibraryId?: string;
     activeLibraryLabel?: string;
     libraries?: KnowledgeLibraryRecord[];
+  };
+  npcWorkspace: {
+    items: NpcWorkspaceRecord[];
+    selectedNpcId: string | null;
+    activeSection: NpcWorkspaceSection;
+    selectedSkillName: string | null;
+    selectedSkillPreview: {
+      name: string;
+      description: string;
+      contentPreview: string;
+      path: string;
+      source: string;
+    } | null;
+    selectedKnowledgeLibraryId: string | null;
+    saveStatus: string | null;
   };
   sources: {
     items: SearchSourceItem[];
@@ -312,6 +356,7 @@ export type RollbackSnapshot = Pick<
   | "confirmation"
   | "conversation"
   | "search"
+  | "npcWorkspace"
   | "sources"
   | "tools"
   | "tasks"

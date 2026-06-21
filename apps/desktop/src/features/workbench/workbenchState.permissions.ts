@@ -448,59 +448,22 @@ export function approvePendingConfirmationState(state: WorkbenchState): Workbenc
   if (pending.requestedFeature) {
     const nextFeature = pending.requestedFeature;
     const nextEnabled = pending.requestedEnabled ?? false;
-    const nextProvider = pending.providerLabel?.trim() || state.search.providerLabel.trim();
-
-    if (nextFeature === "search" && nextEnabled && !nextProvider) {
-      const searchProviderMissingId = createWorkbenchEventId(state, "search-provider-config", "missing");
-
-      return recordRollbackEntry(
-        withPermissionAuditLog({
-          ...state,
-          confirmation: {
-            pending: null
-          },
-          search: {
-            enabled: true,
-            providerLabel: ""
-          },
-          conversation: {
-            entries: prependConversationEntry(
-              state.conversation.entries,
-              createSearchProviderMissingConversationEntry(searchProviderMissingId)
-            )
-          },
-          audit: {
-            summary: SEARCH_PROVIDER_MISSING_COPY.title,
-            lastEvent: {
-              module: "search",
-              detail: SEARCH_PROVIDER_MISSING_COPY.auditDetail,
-              timestamp: "blocked",
-              source: "search_provider_config_missing"
-            }
-          },
-          error: {
-            module: "search",
-            summary: SEARCH_PROVIDER_MISSING_COPY.title,
-            detail: SEARCH_PROVIDER_MISSING_COPY.detail,
-            actionLabel: SEARCH_PROVIDER_MISSING_COPY.actionLabel,
-            timestamp: "blocked",
-            source: "search_provider_config_missing"
-          }
-        }),
-        searchProviderMissingId,
-        SEARCH_PROVIDER_MISSING_COPY.rollbackLabel,
-        SEARCH_PROVIDER_MISSING_COPY.rollbackSummary,
-        "tool"
-      );
-    }
+    const nextCustomProvider = pending.providerLabel?.trim() || state.search.customProviderLabel.trim();
+    const nextEffectiveProvider = nextEnabled
+      ? nextCustomProvider || "OpenCow 默认搜索"
+      : state.search.effectiveProvider;
 
     const nextState =
       nextFeature === "search"
         ? {
             ...state,
             search: {
+              ...state.search,
               enabled: nextEnabled,
-              providerLabel: nextEnabled ? nextProvider : ""
+              providerLabel: nextEffectiveProvider,
+              customProviderLabel: nextEnabled ? nextCustomProvider : state.search.customProviderLabel,
+              effectiveProvider: nextEffectiveProvider,
+              lastFallbackReason: null
             }
           }
         : {

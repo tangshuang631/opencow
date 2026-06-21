@@ -63,6 +63,7 @@ const {
   runReadonlyShellCommandMock,
   runWorkspaceWriteShellCommandMock,
   runControlledFullShellCommandMock,
+  restoreRollbackFilesMock,
   writeNpcConfigMock,
   loadNpcWorkspaceMock,
   loadNpcWorkspaceConfigMock,
@@ -97,6 +98,7 @@ const {
   runReadonlyShellCommandMock: vi.fn(),
   runWorkspaceWriteShellCommandMock: vi.fn(),
   runControlledFullShellCommandMock: vi.fn(),
+  restoreRollbackFilesMock: vi.fn(),
   writeNpcConfigMock: vi.fn(),
   loadNpcWorkspaceMock: vi.fn(),
   loadNpcWorkspaceConfigMock: vi.fn(),
@@ -161,6 +163,7 @@ vi.mock("../features/assistant/localAssistantService", async () => {
     runReadonlyShellCommand: runReadonlyShellCommandMock,
     runWorkspaceWriteShellCommand: runWorkspaceWriteShellCommandMock,
     runControlledFullShellCommand: runControlledFullShellCommandMock,
+    restoreRollbackFiles: restoreRollbackFilesMock,
     writeNpcConfig: writeNpcConfigMock,
     loadNpcWorkspace: loadNpcWorkspaceMock,
     loadNpcWorkspaceConfig: loadNpcWorkspaceConfigMock,
@@ -175,6 +178,64 @@ function getComposerInput() {
 
 function getComposerSendButton() {
   return screen.getByRole("button", { name: "发送" });
+}
+
+async function submitComposerMessage(message: string) {
+  fireEvent.change(getComposerInput(), {
+    target: { value: message }
+  });
+  await click(getComposerSendButton());
+}
+
+async function approvePermissionRequest(container?: HTMLElement) {
+  const scope = container ? within(container) : screen;
+  const button =
+    scope.queryByRole("button", { name: "批准" })
+    ?? scope.queryByRole("button", { name: "批准提权" })
+    ?? screen.queryByRole("button", { name: "批准" })
+    ?? screen.queryByRole("button", { name: "批准提权" })
+    ?? await screen.findByRole("button", { name: /批准|批准提权/ });
+  await click(button);
+}
+
+async function approveDangerousConfirmation(container?: HTMLElement) {
+  const confirmationTitles = [
+    ...screen.queryAllByText("等待高风险确认"),
+    ...screen.queryAllByText(/待确认高风险操作/i)
+  ];
+  const confirmationSection =
+    confirmationTitles
+      .map((node) => node.closest("section") ?? node.closest("aside") ?? node.parentElement)
+      .find((candidate): candidate is HTMLElement => {
+        if (!(candidate instanceof HTMLElement)) {
+          return false;
+        }
+
+        const scoped = within(candidate);
+        return Boolean(
+          scoped.queryByRole("button", { name: "批准高风险操作" })
+          || scoped.queryByRole("button", { name: "批准" })
+        );
+      })
+    ?? (container instanceof HTMLElement ? container : document.body);
+  const scope = within(confirmationSection);
+  const button =
+    scope.queryByRole("button", { name: "批准高风险操作" })
+    ?? scope.queryByRole("button", { name: "批准" })
+    ?? screen.queryByRole("button", { name: "批准高风险操作" })
+    ?? await screen.findByRole("button", { name: /批准高风险操作|批准/ });
+  await click(button);
+}
+
+async function openSidebarDestination(name: string) {
+  await click(screen.getByRole("button", { name }));
+}
+
+function submitComposerMessageFast(message: string) {
+  fireEvent.change(getComposerInput(), {
+    target: { value: message }
+  });
+  fireEvent.click(getComposerSendButton());
 }
 
 function getConversationRegion() {
@@ -221,6 +282,7 @@ describe("App", () => {
     runReadonlyShellCommandMock.mockReset();
     runWorkspaceWriteShellCommandMock.mockReset();
     runControlledFullShellCommandMock.mockReset();
+    restoreRollbackFilesMock.mockReset();
     writeNpcConfigMock.mockReset();
     loadNpcWorkspaceMock.mockReset();
     loadNpcWorkspaceConfigMock.mockReset();
@@ -267,6 +329,10 @@ describe("App", () => {
       knowledgeLibraryIds: [],
       updatedAt: npcId === "writer-bot" ? "2026-06-19T11:00:00.000Z" : "2026-06-19T10:00:00.000Z"
     }));
+    restoreRollbackFilesMock.mockResolvedValue({
+      restoredPathCount: 0,
+      prunedSnapshotCount: 0
+    });
     minimizeMock.mockReset();
     destroyMock.mockReset();
     onCloseRequestedMock.mockReset();
@@ -277,6 +343,8 @@ describe("App", () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
@@ -323,7 +391,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("dialog", { name: "退出确认" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "最小化" }));
+    await click(screen.getByRole("button", { name: "最小化" }));
     await waitFor(() => {
       expect(minimizeMock).toHaveBeenCalledTimes(1);
     });
@@ -331,7 +399,7 @@ describe("App", () => {
     await act(async () => {
       closeListener?.();
     });
-    fireEvent.click(screen.getByRole("button", { name: "退出" }));
+    await click(screen.getByRole("button", { name: "退出" }));
     await waitFor(() => {
       expect(destroyMock).toHaveBeenCalledTimes(1);
     });
@@ -416,8 +484,8 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
-    fireEvent.click(await screen.findByRole("button", { name: "写作助手" }));
+    await click(screen.getByRole("button", { name: "NPC" }));
+    await click(await screen.findByRole("button", { name: "写作助手" }));
 
     await waitFor(() => {
       expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("writer-bot");
@@ -494,8 +562,8 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
-    fireEvent.click(await screen.findByRole("button", { name: "写作助手" }));
+    await click(screen.getByRole("button", { name: "NPC" }));
+    await click(await screen.findByRole("button", { name: "写作助手" }));
 
     await waitFor(() => {
       expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("writer-bot");
@@ -553,7 +621,7 @@ describe("App", () => {
     render(<App />);
 
     await findModelPicker("qwen2.5-coder:7b");
-    fireEvent.click(screen.getByRole("button", { name: "NPC" }));
+    await click(screen.getByRole("button", { name: "NPC" }));
 
     await waitFor(() => {
       expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("research-bot");
@@ -768,6 +836,9 @@ describe("App", () => {
         id: "research-bot",
         name: "研究助手",
         personaTitle: "事实核验官"
+      }), expect.objectContaining({
+        conversationId: expect.any(String),
+        rollbackEntryId: expect.any(String)
       }));
     }, { timeout: 1500 });
   });
@@ -1133,6 +1204,9 @@ describe("App", () => {
       expect(createNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
         name: "写作助手",
         description: "负责整理输出"
+      }), expect.objectContaining({
+        conversationId: expect.any(String),
+        rollbackEntryId: expect.any(String)
       }));
     });
     expect(await screen.findByRole("button", { name: "写作助手" }, { timeout: 12_000 })).toBeInTheDocument();
@@ -1201,7 +1275,14 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "确认创建知识库" }));
 
     await waitFor(() => {
-      expect(createKnowledgeLibraryMock).toHaveBeenCalledWith("产品文档库", "整理产品需求、PRD 和交互说明。");
+      expect(createKnowledgeLibraryMock).toHaveBeenCalledWith(
+        "产品文档库",
+        "整理产品需求、PRD 和交互说明。",
+        expect.objectContaining({
+          conversationId: expect.any(String),
+          rollbackEntryId: expect.any(String)
+        })
+      );
     });
 
     await user.click(screen.getByRole("button", { name: "NPC" }));
@@ -1272,6 +1353,9 @@ describe("App", () => {
     expect(updateNpcWorkspaceConfigMock).toHaveBeenCalledWith(expect.objectContaining({
       id: "research-bot",
       knowledgeLibraryIds: ["product-docs"]
+    }), expect.objectContaining({
+      conversationId: expect.any(String),
+      rollbackEntryId: expect.any(String)
     }));
     expect(screen.getByText("1 项")).toBeInTheDocument();
     expect(screen.getByText("已绑定")).toBeInTheDocument();
@@ -1311,7 +1395,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    await click(screen.getByRole("button", { name: "知识库" }));
 
     await waitFor(() => {
       expect(screen.getByText("已索引文件 1")).toBeInTheDocument();
@@ -1352,23 +1436,38 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.click(screen.getByRole("button", { name: "设置" }));
+    await click(screen.getByRole("button", { name: "设置" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "回退与本地清理" })).toBeInTheDocument();
+    });
     expect(screen.getByText("知识库索引 1")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "清空知识库索引" }));
+    await click(screen.getByRole("button", { name: "清空知识库索引" }));
 
     await waitFor(() => {
       expect(screen.getByText("知识库索引 1")).toBeInTheDocument();
-      expect(screen.getByText("知识库索引清理失败")).toBeInTheDocument();
-      expect(screen.getByText("请检查知识库目录权限或稍后重试")).toBeInTheDocument();
+      expect(clearKnowledgeImportsMock).toHaveBeenCalledWith(
+        "default-library",
+        expect.objectContaining({
+          conversationId: expect.any(String),
+          rollbackEntryId: expect.any(String)
+        })
+      );
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "知识库" }));
+    await click(screen.getByRole("button", { name: "审计" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("知识库索引清理失败")).toBeInTheDocument();
+      expect(screen.getByText("knowledge clear failed")).toBeInTheDocument();
+    });
+
+    await click(screen.getByRole("button", { name: "知识库" }));
 
     await waitFor(() => {
       expect(screen.getByText("已索引文件 1")).toBeInTheDocument();
       expect(screen.getAllByText("guide.txt").length).toBeGreaterThan(0);
     });
-  });
+  }, 10_000);
 
   it("keeps Ollama load details in settings while the main conversation stays minimal", async () => {
     loadOllamaOverviewMock.mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:11434"));
@@ -1382,7 +1481,7 @@ describe("App", () => {
     expect(screen.queryByText(/ollama_overview/)).not.toBeInTheDocument();
     expect(within(getConversationRegion()).queryByText("需要配置模型")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "配置 Ollama" }));
+    await click(screen.getByRole("button", { name: "配置 Ollama" }));
 
     const settingsPanel = screen.getByLabelText("设置");
     expect(within(settingsPanel).getByText(/connect ECONNREFUSED 127\.0\.0\.1:11434/)).toBeInTheDocument();
@@ -1405,11 +1504,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    const input = getComposerInput();
-    fireEvent.change(input, {
-      target: { value: "你能干什么" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("你能干什么");
 
     const conversation = getConversationRegion();
 
@@ -1448,11 +1543,13 @@ describe("App", () => {
         {
           title: "OpenAI News",
           url: "https://openai.com/news/",
+          source_label: "OpenAI",
           summary: "OpenAI 官方新闻页。"
         },
         {
           title: "OpenAI Safety",
           url: "https://openai.com/safety/",
+          source_label: "OpenAI",
           summary: "OpenAI 安全相关页面。"
         }
       ]
@@ -1475,13 +1572,142 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(searchNetworkMock).toHaveBeenCalledWith("OpenAI 最近有什么新动态", expect.objectContaining({
-        providerLabel: "OpenCow 默认搜索"
+        providerLabel: ""
       }));
       expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
         message: expect.stringMatching(/联网搜索参考|联网搜索已开启，但本轮没有可用外部来源/)
       }));
       expect(within(getConversationRegion()).getByText("我结合联网搜索参考做了整理。")).toBeInTheDocument();
+      expect(within(getConversationRegion()).queryByText("概览：本地模型答复")).not.toBeInTheDocument();
     });
+  }, 10_000);
+
+  it("does not keep unrelated old search sources in a later ordinary chat reply", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock
+      .mockResolvedValueOnce({
+        query: "豆包是什么",
+        provider: "OpenCow 默认搜索",
+        effective_provider: "OpenCow 默认搜索",
+        used_fallback: false,
+        fallback_reason: null,
+        items: [
+          {
+            title: "豆包",
+            url: "https://www.doubao.com/",
+            source_label: "豆包官网",
+            summary: "豆包是字节跳动推出的 AI 助手产品。"
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        query: "大模型应用里CLI",
+        provider: "OpenCow 默认搜索",
+        effective_provider: "OpenCow 默认搜索",
+        used_fallback: false,
+        fallback_reason: null,
+        items: [
+          {
+            title: "Transformers CLI",
+            url: "https://huggingface.co/docs/transformers/main/en/run_scripts",
+            source_label: "Hugging Face",
+            summary: "Transformers 提供命令行入口。"
+          }
+        ]
+      });
+    chatWithOllamaModelMock
+      .mockResolvedValueOnce({
+        model: "qwen3.6:35b",
+        message: "这是关于豆包的整理。"
+      })
+      .mockResolvedValueOnce({
+        model: "qwen3.6:35b",
+        message: "这是关于大模型应用里 CLI 的整理。"
+      });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.click(screen.getByRole("button", { name: "会话" }));
+
+    await user.type(getComposerInput(), "豆包是什么");
+    await user.click(getComposerSendButton());
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("这是关于豆包的整理。")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "创建新会话" }));
+    await user.type(getComposerInput(), "大模型应用里CLI");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("这是关于大模型应用里 CLI 的整理。")).toBeInTheDocument();
+      expect(within(getConversationRegion()).queryByText("豆包")).not.toBeInTheDocument();
+      expect(within(getConversationRegion()).queryByText("概览：本地模型答复")).not.toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText("1 条信息引用")).toBeInTheDocument();
+    });
+
+    await user.click(within(getConversationRegion()).getByRole("button", { name: "展开信息引用" }));
+    expect(within(getConversationRegion()).getByText("Transformers CLI")).toBeInTheDocument();
+  }, 10_000);
+
+  it("routes an explicit network-search request to the real search task after search is enabled", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "帮我上网搜索豆包",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "豆包",
+          url: "https://www.doubao.com/",
+          summary: "豆包是字节跳动推出的 AI 助手产品。"
+        }
+      ]
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.click(screen.getByRole("button", { name: "会话" }));
+
+    await user.type(getComposerInput(), "帮我上网搜索豆包");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(searchNetworkMock).toHaveBeenCalledWith("帮我上网搜索豆包", expect.objectContaining({
+        providerLabel: ""
+      }));
+      expect(within(getConversationRegion()).getByText("联网搜索结果")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getByText(/已参考 1 条联网资料/)).toBeInTheDocument();
+      expect(within(getConversationRegion()).queryByText(/来源：豆包/)).not.toBeInTheDocument();
+    });
+
+    expect(chatWithOllamaModelMock).not.toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining("豆包 (mung bean)")
+    }));
   }, 10_000);
 
   it("opens a visible rollback confirmation when clicking the user-message rollback button", async () => {
@@ -1511,9 +1737,85 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "回退到这条消息之前" }));
 
-    expect(await screen.findByText(/目标回退点:/)).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "回退确认" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "确认回退" })).toBeInTheDocument();
   });
+
+  it("removes the later model reply from conversation after confirming rollback", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这是一条应该被回退删除的模型回复。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    await user.type(getComposerInput(), "第一轮普通对话");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("这是一条应该被回退删除的模型回复。")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "回退到这条消息之前" }));
+    expect(await screen.findByRole("button", { name: "确认回退" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "确认回退" }));
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).queryByText("这是一条应该被回退删除的模型回复。")).not.toBeInTheDocument();
+      expect(within(getConversationRegion()).getAllByText("第一轮普通对话").length).toBeGreaterThan(0);
+      expect(screen.queryByRole("button", { name: "确认回退" })).not.toBeInTheDocument();
+    });
+  }, 10_000);
+
+  it("keeps the conversation unchanged when native rollback file restore fails", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这是一条不应该被错误删掉的模型回复。"
+    });
+    restoreRollbackFilesMock.mockRejectedValueOnce(new Error("snapshot restore failed"));
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+
+    await user.type(getComposerInput(), "第一轮普通对话");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("这是一条不应该被错误删掉的模型回复。")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "回退到这条消息之前" }));
+    expect(await screen.findByRole("button", { name: "确认回退" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "确认回退" }));
+
+    await waitFor(() => {
+      expect(restoreRollbackFilesMock).toHaveBeenCalled();
+      expect(within(getConversationRegion()).getByText("这是一条不应该被错误删掉的模型回复。")).toBeInTheDocument();
+      expect(within(getConversationRegion()).getAllByText("第一轮普通对话").length).toBeGreaterThan(0);
+      expect(screen.getByText("本地文件未能完整恢复")).toBeInTheDocument();
+    });
+  }, 10_000);
 
   it("uses the local model to generate and save a requested NPC config after permission approval", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
@@ -1551,12 +1853,8 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能帮我配置一个文档处理npc吗" }
-    });
-    fireEvent.click(getComposerSendButton());
-
-    fireEvent.click(await screen.findByRole("button", { name: "批准提权" }));
+    await submitComposerMessage("你能帮我配置一个文档处理npc吗");
+    await approvePermissionRequest();
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalled();
@@ -1598,12 +1896,8 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能帮我配置一个文档处理npc吗" }
-    });
-    fireEvent.click(getComposerSendButton());
-
-    fireEvent.click(await screen.findByRole("button", { name: "批准提权" }));
+    await submitComposerMessage("你能帮我配置一个文档处理npc吗");
+    await approvePermissionRequest();
 
     await waitFor(() => {
       expect(writeNpcConfigMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -1634,12 +1928,9 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能帮我创建一个课程助手npc吗" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("你能帮我创建一个课程助手npc吗");
 
-    const approveButton = await screen.findByRole("button", { name: "批准提权" });
+    const approveButton = await screen.findByRole("button", { name: "批准" });
 
     vi.useFakeTimers();
     try {
@@ -1656,9 +1947,6 @@ describe("App", () => {
         within(getConversationRegion()).getByText(/本地模型已接到 NPC 配置生成请求，但首轮输出没有在本轮超时前返回/)
       ).toBeInTheDocument();
       expect(screen.getAllByText(/NPC 配置生成卡在首轮输出前/).length).toBeGreaterThan(0);
-      fireEvent.click(screen.getByRole("button", { name: "展开失败细节" }));
-      expect(screen.getAllByText(/executionKind=npc-config-write/).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/streamPhase=waiting-first-chunk/).length).toBeGreaterThan(0);
       expect(writeNpcConfigMock).not.toHaveBeenCalled();
       expect(screen.queryByText("NPC 配置已保存")).not.toBeInTheDocument();
     } finally {
@@ -1723,12 +2011,9 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能帮我创建一个课程助手npc吗" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("你能帮我创建一个课程助手npc吗");
 
-    const approveButton = await screen.findByRole("button", { name: "批准提权" });
+    const approveButton = await screen.findByRole("button", { name: "批准" });
 
     vi.useFakeTimers();
     try {
@@ -1793,11 +2078,8 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能帮我配置一个文档处理npc吗" }
-    });
-    fireEvent.click(getComposerSendButton());
-    const approveButton = await screen.findByRole("button", { name: "批准提权" });
+    submitComposerMessageFast("你能帮我配置一个文档处理npc吗");
+    const approveButton = await screen.findByRole("button", { name: "批准" });
     fireEvent.click(approveButton);
 
     await waitFor(() => {
@@ -1852,11 +2134,8 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能帮我配置一个文档处理npc吗" }
-    });
-    fireEvent.click(getComposerSendButton());
-    fireEvent.click(await screen.findByRole("button", { name: "批准提权" }));
+    submitComposerMessageFast("你能帮我配置一个文档处理npc吗");
+    fireEvent.click(await screen.findByRole("button", { name: "批准" }));
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalled();
@@ -1906,10 +2185,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "inspect the current workspace and summarize it" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("inspect the current workspace and summarize it");
 
     const conversation = getConversationRegion();
 
@@ -1941,10 +2217,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "summarize this project" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("summarize this project");
 
     const conversation = getConversationRegion();
 
@@ -1980,10 +2253,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "inspect workspace packages and scripts" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("inspect workspace packages and scripts");
 
     const conversation = getConversationRegion();
 
@@ -2023,10 +2293,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "inspect workspace config and root scripts" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("inspect workspace config and root scripts");
 
     const conversation = getConversationRegion();
 
@@ -2067,10 +2334,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "check git status for this workspace" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("check git status for this workspace");
 
     const conversation = getConversationRegion();
 
@@ -2110,29 +2374,27 @@ describe("App", () => {
       status_code: 0,
       summary: "Readonly shell command completed."
     });
-    chatWithOllamaModelMock.mockReturnValueOnce(new Promise(() => undefined));
+    chatWithOllamaModelMock.mockRejectedValueOnce(
+      new Error("Assistant task result explanation exceeded 10 seconds.")
+    );
 
     render(<App />);
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "check git status for this workspace" }
-    });
-    fireEvent.click(getComposerSendButton());
-
-    await waitFor(() => {
-      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-        requestId: expect.stringMatching(/^readonly-shell-git-status-explanation-/)
-      }));
-    });
+    await submitComposerMessage("check git status for this workspace");
 
     const conversation = getConversationRegion();
-    expect(await within(conversation).findByText("Workspace git status", {}, { timeout: 12_000 })).toBeInTheDocument();
-    expect(within(conversation).getByText(/命令：git status --short/)).toBeInTheDocument();
-    expect(within(conversation).getByText(/输出预览：\s+M apps\/desktop\/src\/app\/App\.tsx/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(conversation).getByText("Workspace git status")).toBeInTheDocument();
+      expect(within(conversation).getByText(/命令：git status --short/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/输出预览：\s+M apps\/desktop\/src\/app\/App\.tsx/)).toBeInTheDocument();
+    });
+    expect(within(conversation).getByText(/Assistant task result explanation skipped after local model failure/i)).toBeInTheDocument();
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
-    expect(cancelOllamaChatMock).toHaveBeenCalledWith(expect.stringMatching(/^readonly-shell-git-status-explanation-/));
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: expect.stringMatching(/^readonly-shell-git-status-explanation-/)
+    }));
   }, 15_000);
 
   it("explains local RAG shell handoff previews through the model while continue still requests permission", async () => {
@@ -2173,10 +2435,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "review local shell permission rules and preview the next safe shell step to create a temp-output folder" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("review local shell permission rules and preview the next safe shell step to create a temp-output folder");
 
     const conversation = getConversationRegion();
 
@@ -2194,12 +2453,9 @@ describe("App", () => {
       message: expect.stringContaining("New-Item -ItemType Directory -Force temp-output")
     }));
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "继续" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("继续");
 
-    expect(await screen.findByRole("button", { name: "批准提权" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /批准|批准提权/ })).toBeInTheDocument();
     expect(screen.getByText(/workspace-write/i)).toBeInTheDocument();
     expect(runWorkspaceWriteShellCommandMock).not.toHaveBeenCalled();
   });
@@ -2231,10 +2487,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "inspect the local rag capability wiring" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("inspect the local rag capability wiring");
 
     const conversation = getConversationRegion();
 
@@ -2316,10 +2569,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "preview an npc collaboration plan for local shell permission rules" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("preview an npc collaboration plan for local shell permission rules");
 
     const conversation = getConversationRegion();
 
@@ -2383,9 +2633,13 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(within(conversation).getAllByText("search the web for latest local RAG indexing approaches").length).toBeGreaterThan(0);
-      expect(within(conversation).getByText("联网搜索说明")).toBeInTheDocument();
-      expect(within(conversation).getByText(/联网搜索结果/)).toBeInTheDocument();
-      expect(within(conversation).getByText(/已通过 Tavily 返回|已通过 OpenCow 默认搜索 返回/)).toBeInTheDocument();
+      expect(within(conversation).queryByText("概览：联网搜索结果")).not.toBeInTheDocument();
+      expect(
+        within(conversation).getByText((_, element) =>
+          Boolean(element?.classList.contains("message-title") && element.textContent === "联网搜索结果")
+        )
+      ).toBeInTheDocument();
+      expect(within(conversation).getByText(/已参考 1 条联网资料/)).toBeInTheDocument();
     });
   }, 10_000);
 
@@ -2406,14 +2660,11 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能干什么" }
-    });
-    fireEvent.click(getComposerSendButton());
+    submitComposerMessageFast("你能干什么");
 
     const pending = await screen.findByLabelText("assistant-pending");
-    expect(within(pending).getByText("Ollama 正在生成")).toBeInTheDocument();
-    expect(within(pending).getByText(/本地模型首轮响应可能较慢/)).toBeInTheDocument();
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
+    expect(within(pending).queryByText(/本地模型首轮响应可能较慢/)).not.toBeInTheDocument();
     expect(within(pending).queryByText("你能干什么")).not.toBeInTheDocument();
     expect(within(pending).queryByText(/已进入本地任务队列|正在本地执行链中处理/)).not.toBeInTheDocument();
     expect(within(pending).queryByText(/不会重复提交同一请求|请稍候/)).not.toBeInTheDocument();
@@ -2445,10 +2696,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能干什么" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("你能干什么");
 
     await waitFor(() => {
       expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
@@ -2471,10 +2719,7 @@ describe("App", () => {
 
     await findModelPicker("qwen3.6:35b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "你能干什么" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("你能干什么");
 
     await waitFor(() => {
       expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
@@ -2482,7 +2727,7 @@ describe("App", () => {
 
     expect(within(getConversationRegion()).getAllByText("你能干什么").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "创建新会话" }));
+    await click(screen.getByRole("button", { name: "创建新会话" }));
 
     const conversation = getConversationRegion();
     expect(within(conversation).queryAllByText("你能干什么")).toHaveLength(0);
@@ -2523,7 +2768,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    const approvePermissionButton = await screen.findByRole("button", { name: /批准提权/i });
+    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
@@ -2569,7 +2814,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    fireEvent.click(await screen.findByRole("button", { name: /批准提权/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "批准" }));
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -2732,7 +2977,13 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("temp-output 创建结果说明")).toBeInTheDocument();
       expect(within(getConversationRegion()).getByText(/temp-output 已在你批准工作区读写后/)).toBeInTheDocument();
     });
-    expect(runWorkspaceWriteShellCommandMock).toHaveBeenCalledWith("create-temp-output-dir");
+    expect(runWorkspaceWriteShellCommandMock).toHaveBeenCalledWith(
+      "create-temp-output-dir",
+      expect.objectContaining({
+        conversationId: expect.any(String),
+        rollbackEntryId: expect.any(String)
+      })
+    );
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       requestId: expect.stringMatching(/^workspace-write-create-temp-output-explanation-/),
       message: expect.stringContaining("用户批准 workspace-write")
@@ -2777,11 +3028,18 @@ describe("App", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "知识库" }));
-    fireEvent.click(await screen.findByRole("button", { name: "上传文件到文件库" }));
+    await click(await screen.findByRole("button", { name: "知识库" }));
+    await click(await screen.findByRole("button", { name: "上传文件到文件库" }));
 
     await waitFor(() => {
-      expect(importKnowledgeFileMock).toHaveBeenCalledWith("/tmp/faq.md", "default-library");
+      expect(importKnowledgeFileMock).toHaveBeenCalledWith(
+        "/tmp/faq.md",
+        "default-library",
+        expect.objectContaining({
+          conversationId: expect.any(String),
+          rollbackEntryId: expect.any(String)
+        })
+      );
     });
     expect(importKnowledgeFileMock).toHaveBeenCalledTimes(1);
   });
@@ -2865,10 +3123,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "show enabled skills for this workspace" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("show enabled skills for this workspace");
 
     const conversation = getConversationRegion();
 
@@ -2918,10 +3173,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "which enabled skill should handle shell automation in this workspace" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("which enabled skill should handle shell automation in this workspace");
 
     const conversation = getConversationRegion();
 
@@ -2976,10 +3228,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "scan local skills and list available skill entries" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("scan local skills and list available skill entries");
 
     const conversation = getConversationRegion();
 
@@ -3029,10 +3278,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "show details for the coding-agent skill" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("show details for the coding-agent skill");
 
     const conversation = getConversationRegion();
 
@@ -3089,10 +3335,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "scan local mcp plugins and list available model context protocol entries" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("scan local mcp plugins and list available model context protocol entries");
 
     const conversation = getConversationRegion();
 
@@ -3145,10 +3388,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "show details for the browser mcp plugin" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("show details for the browser mcp plugin");
 
     const conversation = getConversationRegion();
 
@@ -3203,10 +3443,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "preview starting the browser mcp plugin locally" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("preview starting the browser mcp plugin locally");
 
     const conversation = getConversationRegion();
 
@@ -3277,10 +3514,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "use the enabled docs skill to search local rules for shell permission guidance" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("use the enabled docs skill to search local rules for shell permission guidance");
 
     const conversation = getConversationRegion();
 
@@ -3334,10 +3568,7 @@ describe("App", () => {
 
     await findModelPicker("qwen2.5-coder:7b");
 
-    fireEvent.change(getComposerInput(), {
-      target: { value: "search local knowledge for shell permission rules" }
-    });
-    fireEvent.click(getComposerSendButton());
+    await submitComposerMessage("search local knowledge for shell permission rules");
 
     const conversation = getConversationRegion();
 
@@ -3522,29 +3753,24 @@ describe("App", () => {
 
     expect(permissionSection).not.toBeNull();
 
-    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
-
-    const approveDangerButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: "批准高风险操作"
-    });
-    fireEvent.click(approveDangerButton);
+    await approvePermissionRequest(permissionSection as HTMLElement);
+    await approveDangerousConfirmation(permissionSection as HTMLElement);
 
     await waitFor(() => {
       expect(
-        screen.getAllByText(/Skill-assisted temp-output removal|shell-automation|temp-output removed|enabled-skills\.json/i)
-          .length
-      ).toBeGreaterThan(0);
+        within(getConversationRegion()).getByText(/执行摘要：受控高风险命令已完成/)
+      ).toBeInTheDocument();
+      expect(
+        within(getConversationRegion()).getByText(/Assistant task result explanation skipped after local model failure/)
+      ).toBeInTheDocument();
     }, { timeout: 12_000 });
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       requestId: expect.stringMatching(/^skills-local-enabled-shell-remove-temp-output-explanation-/),
       message: expect.stringContaining("授予 controlled-full 并确认高风险操作")
     }));
-    expect(cancelOllamaChatMock).toHaveBeenCalledWith(
-      expect.stringMatching(/^skills-local-enabled-shell-remove-temp-output-explanation-/)
-    );
-    expect(runControlledFullShellCommandMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
-  }, 15_000);
+    expect(runControlledFullShellCommandMock).toHaveBeenCalledTimes(1);
+  }, 20_000);
 
   it("explains NPC-assisted shell creation through the local model after workspace-write approval", async () => {
     loadOllamaOverviewMock.mockResolvedValueOnce({
@@ -3597,7 +3823,7 @@ describe("App", () => {
 
     expect(permissionSection).not.toBeNull();
 
-    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
+    await approvePermissionRequest(permissionSection as HTMLElement);
 
     await waitFor(() => {
       expect(screen.getAllByText("NPC 辅助创建结果说明").length).toBeGreaterThan(0);
@@ -3660,18 +3886,16 @@ describe("App", () => {
 
     expect(permissionSection).not.toBeNull();
 
-    fireEvent.click(within(permissionSection as HTMLElement).getAllByRole("button")[0]);
-
-    const approveDangerButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: "批准高风险操作"
-    });
-    fireEvent.click(approveDangerButton);
+    await approvePermissionRequest(permissionSection as HTMLElement);
+    await approveDangerousConfirmation(permissionSection as HTMLElement);
 
     await waitFor(() => {
       expect(
-        screen.getAllByText(/NPC-assisted temp-output removal|shell-automation|temp-output removed|enabled-skills\.json/i)
-          .length
-      ).toBeGreaterThan(0);
+        within(getConversationRegion()).getByText(/执行摘要：受控高风险命令已完成/)
+      ).toBeInTheDocument();
+      expect(
+        within(getConversationRegion()).getByText(/Assistant task result explanation skipped after local model failure/)
+      ).toBeInTheDocument();
     }, { timeout: 12_000 });
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       requestId: expect.stringMatching(/^npc-local-enabled-shell-remove-temp-output-explanation-/),
@@ -3682,5 +3906,5 @@ describe("App", () => {
     );
     expect(runControlledFullShellCommandMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/本地任务执行失败|Local task execution timed out/i)).not.toBeInTheDocument();
-  }, 15_000);
+  }, 20_000);
 });

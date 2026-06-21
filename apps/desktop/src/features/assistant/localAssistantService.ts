@@ -56,6 +56,16 @@ export type NpcConfigWriteResult = {
   summary: string;
 };
 
+export type RollbackContext = {
+  conversationId: string;
+  rollbackEntryId: string;
+};
+
+export type RollbackFilesRestoreResult = {
+  restoredPathCount: number;
+  prunedSnapshotCount: number;
+};
+
 export type NpcWorkspaceConfig = {
   id: string;
   name: string;
@@ -141,6 +151,7 @@ export type LocalNetworkSearchResult = {
   items: Array<{
     title: string;
     url: string;
+    source_label?: string;
     summary: string;
   }>;
 };
@@ -562,46 +573,65 @@ export async function loadKnowledgeInventory(
   }));
 }
 
-export async function importKnowledgeFile(path: string, libraryId?: string): Promise<KnowledgeInventoryResult> {
+export async function importKnowledgeFile(
+  path: string,
+  libraryId?: string,
+  rollbackContext?: RollbackContext
+): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
   return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_file_import", {
     path,
-    libraryId
+    libraryId,
+    rollbackContext
   }));
 }
 
-export async function removeKnowledgeFile(path: string, libraryId?: string): Promise<KnowledgeInventoryResult> {
+export async function removeKnowledgeFile(
+  path: string,
+  libraryId?: string,
+  rollbackContext?: RollbackContext
+): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
   return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_file_remove", {
     path,
-    libraryId
+    libraryId,
+    rollbackContext
   }));
 }
 
-export async function clearKnowledgeImports(libraryId?: string): Promise<KnowledgeInventoryResult> {
+export async function clearKnowledgeImports(
+  libraryId?: string,
+  rollbackContext?: RollbackContext
+): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
   return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_imports_clear", {
-    libraryId
+    libraryId,
+    rollbackContext
   }));
 }
 
-export async function createKnowledgeLibrary(name: string, description?: string): Promise<KnowledgeInventoryResult> {
+export async function createKnowledgeLibrary(
+  name: string,
+  description?: string,
+  rollbackContext?: RollbackContext
+): Promise<KnowledgeInventoryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewKnowledgeInventory();
   }
 
   return normalizeDesktopKnowledgeInventory(await invoke<DesktopKnowledgeInventoryResult>("knowledge_library_create", {
     name,
-    description
+    description,
+    rollbackContext
   }));
 }
 
@@ -635,46 +665,58 @@ export async function loadNpcWorkspaceConfig(npcId: string): Promise<NpcWorkspac
   }));
 }
 
-export async function createNpcWorkspaceConfig(payload: NpcWorkspaceConfig): Promise<NpcWorkspaceResult> {
+export async function createNpcWorkspaceConfig(
+  payload: NpcWorkspaceConfig,
+  rollbackContext?: RollbackContext
+): Promise<NpcWorkspaceResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewNpcWorkspace(payload);
   }
 
   return normalizeDesktopNpcWorkspace(await invoke<DesktopNpcWorkspaceResult>("workspace_npc_config_create", {
     payload: {
-      id: payload.id,
-      name: payload.name,
-      description: payload.description,
-      default_model: payload.defaultModel,
-      persona_title: payload.personaTitle ?? "",
-      persona_prompt: payload.personaPrompt,
-      output_style: payload.outputStyle,
-      agent_draft: payload.agentDraft,
-      rules_draft: payload.rulesDraft,
-      enabled_skill_names: payload.enabledSkillNames,
-      knowledge_library_ids: payload.knowledgeLibraryIds
+      payload: {
+        id: payload.id,
+        name: payload.name,
+        description: payload.description,
+        default_model: payload.defaultModel,
+        persona_title: payload.personaTitle ?? "",
+        persona_prompt: payload.personaPrompt,
+        output_style: payload.outputStyle,
+        agent_draft: payload.agentDraft,
+        rules_draft: payload.rulesDraft,
+        enabled_skill_names: payload.enabledSkillNames,
+        knowledge_library_ids: payload.knowledgeLibraryIds
+      },
+      rollbackContext: rollbackContext ?? null
     }
   }));
 }
 
-export async function updateNpcWorkspaceConfig(payload: NpcWorkspaceConfig): Promise<NpcWorkspaceResult> {
+export async function updateNpcWorkspaceConfig(
+  payload: NpcWorkspaceConfig,
+  rollbackContext?: RollbackContext
+): Promise<NpcWorkspaceResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewNpcWorkspace(payload);
   }
 
   return normalizeDesktopNpcWorkspace(await invoke<DesktopNpcWorkspaceResult>("workspace_npc_config_update", {
     payload: {
-      id: payload.id,
-      name: payload.name,
-      description: payload.description,
-      default_model: payload.defaultModel,
-      persona_title: payload.personaTitle ?? "",
-      persona_prompt: payload.personaPrompt,
-      output_style: payload.outputStyle,
-      agent_draft: payload.agentDraft,
-      rules_draft: payload.rulesDraft,
-      enabled_skill_names: payload.enabledSkillNames,
-      knowledge_library_ids: payload.knowledgeLibraryIds
+      payload: {
+        id: payload.id,
+        name: payload.name,
+        description: payload.description,
+        default_model: payload.defaultModel,
+        persona_title: payload.personaTitle ?? "",
+        persona_prompt: payload.personaPrompt,
+        output_style: payload.outputStyle,
+        agent_draft: payload.agentDraft,
+        rules_draft: payload.rulesDraft,
+        enabled_skill_names: payload.enabledSkillNames,
+        knowledge_library_ids: payload.knowledgeLibraryIds
+      },
+      rollbackContext: rollbackContext ?? null
     }
   }));
 }
@@ -705,50 +747,56 @@ export async function inspectLocalSkill(query: string): Promise<LocalSkillInspec
   });
 }
 
-export async function enableLocalSkill(query: string): Promise<LocalSkillEnableResult> {
+export async function enableLocalSkill(query: string, rollbackContext?: RollbackContext): Promise<LocalSkillEnableResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalSkillEnable(query);
   }
 
   return invoke<LocalSkillEnableResult>("local_skill_enable", {
-    query
+    query,
+    rollbackContext
   });
 }
 
-export async function installLocalSkill(query: string): Promise<LocalSkillInstallResult> {
+export async function installLocalSkill(query: string, rollbackContext?: RollbackContext): Promise<LocalSkillInstallResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalSkillInstall(query);
   }
 
   return invoke<LocalSkillInstallResult>("local_skill_install", {
-    query
+    query,
+    rollbackContext
   });
 }
 
-export async function disableLocalSkill(query: string): Promise<LocalSkillDisableResult> {
+export async function disableLocalSkill(query: string, rollbackContext?: RollbackContext): Promise<LocalSkillDisableResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalSkillDisable(query);
   }
 
   return invoke<LocalSkillDisableResult>("local_skill_disable", {
-    query
+    query,
+    rollbackContext
   });
 }
 
 export async function repairOpencowEnabledSkillsRegistry(
-  query: string
+  query: string,
+  rollbackContext?: RollbackContext
 ): Promise<OpencowSelfRepairEnabledSkillsRegistryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewOpencowEnabledSkillsRegistryRepair(query);
   }
 
   return invoke<OpencowSelfRepairEnabledSkillsRegistryResult>("opencow_self_repair_enabled_skills_registry", {
-    query
+    query,
+    rollbackContext
   });
 }
 
 export async function repairOpencowWorkspaceProjectRuntimeRegistry(
-  query: string
+  query: string,
+  rollbackContext?: RollbackContext
 ): Promise<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewOpencowWorkspaceProjectRuntimeRegistryRepair(query);
@@ -757,7 +805,8 @@ export async function repairOpencowWorkspaceProjectRuntimeRegistry(
   return invoke<OpencowSelfRepairWorkspaceProjectRuntimeRegistryResult>(
     "opencow_self_repair_workspace_project_runtime_registry",
     {
-      query
+      query,
+      rollbackContext
     }
   );
 }
@@ -826,23 +875,31 @@ export async function startLocalMcpPlugin(query: string): Promise<LocalMcpPlugin
   });
 }
 
-export async function installLocalMcpPlugin(query: string): Promise<LocalMcpPluginInstallResult> {
+export async function installLocalMcpPlugin(
+  query: string,
+  rollbackContext?: RollbackContext
+): Promise<LocalMcpPluginInstallResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalMcpPluginInstall(query);
   }
 
   return invoke<LocalMcpPluginInstallResult>("local_mcp_plugin_install", {
-    query
+    query,
+    rollbackContext
   });
 }
 
-export async function uninstallLocalMcpPlugin(query: string): Promise<LocalMcpPluginUninstallResult> {
+export async function uninstallLocalMcpPlugin(
+  query: string,
+  rollbackContext?: RollbackContext
+): Promise<LocalMcpPluginUninstallResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewLocalMcpPluginUninstall(query);
   }
 
   return invoke<LocalMcpPluginUninstallResult>("local_mcp_plugin_uninstall", {
-    query
+    query,
+    rollbackContext
   });
 }
 
@@ -896,6 +953,7 @@ export async function writeNpcConfig(payload: {
   query: string;
   modelOutput: string;
   config: Record<string, unknown>;
+  rollbackContext?: RollbackContext;
 }): Promise<NpcConfigWriteResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewNpcConfigWrite(payload);
@@ -917,14 +975,16 @@ export async function runReadonlyShellCommand(commandId: ReadonlyShellCommandId)
 }
 
 export async function runWorkspaceWriteShellCommand(
-  commandId: WorkspaceWriteShellCommandId
+  commandId: WorkspaceWriteShellCommandId,
+  rollbackContext?: RollbackContext
 ): Promise<WorkspaceWriteShellCommandResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewWorkspaceWriteCommand(commandId);
   }
 
   return invoke<WorkspaceWriteShellCommandResult>("workspace_write_command", {
-    command_id: commandId
+    command_id: commandId,
+    rollbackContext
   });
 }
 
@@ -971,14 +1031,16 @@ export async function captureNpcLocalProjectScreenshot(
 }
 
 export async function writeNpcLocalProjectShowcaseSite(
-  query: string
+  query: string,
+  rollbackContext?: RollbackContext
 ): Promise<WorkspaceProjectNpcShowcaseSiteWriteResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewNpcProjectShowcaseSiteWrite(query);
   }
 
   return invoke<WorkspaceProjectNpcShowcaseSiteWriteResult>("workspace_project_npc_showcase_site_write", {
-    query
+    query,
+    rollbackContext
   });
 }
 
@@ -1013,14 +1075,32 @@ export async function loadNpcLocalProjectShowcaseGitConfirmationPreview(
 }
 
 export async function runControlledFullShellCommand(
-  commandId: ControlledFullShellCommandId
+  commandId: ControlledFullShellCommandId,
+  rollbackContext?: RollbackContext
 ): Promise<ControlledFullShellCommandResult> {
   if (!hasTauriInvoke()) {
     return createBrowserPreviewControlledFullCommand(commandId);
   }
 
   return invoke<ControlledFullShellCommandResult>("controlled_full_command", {
-    command_id: commandId
+    command_id: commandId,
+    rollbackContext
+  });
+}
+
+export async function restoreRollbackFiles(payload: RollbackContext): Promise<RollbackFilesRestoreResult> {
+  if (!hasTauriInvoke()) {
+    return {
+      restoredPathCount: 0,
+      prunedSnapshotCount: 0
+    };
+  }
+
+  return invoke<RollbackFilesRestoreResult>("rollback_files_restore", {
+    payload: {
+      conversationId: payload.conversationId,
+      targetEntryId: payload.rollbackEntryId
+    }
   });
 }
 
@@ -1533,13 +1613,15 @@ function createBrowserPreviewNetworkSearch(
     fallback_reason: shouldFallback ? "自定义搜索请求失败，已自动回退到 OpenCow 默认搜索。" : null,
     items: [
       {
-        title: `${provider} 搜索结果 1`,
-        url: "https://example.com/opencow-search-1",
-        summary: `OpenCow 已为“${query}”返回默认网页搜索结果。`
+        title: "Wikipedia",
+        url: "https://zh.wikipedia.org/wiki/OpenCow",
+        source_label: "Wikipedia",
+        summary: `OpenCow 已为“${query}”返回可用网页资料示例。`
       },
       {
-        title: `${provider} 搜索结果 2`,
-        url: "https://example.com/opencow-search-2",
+        title: "OpenCow 项目文档",
+        url: "https://github.com/openai/opencow",
+        source_label: "GitHub",
         summary: "默认搜索零配置可用；如用户已保存自定义 API，会优先尝试用户配置。"
       }
     ]
