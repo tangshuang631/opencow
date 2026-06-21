@@ -63,6 +63,7 @@ export type SearchSourceItem = {
   sourceLabel?: string;
   query: string;
   summary: string;
+  factSnippets?: string[];
   usedFallback?: boolean;
 };
 

@@ -624,7 +624,12 @@ export function createTaskExecutionSucceededState(
     activeTask.lastFailureActionLabel ? `Previous failure recovery hint: ${activeTask.lastFailureActionLabel}` : null,
     ...(payload.auditDetailLines ?? []),
     ...(payload.searchSources ?? []).map((source) =>
-      `搜索来源：标题=${source.title}；来源=${source.sourceLabel || source.provider}；查询=${source.query}；地址=${source.url}；摘要=${source.summary}`
+      [
+        `搜索来源：标题=${source.title}；来源=${source.sourceLabel || source.provider}；查询=${source.query}；地址=${source.url}；摘要=${source.summary}`,
+        source.factSnippets?.length
+          ? `；事实片段=${source.factSnippets.join("｜")}`
+          : ""
+      ].join("")
     ),
     `Result summary: ${payload.resultSummary}`
   ].filter((line): line is string => line !== null);

@@ -24,6 +24,7 @@ import {
   removeKnowledgeFile,
   type RollbackContext,
   restoreRollbackFiles,
+  searchLocalKnowledge,
   searchNetwork,
   selectKnowledgeLibrary,
   updateNpcWorkspaceConfig,
@@ -752,6 +753,128 @@ function isLikelyVisionOllamaModel(model: WorkbenchState["model"]["availableMode
   return capabilityBasedVision || visionModelNameHints.some((hint) => normalizedName.includes(hint));
 }
 
+function normalizeEvidenceText(value: string) {
+  return normalizeReferenceComparisonText(value);
+}
+
+function sourceMentionsTerm(source: WorkbenchState["sources"]["items"][number], term: string) {
+  const normalizedTerm = normalizeEvidenceText(term);
+
+  if (!normalizedTerm) {
+    return false;
+  }
+
+  const haystack = normalizeEvidenceText(
+    [
+      source.title ?? "",
+      source.summary ?? "",
+      source.sourceLabel ?? "",
+      source.provider ?? ""
+    ].join(" ")
+  );
+
+  return haystack.includes(normalizedTerm);
+}
+
+function extractComparisonSubjects(message: string) {
+  const normalized = message.trim();
+  const match = normalized.match(/(.+?)和(.+?)(谁更好|哪个好|区别|差别|对比|比较)/);
+
+  if (!match) {
+    return null;
+  }
+
+  const left = match[1]?.trim();
+  const right = match[2]?.trim();
+
+  if (!left || !right) {
+    return null;
+  }
+
+  return { left, right };
+}
+
+function looksLikeOwnershipQuestion(message: string) {
+  return /谁家的|哪个公司|哪家公司的|归属|属于谁|是谁做的|谁推出的|背后公司|品牌关系/i.test(message.trim());
+}
+
+function sourceContainsExplicitOwnershipEvidence(source: WorkbenchState["sources"]["items"][number]) {
+  const haystack = normalizeEvidenceText(
+    [source.title ?? "", source.summary ?? "", source.sourceLabel ?? ""].join(" ")
+  );
+
+  return /属于|旗下|推出|来自|由.+?(推出|发布|研发)|公司|团队|品牌|主体|运营/.test(haystack);
+}
+
+function createEvidenceGuardLines(
+  message: string,
+  visibleSources: WorkbenchState["sources"]["items"]
+) {
+  const lines = [
+    "回答要求：只根据下面明确给出的证据作答；证据没有写到的事实不要自行补全。"
+  ];
+  const comparisonSubjects = extractComparisonSubjects(message);
+
+  if (comparisonSubjects) {
+    const leftMatched = visibleSources.some((source) => sourceMentionsTerm(source, comparisonSubjects.left));
+    const rightMatched = visibleSources.some((source) => sourceMentionsTerm(source, comparisonSubjects.right));
+
+    lines.push("当前问题是比较类问题。");
+
+    if (leftMatched) {
+      lines.push(`仅找到与「${comparisonSubjects.left}」相关的来源。`);
+    } else {
+      lines.push(`未找到与「${comparisonSubjects.left}」直接相关的来源。`);
+    }
+
+    if (rightMatched) {
+      lines.push(`仅找到与「${comparisonSubjects.right}」相关的来源。`);
+    } else {
+      lines.push(`未找到与「${comparisonSubjects.right}」直接相关的来源。`);
+    }
+
+    if (!leftMatched || !rightMatched) {
+      lines.push("证据覆盖不完整，不要直接下结论谁更好；请明确说明现有来源不足以完成公平比较。");
+    }
+  }
+
+  if (looksLikeOwnershipQuestion(message)) {
+    const hasExplicitOwnershipEvidence = visibleSources.some((source) => sourceContainsExplicitOwnershipEvidence(source));
+
+    lines.push("当前问题涉及主体归属或品牌关系。");
+
+    if (!hasExplicitOwnershipEvidence) {
+      lines.push("现有来源没有直接写出归属关系。");
+      lines.push("不要补写公司名、品牌名或投资关系；如需回答，请明确说现有来源不足以确认。");
+    }
+  }
+
+  return lines;
+}
+
+function createStructuredSourceLines(visibleSources: WorkbenchState["sources"]["items"]) {
+  return visibleSources.map((source, index) => {
+    const title = truncateChatSearchField(source.title || "未命名来源");
+    const sourceLabel = truncateChatSearchField(source.sourceLabel || source.provider || "未知来源", 80);
+    const query = truncateChatSearchField(source.query || "未记录查询", 160);
+    const url = truncateChatSearchField(source.url || "未记录地址", 180);
+    const factSnippets = (source.factSnippets ?? [])
+      .map((snippet) => truncateChatSearchField(snippet, 140))
+      .filter(Boolean)
+      .slice(0, 4);
+
+    if (factSnippets.length > 0) {
+      return [
+        `${index + 1}. ${title} | source=${sourceLabel} | query=${query} | url=${url}`,
+        ...factSnippets.map((snippet, snippetIndex) => `   事实片段${snippetIndex + 1}：${snippet}`)
+      ].join("\n");
+    }
+
+    const summary = truncateChatSearchField(source.summary || "未记录摘要");
+    return `${index + 1}. ${title} | source=${sourceLabel} | query=${query} | url=${url} | summary=${summary}`;
+  });
+}
+
 function createLocalModelChatMessage(payload: {
   message: string;
   attachments?: ChatAttachment[];
@@ -760,6 +883,8 @@ function createLocalModelChatMessage(payload: {
   searchEnabled: boolean;
   searchProviderLabel: string;
   sources: WorkbenchState["sources"]["items"];
+  localKnowledgeContextLines?: string[];
+  showMissingNetworkSourcesNotice?: boolean;
 }): string {
   const normalizedMessage = payload.message.trim();
   const visibleSources = payload.searchEnabled
@@ -797,34 +922,219 @@ function createLocalModelChatMessage(payload: {
     if (payload.searchEnabled) {
       return [
         ...attachmentContext,
-        "联网搜索已开启，但本轮没有可用外部来源。",
-        `当前搜索 provider：${payload.searchProviderLabel.trim() || "未配置"}`,
-        "不要声称已经完成实时联网检索；如果回答需要最新资料，请说明缺少可用联网来源，并基于已有知识谨慎回答。",
+        ...(payload.localKnowledgeContextLines ?? []),
+        ...(payload.localKnowledgeContextLines?.length ? [""] : []),
+        ...(payload.showMissingNetworkSourcesNotice === false
+          ? []
+          : [
+              "联网搜索已开启，但本轮没有可用外部来源。",
+              `当前搜索 provider：${payload.searchProviderLabel.trim() || "未配置"}`,
+              "不要声称已经完成实时联网检索；如果回答需要最新资料，请说明缺少可用联网来源，并基于已有知识谨慎回答。"
+            ]),
         "",
         `用户问题：${normalizedMessage}`
       ].join("\n");
     }
 
-    return [...attachmentContext, normalizedMessage].join("\n");
+    return [
+      ...attachmentContext,
+      ...(payload.localKnowledgeContextLines ?? []),
+      ...(payload.localKnowledgeContextLines?.length ? [""] : []),
+      normalizedMessage
+    ].join("\n");
   }
 
-  const sourceLines = visibleSources.map((source, index) => {
-    const title = truncateChatSearchField(source.title || "未命名来源");
-    const sourceLabel = truncateChatSearchField(source.sourceLabel || source.provider || "未知来源", 80);
-    const query = truncateChatSearchField(source.query || "未记录查询", 160);
-    const url = truncateChatSearchField(source.url || "未记录地址", 180);
-    const summary = truncateChatSearchField(source.summary || "未记录摘要");
-
-    return `${index + 1}. ${title} | source=${sourceLabel} | query=${query} | url=${url} | summary=${summary}`;
-  });
+  const sourceLines = createStructuredSourceLines(visibleSources);
 
   return [
     ...attachmentContext,
+    ...(payload.localKnowledgeContextLines ?? []),
+    ...(payload.localKnowledgeContextLines?.length ? [""] : []),
     "联网搜索参考（只作为参考，不要盲信；请自行判断来源可靠性、时效性和与问题的相关性，综合后用中文回答。）",
+    ...createEvidenceGuardLines(normalizedMessage, visibleSources),
+    "回答要求：若某条来源提供了事实片段，请优先依据事实片段作答；不要把整段综合摘要当成确定事实照搬。",
+    "回答约束：如果来源没有明确写出品牌归属、产品背景或主体关系，就不要自行补写，也不要把不同产品或公司混成一个主体。",
+    "回答约束：如果现有来源不足以支持结论，请直接说明“现有来源不足以确认”，不要把单条摘要扩写成确定事实。",
+    "回答约束：比较类问题优先总结来源里明确出现的能力、场景、限制和时间信息，不要额外编造官网未写明的归属信息。",
     ...sourceLines,
     "",
     `用户问题：${normalizedMessage}`
   ].join("\n");
+}
+
+type LocalKnowledgeContextResult = Awaited<ReturnType<typeof searchLocalKnowledge>>;
+
+type KnowledgeSourcePriority = "network" | "local";
+
+function normalizeReferenceComparisonText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function looksLikeTimeSensitiveNetworkQuestion(message: string): boolean {
+  const normalized = message.trim();
+
+  return /最新|最近|今天|昨日|昨天|刚刚|本周|本月|今年|实时|新闻|动态|进展|发布|公告|股价|汇率|天气|比分|热搜/i.test(normalized);
+}
+
+function looksLikeProjectKnowledgeQuestion(message: string): boolean {
+  const normalized = message.trim();
+
+  return /这个项目|当前项目|本项目|项目里|项目内|代码库|仓库里|仓库内|规则|规范|约定|实现|架构|prompt|agent\.md|rules\.md|skill|skills|rag|知识库|npc/i.test(normalized);
+}
+
+function resolveKnowledgeSourcePriority(message: string): KnowledgeSourcePriority {
+  if (looksLikeProjectKnowledgeQuestion(message)) {
+    return "local";
+  }
+
+  if (looksLikeTimeSensitiveNetworkQuestion(message) || looksLikeExplicitNetworkSearchRequest(message)) {
+    return "network";
+  }
+
+  return "network";
+}
+
+function shouldDeduplicateKnowledgeHitAgainstSearch(
+  title: string,
+  snippet: string,
+  visibleSources: WorkbenchState["sources"]["items"]
+): boolean {
+  const normalizedKnowledgeTitle = normalizeReferenceComparisonText(title);
+  const normalizedKnowledgeSnippet = normalizeReferenceComparisonText(snippet);
+
+  return visibleSources.some((source) => {
+    const normalizedSourceTitle = normalizeReferenceComparisonText(source.title || "");
+    const normalizedSourceSummary = normalizeReferenceComparisonText(source.summary || "");
+
+    if (!normalizedSourceTitle && !normalizedSourceSummary) {
+      return false;
+    }
+
+    return (
+      (normalizedKnowledgeTitle.length > 0
+        && (normalizedSourceTitle.includes(normalizedKnowledgeTitle) || normalizedKnowledgeTitle.includes(normalizedSourceTitle)))
+      || (normalizedKnowledgeSnippet.length > 24
+        && (normalizedSourceSummary.includes(normalizedKnowledgeSnippet) || normalizedKnowledgeSnippet.includes(normalizedSourceSummary)))
+      || (normalizedKnowledgeTitle.length > 0
+        && normalizedKnowledgeSnippet.length > 24
+        && normalizedSourceTitle.includes(normalizedKnowledgeTitle)
+        && normalizedSourceSummary.includes(normalizedKnowledgeSnippet.slice(0, 24)))
+    );
+  });
+}
+
+function createFilteredLocalKnowledgeContext(
+  result: LocalKnowledgeContextResult,
+  visibleSources: WorkbenchState["sources"]["items"]
+): LocalKnowledgeContextResult {
+  if (result.items.length === 0 || visibleSources.length === 0) {
+    return result;
+  }
+
+  const filteredItems = result.items.filter((item) => (
+    !shouldDeduplicateKnowledgeHitAgainstSearch(item.title, item.snippet, visibleSources)
+  ));
+
+  if (filteredItems.length === result.items.length) {
+    return result;
+  }
+
+  return {
+    ...result,
+    match_count: filteredItems.length,
+    items: filteredItems
+  };
+}
+
+function createFilteredSearchSources(
+  visibleSources: WorkbenchState["sources"]["items"],
+  localKnowledgeResult: LocalKnowledgeContextResult | null
+): WorkbenchState["sources"]["items"] {
+  if (!localKnowledgeResult || localKnowledgeResult.items.length === 0 || visibleSources.length === 0) {
+    return visibleSources;
+  }
+
+  return visibleSources.filter((source) => {
+    const normalizedSourceTitle = normalizeReferenceComparisonText(source.title || "");
+    const normalizedSourceSummary = normalizeReferenceComparisonText(source.summary || "");
+
+    return !localKnowledgeResult.items.some((item) => {
+      const normalizedKnowledgeTitle = normalizeReferenceComparisonText(item.title);
+      const normalizedKnowledgeSnippet = normalizeReferenceComparisonText(item.snippet);
+
+      if (!normalizedSourceTitle && !normalizedSourceSummary) {
+        return false;
+      }
+
+      return (
+        (normalizedSourceTitle.length > 0
+          && (normalizedKnowledgeTitle.includes(normalizedSourceTitle) || normalizedSourceTitle.includes(normalizedKnowledgeTitle)))
+        || (normalizedSourceSummary.length > 24
+          && (normalizedKnowledgeSnippet.includes(normalizedSourceSummary) || normalizedSourceSummary.includes(normalizedKnowledgeSnippet)))
+      );
+    });
+  });
+}
+
+function createLocalKnowledgeContextLines(result: LocalKnowledgeContextResult): string[] {
+  if (result.match_count <= 0 || result.items.length === 0) {
+    return [];
+  }
+
+  return [
+    "本地知识库参考（只作为参考，用于补充项目内规则、术语和上下文；如果与联网来源冲突，请明确区分。）",
+    ...result.items.slice(0, 2).flatMap((item, index) => {
+      const factSnippets = (item.fact_snippets ?? [])
+        .map((snippet) => truncateChatSearchField(snippet, 140))
+        .filter(Boolean)
+        .slice(0, 3);
+
+      if (factSnippets.length > 0) {
+        return [
+          `${index + 1}. ${truncateChatSearchField(item.title || "未命名文档")}`,
+          ...factSnippets.map((snippet, snippetIndex) => `   事实片段${snippetIndex + 1}：${snippet}`)
+        ];
+      }
+
+      return [
+        `${index + 1}. ${truncateChatSearchField(item.title || "未命名文档")} | snippet=${truncateChatSearchField(item.snippet || "未记录片段", 180)}`
+      ];
+    })
+  ];
+}
+
+function createDeduplicatedNetworkNotice(priority: KnowledgeSourcePriority, hadNetworkSources: boolean, hasLocalKnowledge: boolean) {
+  if (!hadNetworkSources || !hasLocalKnowledge || priority !== "local") {
+    return [];
+  }
+
+  return [
+    "本轮联网搜索已执行，但与本地知识命中重复；为减少重复上下文，优先保留了本地知识结果。"
+  ];
+}
+
+function createLocalKnowledgeAuditDetailLines(result: LocalKnowledgeContextResult): string[] {
+  if (result.match_count <= 0 || result.items.length === 0) {
+    return [];
+  }
+
+  return [
+    `Knowledge library sources: ${result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源"}`,
+    `Indexed documents: ${result.indexed_document_count}`,
+    ...result.items.slice(0, 2).map((item) => (
+      [
+        `命中卡片：来源文件=${item.title}；匹配分数=${String(item.score ?? "")}；片段预览=${item.snippet}；回查指令=只看 ${item.title}`,
+        item.fact_snippets?.length
+          ? `；事实片段=${item.fact_snippets.join("｜")}`
+          : ""
+      ].join("")
+    ))
+  ];
 }
 
 function looksLikeExplicitNetworkSearchRequest(message: string) {
@@ -900,6 +1210,14 @@ async function executeLocalModelChatTask(payload: {
   let effectiveSearchProvider = payload.searchProviderLabel.trim();
   let searchFallbackReason: string | null = null;
   let usedSearchFallback = false;
+  let localKnowledgeResult: LocalKnowledgeContextResult | null = null;
+  const sourcePriority = resolveKnowledgeSourcePriority(payload.message);
+
+  try {
+    localKnowledgeResult = await searchLocalKnowledge(payload.message);
+  } catch {
+    localKnowledgeResult = null;
+  }
 
   if (payload.searchEnabled) {
     try {
@@ -916,6 +1234,7 @@ async function executeLocalModelChatTask(payload: {
         sourceLabel: item.source_label ?? networkResult.effective_provider,
         query: payload.message,
         summary: item.summary,
+        factSnippets: item.fact_snippets,
         usedFallback: networkResult.used_fallback
       }));
       effectiveSearchProvider = networkResult.effective_provider;
@@ -927,6 +1246,30 @@ async function executeLocalModelChatTask(payload: {
     }
   }
 
+  const hadNetworkSourcesBeforeDeduplication = visibleSources.length > 0;
+
+  const deduplicatedContext = (() => {
+    if (!localKnowledgeResult) {
+      return {
+        searchSources: visibleSources,
+        localKnowledgeResult: null as LocalKnowledgeContextResult | null
+      };
+    }
+
+    if (sourcePriority === "local") {
+      return {
+        searchSources: createFilteredSearchSources(visibleSources, localKnowledgeResult),
+        localKnowledgeResult
+      };
+    }
+
+    return {
+      searchSources: visibleSources,
+      localKnowledgeResult: createFilteredLocalKnowledgeContext(localKnowledgeResult, visibleSources)
+    };
+  })();
+  visibleSources = deduplicatedContext.searchSources;
+  const deduplicatedLocalKnowledgeResult = deduplicatedContext.localKnowledgeResult;
   const searchProviders = Array.from(
     new Set([
       ...visibleSources.map((source) => (source.sourceLabel || source.provider).trim()).filter(Boolean),
@@ -935,18 +1278,36 @@ async function executeLocalModelChatTask(payload: {
         : [])
     ])
   );
+  const shouldShowMissingNetworkSourcesNotice = payload.searchEnabled
+    && visibleSources.length === 0
+    && !(sourcePriority === "local" && hadNetworkSourcesBeforeDeduplication && (deduplicatedLocalKnowledgeResult?.items.length ?? 0) > 0);
   const searchContextStatus = payload.searchEnabled
     ? visibleSources.length > 0
       ? "enabled-with-sources"
-      : "enabled-no-sources"
+      : shouldShowMissingNetworkSourcesNotice
+        ? "enabled-no-sources"
+        : "enabled-deduplicated"
     : "disabled";
   const selectedModelSummary = payload.availableModels.find((model) => model.name === selectedModel);
   const result = await chatWithOllamaModel({
     model: selectedModel,
     message: createLocalModelChatMessage({
       ...payload,
+      sources: visibleSources,
+      searchProviderLabel: effectiveSearchProvider || payload.searchProviderLabel,
       selectedModel,
-      selectedModelSupportsVision: isLikelyVisionOllamaModel(selectedModelSummary)
+      selectedModelSupportsVision: isLikelyVisionOllamaModel(selectedModelSummary),
+      showMissingNetworkSourcesNotice: shouldShowMissingNetworkSourcesNotice,
+      localKnowledgeContextLines: deduplicatedLocalKnowledgeResult
+        ? [
+            ...createDeduplicatedNetworkNotice(
+              sourcePriority,
+              hadNetworkSourcesBeforeDeduplication,
+              deduplicatedLocalKnowledgeResult.items.length > 0
+            ),
+            ...createLocalKnowledgeContextLines(deduplicatedLocalKnowledgeResult)
+          ]
+        : []
     }),
     images: (payload.attachments ?? [])
       .filter((attachment) => attachment.kind === "image" && Boolean(attachment.base64Data))
@@ -983,7 +1344,9 @@ async function executeLocalModelChatTask(payload: {
       `Ollama done reason: ${result.doneReason || "complete"}`,
       `Search context items: ${visibleSources.length}/${MAX_CHAT_SEARCH_CONTEXT_ITEMS}`,
       `Search context status: ${searchContextStatus}`,
-      `Search provider: ${searchProviders.join(", ") || "none"}`
+      `Search provider: ${searchProviders.join(", ") || "none"}`,
+      `Knowledge source priority: ${sourcePriority}`,
+      ...(deduplicatedLocalKnowledgeResult ? createLocalKnowledgeAuditDetailLines(deduplicatedLocalKnowledgeResult) : [])
     ]
   };
 }

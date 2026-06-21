@@ -138,6 +138,7 @@ export type LocalKnowledgeSearchResult = {
     path: string;
     title: string;
     snippet: string;
+    fact_snippets?: string[];
     score: number;
   }>;
 };
@@ -153,6 +154,7 @@ export type LocalNetworkSearchResult = {
     url: string;
     source_label?: string;
     summary: string;
+    fact_snippets?: string[];
   }>;
 };
 

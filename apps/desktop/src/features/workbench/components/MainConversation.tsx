@@ -1,4 +1,4 @@
-import { Bot, ChevronDown, LoaderCircle, RotateCcw } from "lucide-react";
+import { Bot, ChevronDown, Globe, LoaderCircle, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ChatAttachment, WorkbenchState } from "../workbenchState";
@@ -47,6 +47,7 @@ const SUCCESS_TRACE_PREFIXES = [
   "Search context status:",
   "Search provider:",
   "Effective provider:",
+  "Knowledge source priority:",
   "Search fallback:",
   "Result summary:"
 ];
@@ -85,6 +86,7 @@ type KnowledgeHitCard = {
   score: string;
   snippet: string;
   followUpQuery: string;
+  factSnippets: string[];
 };
 
 type SearchReferenceCard = {
@@ -94,6 +96,7 @@ type SearchReferenceCard = {
   query: string;
   url: string;
   summary: string;
+  factSnippets: string[];
 };
 
 function parseKnowledgeHitCards(detailLines: string[]) {
@@ -101,7 +104,7 @@ function parseKnowledgeHitCards(detailLines: string[]) {
   const remainingLines: string[] = [];
 
   for (const line of detailLines) {
-    const match = line.match(/^命中卡片：来源文件=(.+?)；匹配分数=(.+?)；片段预览=(.+?)；回查指令=(.+)$/);
+    const match = line.match(/^命中卡片：来源文件=(.+?)；匹配分数=(.+?)；片段预览=(.+?)；回查指令=(.+?)(?:；事实片段=(.+))?$/);
 
     if (!match) {
       remainingLines.push(line);
@@ -112,7 +115,11 @@ function parseKnowledgeHitCards(detailLines: string[]) {
       sourceTitle: match[1]?.trim() ?? "",
       score: match[2]?.trim() ?? "",
       snippet: match[3]?.trim() ?? "",
-      followUpQuery: match[4]?.trim() ?? ""
+      followUpQuery: match[4]?.trim() ?? "",
+      factSnippets: match[5]
+        ?.split("｜")
+        .map((snippet) => snippet.trim())
+        .filter(Boolean) ?? []
     });
   }
 
@@ -124,7 +131,7 @@ function parseSearchReferenceCards(detailLines: string[]) {
   const remainingLines: string[] = [];
 
   for (const line of detailLines) {
-    const match = line.match(/^搜索来源：标题=(.+?)；(?:来源|提供方)=(.+?)；查询=(.+?)；地址=(.+?)；摘要=(.+)$/);
+    const match = line.match(/^搜索来源：标题=(.+?)；(?:来源|提供方)=(.+?)；查询=(.+?)；地址=(.+?)；摘要=(.+?)(?:；事实片段=(.+))?$/);
 
     if (!match) {
       remainingLines.push(line);
@@ -137,7 +144,11 @@ function parseSearchReferenceCards(detailLines: string[]) {
       sourceLabel: match[2]?.trim() ?? "",
       query: match[3]?.trim() ?? "",
       url: match[4]?.trim() ?? "",
-      summary: match[5]?.trim() ?? ""
+      summary: match[5]?.trim() ?? "",
+      factSnippets: match[6]
+        ?.split("｜")
+        .map((snippet) => snippet.trim())
+        .filter(Boolean) ?? []
     });
   }
 
@@ -645,20 +656,37 @@ function InformationReferences({
           ) : null}
           {searchCards.length > 0 ? (
             <>
-              <p className="message-detail-title">联网搜索</p>
+              <p className="message-detail-title">联网搜索来源</p>
               {searchCards.map((card) => (
                 <div className="message-knowledge-item" key={`${entryId}-${card.url}-${card.title}`}>
                   <p className="message-detail">{normalizeWorkbenchText(card.title)}</p>
-                  <p className="message-detail">来源：{normalizeWorkbenchText(card.sourceLabel || card.provider)}</p>
-                  <p className="message-detail">{normalizeWorkbenchText(card.summary)}</p>
+                  <div className="message-reference-link-row">
+                    <button
+                      className="message-reference-link"
+                      type="button"
+                      aria-label={`打开来源：${normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}`}
+                      onClick={() => {
+                        void openReferenceUrl(card.url);
+                      }}
+                    >
+                      <Globe aria-hidden="true" size={14} />
+                      <span>{normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}</span>
+                    </button>
+                    {(card.factSnippets.length > 0 ? card.factSnippets : [card.summary]).map((snippet) => (
+                      <p className="message-reference-summary" key={`${entryId}-${card.url}-${snippet}`}>
+                        {normalizeWorkbenchText(snippet)}
+                      </p>
+                    ))}
+                  </div>
                   <button
-                    className="message-link-button"
+                    className="message-reference-title-link"
                     type="button"
+                    aria-label={`打开条目：${normalizeWorkbenchText(card.title)}`}
                     onClick={() => {
                       void openReferenceUrl(card.url);
                     }}
                   >
-                    原文链接
+                    {normalizeWorkbenchText(card.title)}
                   </button>
                 </div>
               ))}
@@ -666,12 +694,16 @@ function InformationReferences({
           ) : null}
           {knowledgeCards.length > 0 ? (
             <>
-              <p className="message-detail-title">知识库检索</p>
+              <p className="message-detail-title">知识库来源</p>
               {knowledgeCards.map((card) => (
                 <div className="message-knowledge-item" key={`${entryId}-${card.sourceTitle}-${card.score}`}>
                   <p className="message-detail">来源文件：{normalizeWorkbenchText(card.sourceTitle)}</p>
                   <p className="message-detail">匹配分数：{normalizeWorkbenchText(card.score)}</p>
-                  <p className="message-detail">{normalizeWorkbenchText(card.snippet)}</p>
+                  {(card.factSnippets.length > 0 ? card.factSnippets : [card.snippet]).map((snippet) => (
+                    <p className="message-reference-summary" key={`${entryId}-${card.sourceTitle}-${snippet}`}>
+                      {normalizeWorkbenchText(snippet)}
+                    </p>
+                  ))}
                   <button
                     className="action-button"
                     type="button"

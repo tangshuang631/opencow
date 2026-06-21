@@ -43,28 +43,164 @@ type ChangeItem = {
   detail: string;
 };
 
-function createChecklistItems(state: WorkbenchState): ChecklistItem[] {
-  if (state.permission.pendingModeChange) {
+function truncateInspectorText(value: string, limit: number) {
+  const normalized = normalizeWorkbenchText(value).replace(/\s+/g, " ").trim();
+
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, Math.max(0, limit - 1)).trim()}…`;
+}
+
+function getLatestUserRequestSummary(state: WorkbenchState) {
+  const activeTask = state.tasks.activeTaskId
+    ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
+    : null;
+  const latestQueuedTask = state.tasks.items[0] ?? null;
+  const latestUserEntry = [...state.conversation.entries].reverse().find((entry) => entry.kind === "user");
+
+  return activeTask?.summary?.trim()
+    || latestQueuedTask?.summary?.trim()
+    || latestUserEntry?.summary?.trim()
+    || "";
+}
+
+function normalizeInspectorRequestSummary(value: string) {
+  return normalizeWorkbenchText(value)
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function createRequestPlanningSummary(requestSummary: string) {
+  const normalizedRequest = normalizeInspectorRequestSummary(requestSummary);
+
+  if (!normalizedRequest) {
+    return null;
+  }
+
+  if (/^.{0,4}(hi|hello|你好|在吗|在么)[!！。?？]?$/i.test(normalizedRequest)) {
+    return null;
+  }
+
+  if (normalizedRequest.length >= 80) {
+    return null;
+  }
+
+  if (/(.+?)和(.+?)(谁更好|哪个好|区别|差别|对比|比较)/.test(normalizedRequest)) {
+    const match = normalizedRequest.match(/(.+?)和(.+?)(谁更好|哪个好|区别|差别|对比|比较)/);
+    const left = truncateInspectorText(match?.[1]?.trim() ?? "对象 A", 8);
+    const right = truncateInspectorText(match?.[2]?.trim() ?? "对象 B", 8);
+    return `比较 ${left} 和 ${right}`;
+  }
+
+  if (/帮我|请|麻烦/.test(normalizedRequest) && /搜索|联网|查一下|查找|找资料/.test(normalizedRequest)) {
+    return "检索并整理相关资料";
+  }
+
+  if (/修复|排查|报错|问题|异常|失败|不对|出错|bug/i.test(normalizedRequest)) {
+    return "定位并修复当前问题";
+  }
+
+  if (/实现|接入|联通|新增|补齐|完善|支持/i.test(normalizedRequest)) {
+    return "实现并补齐目标能力";
+  }
+
+  if (/界面|侧边栏|任务单|变更|样式|布局|按钮|交互|列表|卡片|展开|收起|美观|风格|UI/i.test(normalizedRequest)) {
+    return "调整界面与交互表现";
+  }
+
+  if (/解释|说明|介绍|是什么|为什么|怎么/i.test(normalizedRequest) && normalizedRequest.length <= 18) {
+    return `整理问题：${truncateInspectorText(normalizedRequest, 16)}`;
+  }
+
+  return null;
+}
+
+function createRequestAwareChecklistItems(
+  planningSummary: string,
+  executionLabel: string,
+  executeStatus: ChecklistItem["status"],
+  replyStatus: ChecklistItem["status"]
+): ChecklistItem[] {
+  const normalizedSummary = planningSummary.trim();
+  const compactSummary = truncateInspectorText(normalizedSummary, 18);
+  const looksLikeUiTask = /界面|侧边栏|任务单|变更|样式|布局|按钮|交互|列表|卡片|展开|收起|美观|风格|UI/i.test(normalizedSummary);
+  const looksLikeFixTask = /修复|排查|问题|异常|失败|bug/i.test(normalizedSummary);
+  const looksLikeImplementationTask = /实现|接入|联通|新增|补齐|完善|支持/i.test(normalizedSummary);
+
+  if (looksLikeUiTask) {
     return [
-      { id: "request", label: "接收当前请求", status: "done" },
-      { id: "plan", label: "规划执行方式", status: "done" },
+      { id: "request", label: compactSummary ? `任务摘要：${compactSummary}` : "任务摘要", status: "done" },
+      { id: "plan", label: "拆解要改的区域和交互", status: "done" },
+      { id: "execute", label: executionLabel || "调整界面与交互", status: executeStatus },
+      { id: "reply", label: "整理变更结果与验证", status: replyStatus }
+    ];
+  }
+
+  if (looksLikeFixTask) {
+    return [
+      { id: "request", label: compactSummary ? `任务摘要：${compactSummary}` : "任务摘要", status: "done" },
+      { id: "plan", label: "定位原因和相关文件", status: "done" },
+      { id: "execute", label: executionLabel || "实施修复", status: executeStatus },
+      { id: "reply", label: "整理修复结果与验证", status: replyStatus }
+    ];
+  }
+
+  if (looksLikeImplementationTask) {
+    return [
+      { id: "request", label: compactSummary ? `任务摘要：${compactSummary}` : "任务摘要", status: "done" },
+      { id: "plan", label: "拆解执行步骤和依赖", status: "done" },
+      { id: "execute", label: executionLabel || "实现对应能力", status: executeStatus },
+      { id: "reply", label: "整理结果与后续说明", status: replyStatus }
+    ];
+  }
+
+  return [
+    { id: "request", label: compactSummary ? `任务摘要：${compactSummary}` : "任务摘要", status: "done" },
+    { id: "plan", label: "规划执行步骤", status: "done" },
+    { id: "execute", label: executionLabel || "执行对应任务", status: executeStatus },
+    { id: "reply", label: "整理最终回复", status: replyStatus }
+  ];
+}
+
+function createChecklistItems(state: WorkbenchState): ChecklistItem[] {
+  const latestRequestSummary = getLatestUserRequestSummary(state);
+  const planningSummary = createRequestPlanningSummary(latestRequestSummary);
+
+  if (state.permission.pendingModeChange) {
+    if (!planningSummary) {
+      return [];
+    }
+
+    return [
+      { id: "request", label: `任务摘要：${truncateInspectorText(planningSummary, 18)}`, status: "done" },
+      { id: "plan", label: "确认所需权限和风险", status: "done" },
       { id: "permission", label: "等待权限确认", status: "active" },
-      { id: "execute", label: "执行对应任务", status: "todo" }
+      { id: "execute", label: "获批后执行任务", status: "todo" }
     ];
   }
 
   if (state.confirmation.pending) {
+    if (!planningSummary) {
+      return [];
+    }
+
     return [
-      { id: "request", label: "接收当前请求", status: "done" },
-      { id: "plan", label: "规划执行方式", status: "done" },
+      { id: "request", label: `任务摘要：${truncateInspectorText(planningSummary, 18)}`, status: "done" },
+      { id: "plan", label: "确认高风险操作范围", status: "done" },
       { id: "confirm", label: "等待高风险确认", status: "active" },
-      { id: "execute", label: "执行对应任务", status: "todo" }
+      { id: "execute", label: "确认后执行任务", status: "todo" }
     ];
   }
 
   const latestTask = state.tasks.items[0] ?? null;
 
   if (!latestTask) {
+    return [];
+  }
+
+  if (!planningSummary) {
     return [];
   }
 
@@ -79,12 +215,12 @@ function createChecklistItems(state: WorkbenchState): ChecklistItem[] {
           : "todo";
   const replyStatus = latestTask.status === "completed" ? "done" : "todo";
 
-  return [
-    { id: "request", label: "接收当前请求", status: "done" },
-    { id: "plan", label: "规划执行方式", status: "done" },
-    { id: "execute", label: executionLabel, status: executeStatus },
-    { id: "reply", label: "整理最终回复", status: replyStatus }
-  ];
+  return createRequestAwareChecklistItems(
+    planningSummary,
+    executionLabel,
+    executeStatus,
+    replyStatus
+  );
 }
 
 function splitChineseList(value: string) {
@@ -167,11 +303,24 @@ export function Inspector({
   const checklistItems = useMemo(() => createChecklistItems(state), [state]);
   const changeItems = useMemo(() => collectChangeItems(state), [state]);
   const [expandedChangeIds, setExpandedChangeIds] = useState<Set<string>>(() => new Set());
+  const [isChangeSummaryExpanded, setIsChangeSummaryExpanded] = useState(false);
   const pendingPermission = state.permission.pendingModeChange;
   const pendingConfirmation = state.confirmation.pending;
   const activeTask = state.tasks.activeTaskId
     ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
     : null;
+  const changedFileCount = changeItems.length;
+  const addedFileCount = changeItems.filter((item) => item.kind === "added").length;
+  const modifiedFileCount = changeItems.filter((item) => item.kind === "modified").length;
+  const changeSummaryLabel = changedFileCount === 0
+    ? "暂无变更"
+    : `${changedFileCount} 个文件`;
+  const changeSummaryDetail = changedFileCount === 0
+    ? "当前没有新的本地文件改动。"
+    : [
+        modifiedFileCount > 0 ? `改动 ${modifiedFileCount}` : null,
+        addedFileCount > 0 ? `新增 ${addedFileCount}` : null
+      ].filter(Boolean).join(" · ");
 
   return (
     <aside aria-label="右侧面板" className="inspector glass-gradient-sidebar-right">
@@ -246,50 +395,70 @@ export function Inspector({
             <p className="knowledge-section-eyebrow">本地文件</p>
             <h2>变更</h2>
           </div>
-          <span className="workspace-history-badge">{changeItems.length} 项</span>
         </div>
-        {changeItems.length === 0 ? (
-          <p className="npc-empty-state">当前还没有可展示的本地文件变更。</p>
-        ) : (
-          <div className="npc-compact-list inspector-change-list">
-            {changeItems.map((item) => {
-              const expanded = expandedChangeIds.has(item.id);
+        <button
+          aria-expanded={isChangeSummaryExpanded}
+          aria-label={isChangeSummaryExpanded ? "收起变更" : "展开变更"}
+          className="inspector-change-summary"
+          type="button"
+          onClick={() => setIsChangeSummaryExpanded((current) => !current)}
+        >
+          <span className="inspector-change-summary-leading">
+            <FileDiff aria-hidden="true" size={18} />
+            <span className="inspector-change-summary-title">变更</span>
+          </span>
+          <span className="inspector-change-summary-trailing">
+            <span className="inspector-change-summary-count">{changeSummaryLabel}</span>
+            {changeSummaryDetail ? <span className="inspector-change-summary-meta">{changeSummaryDetail}</span> : null}
+          </span>
+        </button>
+        {isChangeSummaryExpanded ? (
+          changedFileCount === 0 ? (
+            <p className="inspector-change-empty">当前还没有本地文件变更。</p>
+          ) : (
+            <div className="npc-compact-list inspector-change-list">
+              {changeItems.map((item) => {
+                const expanded = expandedChangeIds.has(item.id);
 
-              return (
-                <div className="npc-row-button search-source-row inspector-change-row" key={item.id}>
-                  <button
-                    aria-label={`${item.path.split("/").pop() || item.path} ${item.kind === "added" ? "新增" : "改动"}`}
-                    className="inspector-change-toggle"
-                    type="button"
-                    onClick={() => {
-                      setExpandedChangeIds((current) => {
-                        const next = new Set(current);
-                        if (next.has(item.id)) {
-                          next.delete(item.id);
-                        } else {
-                          next.add(item.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  >
-                    <span className="npc-row-leading">
-                      <span className="npc-row-title">{item.path.split("/").pop() || item.path}</span>
-                      <span className="npc-row-meta">{item.kind === "added" ? "新增" : "改动"}</span>
-                    </span>
-                  </button>
-                  {expanded ? (
-                    <div className="inspector-change-detail">
-                      <p className="message-detail">完整路径：{item.path}</p>
-                      <p className="message-detail">来源任务：{item.sourceTitle}</p>
-                      <p className="message-detail">{item.detail}</p>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                return (
+                  <div className="npc-row-button search-source-row inspector-change-row" key={item.id}>
+                    <button
+                      aria-label={`${item.path.split("/").pop() || item.path} ${item.kind === "added" ? "新增" : "改动"}`}
+                      className="inspector-change-toggle"
+                      type="button"
+                      onClick={() => {
+                        setExpandedChangeIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(item.id)) {
+                            next.delete(item.id);
+                          } else {
+                            next.add(item.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <span className="npc-row-leading">
+                        <span className="npc-row-title">{item.path.split("/").pop() || item.path}</span>
+                        <span className="npc-row-description">{truncateInspectorText(item.path, 52)}</span>
+                      </span>
+                      <span className="npc-row-trailing">
+                        <span className="npc-row-meta">{item.kind === "added" ? "新增" : "改动"}</span>
+                      </span>
+                    </button>
+                    {expanded ? (
+                      <div className="inspector-change-detail">
+                        <p className="message-detail">完整路径：{item.path}</p>
+                        <p className="message-detail">来源任务：{item.sourceTitle}</p>
+                        <p className="message-detail">{item.detail}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : null}
       </section>
     </aside>
   );

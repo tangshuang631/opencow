@@ -876,6 +876,7 @@ async function executeNetworkSearchGuidancePlan(
       sourceLabel: item.source_label ?? result.effective_provider,
       query,
       summary: item.summary,
+      factSnippets: item.fact_snippets,
       usedFallback: result.used_fallback
     })),
     searchStatePatch: {
