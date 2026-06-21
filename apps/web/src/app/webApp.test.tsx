@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebApp } from "./WebApp";
+import type { OllamaChatResult } from "../../../desktop/src/features/ollama/ollamaService";
 
 const { loadOllamaOverviewMock, chatWithOllamaModelMock } = vi.hoisted(() => ({
   loadOllamaOverviewMock: vi.fn(),
@@ -40,6 +41,13 @@ function getComposerInput() {
 
 function getComposerSendButton() {
   return screen.getByRole("button", { name: "发送" });
+}
+
+function expandKnowledgeDetails(conversation: HTMLElement) {
+  const expandButtons = within(conversation).queryAllByRole("button", { name: "展开知识详情" });
+  if (expandButtons.length > 0) {
+    fireEvent.click(expandButtons[expandButtons.length - 1]);
+  }
 }
 
 describe("WebApp", () => {
@@ -106,8 +114,8 @@ describe("WebApp", () => {
   });
 
   it("shows the newly submitted user message immediately in the current conversation window", async () => {
-    let resolveChat: ((value: { model: string; message: string; doneReason: string }) => void) | null = null;
-    chatWithOllamaModelMock.mockImplementationOnce(() => new Promise((resolve) => {
+    let resolveChat!: (value: OllamaChatResult) => void;
+    chatWithOllamaModelMock.mockImplementationOnce(() => new Promise<OllamaChatResult>((resolve) => {
       resolveChat = resolve;
     }));
 
@@ -124,7 +132,7 @@ describe("WebApp", () => {
       expect(within(conversation).getAllByText("抽象工厂模式是什么").length).toBeGreaterThan(0);
     });
 
-    resolveChat?.({
+    resolveChat({
       model: "qwen2.5-coder:7b",
       message: "抽象工厂模式用于创建一组相关对象。",
       doneReason: "stop"
@@ -132,6 +140,46 @@ describe("WebApp", () => {
 
     await waitFor(() => {
       expect(within(conversation).getByText("抽象工厂模式用于创建一组相关对象。")).toBeInTheDocument();
+    });
+  });
+
+  it("streams local-model reply chunks into the current conversation before the final result resolves", async () => {
+    let resolveChat!: (value: OllamaChatResult) => void;
+    chatWithOllamaModelMock.mockImplementationOnce((request: { onChunk?: (chunk: string) => void }) => (
+      new Promise<OllamaChatResult>((resolve) => {
+        resolveChat = resolve;
+        request.onChunk?.("**结论：**");
+        request.onChunk?.(" 工厂模式把对象创建");
+        request.onChunk?.(" 与使用解耦。");
+      })
+    ));
+
+    render(<WebApp />);
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "工厂模式是什么" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("结论：")).toBeInTheDocument();
+      expect(within(conversation).getByText(/工厂模式把对象创建/)).toBeInTheDocument();
+      expect(within(conversation).getByText(/与使用解耦。/)).toBeInTheDocument();
+    });
+
+    expect(within(conversation).queryByText("本地模型答复")).not.toBeInTheDocument();
+
+    resolveChat({
+      model: "qwen2.5-coder:7b",
+      message: "**结论：** 工厂模式把对象创建与使用解耦。",
+      doneReason: "stop"
+    });
+
+    await waitFor(() => {
+      expect(within(conversation).getByText("结论：")).toBeInTheDocument();
+      expect(within(conversation).getByText(/工厂模式把对象创建与使用解耦。/)).toBeInTheDocument();
     });
   });
 
@@ -279,6 +327,48 @@ describe("WebApp", () => {
     expect(within(conversation).queryByText(/Web MVP keeps browser history/)).not.toBeInTheDocument();
   });
 
+  it("keeps submitted image attachments in web history and sends them to Ollama", async () => {
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.5:9b",
+      message: "我已收到图片，但当前模型可能不支持视觉输入。",
+      doneReason: "stop"
+    });
+
+    render(<WebApp />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen2.5-coder:7b" });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    const imageFile = new File(["image-bytes"], "web-ocr.png", { type: "image/png" });
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [imageFile]
+      }
+    });
+
+    expect(await screen.findByText("web-ocr.png")).toBeInTheDocument();
+
+    fireEvent.change(getComposerInput(), {
+      target: { value: "提取图中文字" }
+    });
+    fireEvent.click(getComposerSendButton());
+
+    const conversation = screen.getByRole("region", { name: "会话" });
+
+    await waitFor(() => {
+      expect(within(conversation).getByAltText("附件缩略图：web-ocr.png")).toBeInTheDocument();
+      expect(within(conversation).getByText(/当前模型可能不支持视觉输入/)).toBeInTheDocument();
+    });
+
+    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+      images: expect.arrayContaining([expect.any(String)])
+    }));
+    const requestMessage = chatWithOllamaModelMock.mock.calls[0]?.[0].message ?? "";
+    expect(requestMessage).toContain("web-ocr.png");
+    expect(requestMessage).toContain("已随请求附带图片内容");
+  });
+
   it("does not render fallback copy as a fake model answer when Ollama chat fails", async () => {
     chatWithOllamaModelMock.mockRejectedValueOnce(new Error("ollama unavailable"));
     render(<WebApp />);
@@ -379,6 +469,11 @@ describe("WebApp", () => {
       expect(
         within(conversation).getByText(/命中片段：web-history-mvp\.md: # Web History MVP Keep recent conversations/)
       ).toBeInTheDocument();
+    });
+
+    expandKnowledgeDetails(conversation);
+
+    await waitFor(() => {
       expect(within(conversation).getByText("检索命中")).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：npc-notes.txt")).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
@@ -401,6 +496,12 @@ describe("WebApp", () => {
 
     const conversation = screen.getByRole("region", { name: "会话" });
     await waitFor(() => {
+      expect(within(conversation).getByRole("button", { name: "展开知识详情" })).toBeInTheDocument();
+    });
+
+    expandKnowledgeDetails(conversation);
+
+    await waitFor(() => {
       expect(within(conversation).getByRole("button", { name: "只看来源：npc-notes.txt" })).toBeInTheDocument();
     });
 
@@ -413,6 +514,11 @@ describe("WebApp", () => {
       expect(
         within(conversation).getAllByText(/检索问题：search local knowledge in npc-notes\.txt for browser history。/).length
       ).toBeGreaterThanOrEqual(1);
+    });
+
+    expandKnowledgeDetails(conversation);
+
+    await waitFor(() => {
       expect(within(conversation).getAllByText("来源文件：web-history-mvp.md").length).toBe(1);
     });
   });
@@ -467,13 +573,21 @@ describe("WebApp", () => {
     await waitFor(() => {
       expect(within(conversation).getByText("本地模型答复")).toBeInTheDocument();
       expect(within(conversation).getByText(/工厂模式是一种创建型设计模式/)).toBeInTheDocument();
+      expect(within(conversation).getByRole("button", { name: "展开知识详情" })).toBeInTheDocument();
+    });
+
+    expandKnowledgeDetails(conversation);
+
+    await waitFor(() => {
       expect(within(conversation).getByText("检索命中")).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：npc-notes.txt")).toBeInTheDocument();
       expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
       expect(within(conversation).getByRole("button", { name: "只看来源：npc-notes.txt" })).toBeInTheDocument();
     });
 
-    expect(within(inspector).queryByText("输出")).not.toBeInTheDocument();
+    expect(within(inspector).getByText("输出")).toBeInTheDocument();
+    expect(within(inspector).getByText("本地模型答复")).toBeInTheDocument();
+    expect(within(inspector).getByText("已生成最新回复，请直接在左侧会话查看正文。")).toBeInTheDocument();
     expect(within(inspector).queryByText(/工厂模式是一种创建型设计模式/)).not.toBeInTheDocument();
     expect(within(inspector).queryByText(longInput)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(longInput)).not.toBeInTheDocument();
@@ -1280,6 +1394,11 @@ describe("WebApp", () => {
       expect(
         within(conversation).getByText(/检索问题：search local knowledge in web-history-mvp\.md for browser history。/)
       ).toBeInTheDocument();
+    });
+
+    expandKnowledgeDetails(conversation);
+
+    await waitFor(() => {
       expect(within(conversation).getByText("来源文件：web-history-mvp.md")).toBeInTheDocument();
     });
   });

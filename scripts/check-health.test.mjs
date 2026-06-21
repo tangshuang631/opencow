@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   findStaleGeneratedFiles,
-  formatStaleGeneratedFilesError
+  formatStaleGeneratedFilesError,
+  runHealthCheck
 } from "./check-health.mjs";
 
 test("findStaleGeneratedFiles reports generated adapter files older than their source", () => {
@@ -31,5 +32,26 @@ test("findStaleGeneratedFiles reports generated adapter files older than their s
   assert.match(
     formatStaleGeneratedFilesError(stale),
     /Run: npm --workspace packages\/openclaw-adapter run build/
+  );
+});
+
+test("runHealthCheck rejects Mac latest launcher that uses a relative sync script path", () => {
+  const files = new Map([
+    ["start-opencow-test.bat", 'if /I "%MODE%"=="check"\npause >nul'],
+    [
+      "scripts/start-opencow-latest-desktop-mac.command",
+      'SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"\npython3 scripts/sync-opencow-mac-apps.py'
+    ],
+    ["scripts/sync-opencow-mac-apps.py", "# sync script"]
+  ]);
+
+  assert.throws(
+    () =>
+      runHealthCheck({
+        existsPath: () => true,
+        readText: (path) => files.get(path) ?? "",
+        statFile: () => ({ mtimeMs: 20_000 })
+      }),
+    /absolute sync script path/
   );
 });

@@ -26,6 +26,7 @@ import {
   createStorageCleanupState,
   createTaskExecutionFailedState,
   createTaskExecutionStartedState,
+  createTaskExecutionStreamingChunkState,
   createTaskExecutionSucceededState,
   createUserTaskSubmittedState,
   deleteRecentConversationState,
@@ -37,6 +38,7 @@ import { loadOllamaOverview } from "../../../desktop/src/features/ollama/ollamaS
 import { chatWithOllamaModel } from "../../../desktop/src/features/ollama/ollamaService";
 import type {
   AvailableKnowledgeFile,
+  ChatAttachment,
   ImportedKnowledgeFile,
   WorkbenchState
 } from "../../../desktop/src/features/workbench/workbenchState";
@@ -312,7 +314,36 @@ function resolveUsableWebChatModel(state: WorkbenchState) {
   return resolveUsableWorkbenchChatModel(state.model.activeModel, state.model.availableModels);
 }
 
-function createWebLocalChatPrompt(message: string, libraryLabel: string, result: ReturnType<typeof searchWebKnowledge>) {
+function createWebAttachmentPromptLines(attachments: ChatAttachment[]) {
+  if (attachments.length === 0) {
+    return [];
+  }
+
+  const attachmentLines = attachments.map((attachment, index) => {
+    const readableKind = attachment.kind === "image" ? "图片" : "文件";
+    const sizeKb = Math.max(1, Math.round(attachment.sizeBytes / 1024));
+    const contentHint = attachment.kind === "image" && attachment.base64Data
+      ? "已随请求附带图片内容"
+      : attachment.kind === "image"
+        ? "仅有图片元数据，无法直接读取图像内容"
+        : "非图片附件，仅有文件元数据";
+
+    return `${index + 1}. ${attachment.name} | 类型=${readableKind} | MIME=${attachment.mimeType} | 大小=${sizeKb}KB | ${contentHint}`;
+  });
+
+  return [
+    "本轮用户附带了附件。回答时必须结合这些附件；如果图片无法识别，请说明当前 Ollama 模型可能不支持视觉输入，不要说用户没有上传图片。",
+    ...attachmentLines,
+    ""
+  ];
+}
+
+function createWebLocalChatPrompt(
+  message: string,
+  libraryLabel: string,
+  result: ReturnType<typeof searchWebKnowledge>,
+  attachments: ChatAttachment[] = []
+) {
   const hitLines = result.items.slice(0, 3).map((item, index) => (
     `${index + 1}. ${item.title}: ${item.snippet}`
   ));
@@ -322,6 +353,7 @@ function createWebLocalChatPrompt(message: string, libraryLabel: string, result:
     "请优先用中文直接回答用户问题，先给结论，再给简要解析。",
     "如果题目较长，请自行提炼重点，不要原样复读整段题干。",
     "如果下方提供了本地知识命中，可按需参考；如果不相关，就忽略它们。",
+    ...createWebAttachmentPromptLines(attachments),
     "",
     `当前知识库：${libraryLabel}`,
     `用户问题：${message}`,
@@ -763,7 +795,7 @@ export function WebApp() {
     });
   }
 
-  function handleSubmitTask(message: string) {
+  function handleSubmitTask(message: string, attachments: ChatAttachment[] = []) {
     const trimmed = message.trim();
     const scopedKnowledgeMessage = convertChineseScopedKnowledgeQuery(trimmed);
     const isScopedChineseKnowledgeRequest = isChineseScopedKnowledgeRequest(trimmed);
@@ -1471,16 +1503,27 @@ export function WebApp() {
       return;
     }
 
-    executeReadonlyAsyncTask(setState, {
-      message: trimmed,
-      executionKind: "local-model-chat",
-      executionTitle: "本地模型问答",
-      executionAuditSummary: "网页端提交了一条本地优先会话任务",
-      executionAuditDetail: `web local-first chat: ${trimmed}`,
-      failureSummary: "本地模型回复失败",
-      failureActionLabel: "请先检查本机 Ollama 服务、当前已选模型和本地网络回环访问，再重试这条长文本请求。",
-      failureSource: "web_local_model_chat",
-      run: async () => {
+    let queuedTaskId = "";
+
+    startTransition(() => {
+      setState((current) => {
+        const queued = createUserTaskSubmittedState(current, {
+          message: trimmed,
+          attachments,
+          executionKind: "local-model-chat",
+          executionTitle: "本地模型问答",
+          executionAuditSummary: "网页端提交了一条本地优先会话任务",
+          executionAuditDetail: `web local-first chat: ${trimmed}`
+        });
+        const started = createTaskExecutionStartedState(queued);
+        queuedTaskId = started.tasks.activeTaskId ?? "";
+
+        return preserveWebKnowledgeState(current, started);
+      });
+    });
+
+    void (async () => {
+      try {
         const browserRecord = webKnowledgeRecordRef.current;
         const activeLibraryLabel =
           browserRecord.libraries.find((library) => library.id === browserRecord.activeLibraryId)?.label
@@ -1495,26 +1538,47 @@ export function WebApp() {
 
         const chatResult = await chatWithOllamaModel({
           model: activeModel,
-          message: createWebLocalChatPrompt(trimmed, activeLibraryLabel, ragResult)
+          message: createWebLocalChatPrompt(trimmed, activeLibraryLabel, ragResult, attachments),
+          images: attachments
+            .filter((attachment) => attachment.kind === "image" && Boolean(attachment.base64Data))
+            .map((attachment) => attachment.base64Data as string),
+          onChunk: (chunk) => {
+            startTransition(() => {
+              setState((current) => preserveWebKnowledgeState(current, createTaskExecutionStreamingChunkState(current, {
+                taskId: queuedTaskId,
+                chunk
+              })));
+            });
+          }
         });
 
-        return {
-          activeLibraryLabel,
-          ragResult,
-          chatResult,
-          activeModel
-        };
-      },
-      onSuccess: ({ activeLibraryLabel, ragResult, chatResult, activeModel }) => ({
-        resultTitle: "本地模型答复",
-        resultSummary: chatResult.message,
-        auditDetailLines: [
-          `Knowledge library: ${activeLibraryLabel}`,
-          ...createKnowledgeHitAuditDetailLines(ragResult),
-          ...createWebLocalChatAuditDetailLines(activeModel, ragResult, chatResult.doneReason)
-        ]
-      })
-    });
+        startTransition(() => {
+          setState((current) => preserveWebKnowledgeState(current, createTaskExecutionSucceededState(current, {
+            resultTitle: "本地模型答复",
+            resultSummary: chatResult.message,
+            auditDetailLines: [
+              `Knowledge library: ${activeLibraryLabel}`,
+              ...createKnowledgeHitAuditDetailLines(ragResult),
+              ...createWebLocalChatAuditDetailLines(activeModel, ragResult, chatResult.doneReason)
+            ]
+          })));
+        });
+      } catch (error: unknown) {
+        const failureDetail = [
+          `web local-first chat: ${trimmed}`,
+          `Underlying browser-preview error: ${getReadableErrorDetail(error)}`
+        ].join(". ");
+
+        startTransition(() => {
+          setState((current) => preserveWebKnowledgeState(current, createTaskExecutionFailedState(current, {
+            summary: "本地模型回复失败",
+            detail: failureDetail,
+            actionLabel: "请先检查本机 Ollama 服务、当前已选模型和本地网络回环访问，再重试这条长文本请求。",
+            source: "web_local_model_chat"
+          })));
+        });
+      }
+    })();
   }
 
 function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snapshots" | "knowledge") {

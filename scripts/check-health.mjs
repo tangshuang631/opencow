@@ -4,6 +4,9 @@ import { fileURLToPath } from "node:url";
 const requiredPaths = [
   "OPENCOW_CORE_RULES.md",
   "start-opencow-test.bat",
+  "scripts/OpenCow最新测试版.applescript",
+  "scripts/start-opencow-latest-desktop-mac.command",
+  "scripts/sync-opencow-mac-apps.py",
   "docs/v1.0/00-overview.md",
   "docs/v1.0/10-openclaw-adapter.md",
   "apps/desktop/package.json",
@@ -86,6 +89,15 @@ export function runHealthCheck({
 
   if (pauseIndex === -1 || checkModeExitIndex > pauseIndex) {
     throw new Error("Desktop launcher pause must remain behind the check-mode failure exit");
+  }
+
+  const macLauncher = readText("scripts/start-opencow-latest-desktop-mac.command", "utf8");
+  if (!macLauncher.includes('SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"')) {
+    throw new Error("Mac latest-test desktop launcher must sync the desktop app before opening it");
+  }
+
+  if (macLauncher.includes("python3 scripts/sync-opencow-mac-apps.py")) {
+    throw new Error("Mac latest-test desktop launcher must use an absolute sync script path");
   }
 
   const staleGeneratedFiles = findStaleGeneratedFiles(generatedSourcePairs, statFile);

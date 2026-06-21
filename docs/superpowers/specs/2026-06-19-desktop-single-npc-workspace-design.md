@@ -280,29 +280,64 @@ The assistant planning layer can continue to own model-generated NPC config gene
 
 ### 6.1 Skills
 
-Reuse existing desktop-real flows instead of inventing a second path:
+OpenCow must stop presenting raw OpenClaw skill discovery as its product skill center.
 
-- local skills scan
-- enabled local skills list
-- local skill inspect
-- local skill enable
-- local skill disable
-- local skill install
+OpenCow needs its own application-owned skill storage root, separate from the repository and separate from OpenClaw runtime directories.
 
-The NPC page should consume those results and map them into per-NPC selection state.
+Product-owned skill structure:
 
-Enabling a skill globally in the workspace and binding it to a specific NPC are different things.
+- `skills/manifest/recommended-skills.json`
+- `skills/installed/<skill-id>/SKILL.md`
+- `skills/installed/<skill-id>/meta.json`
+- `skills/enabled-skills.json`
+- `skills/install-audit.json`
 
-The design should keep both concepts explicit:
+The `Skills` page becomes an OpenCow skill center with two top-level list modes:
 
-- workspace skill availability
-- NPC skill selection
+- `推荐`
+- `已安装`
+
+Rules:
+
+- `推荐` reads from OpenCow-local `recommended-skills.json`
+- `已安装` reads from OpenCow-local `skills/installed/`
+- global enable / disable reads and writes OpenCow-local `enabled-skills.json`
+- install sources for the first slice are:
+  - install from the OpenCow-local recommendation manifest
+  - import from a user-selected local file or directory
+- direct OpenClaw import is not the product flow
+
+Future path:
+
+- after networked search exists, the conversation experience may resolve a named skill through web search, review it, request confirmation, and then install it into OpenCow-local `skills/installed/`
+
+The NPC page should not duplicate global skill management.
+
+The NPC `技能` section consumes only the OpenCow-local installed skill list and maps it into per-NPC checkbox binding state.
+
+This keeps both concepts explicit:
+
+- OpenCow global installed / enabled skill state
+- current NPC skill binding state
 
 ### 6.2 Knowledge
 
-Reuse the real knowledge library inventory that already exists in the desktop workbench.
+OpenCow also needs a product-owned knowledge storage root.
 
-The selected NPC should bind to one or more knowledge libraries without changing the global library store itself.
+Product-owned knowledge structure:
+
+- `knowledge/files/`
+- `knowledge/libraries.json`
+
+Rules:
+
+- the shared file pool reads only from OpenCow-local `knowledge/files/`
+- if the user has not imported files through the desktop UI, the file pool is empty
+- repository root files, docs, README files, and source files must never appear automatically as candidate file-pool items
+- importing a file copies it into OpenCow-local `knowledge/files/`
+- libraries reference copied pool items instead of arbitrary repository paths
+
+The selected NPC binds to one or more knowledge libraries without changing the global library store itself.
 
 ### 6.3 MCP
 
@@ -396,3 +431,23 @@ When that work begins, the landing pattern should be:
 - reuse saved single-NPC configs as collaboration building blocks
 
 That future direction should not complicate the first single-NPC low-code workspace now.
+
+## 12. Product-Owned Runtime Directories
+
+OpenCow should behave like an installable desktop product on both macOS and Windows.
+
+Recommended runtime roots:
+
+- macOS: `~/Library/Application Support/OpenCow/`
+- Windows: `%AppData%/OpenCow/`
+
+OpenCow runtime data must live there for:
+
+- skills
+- knowledge file pool
+- knowledge library registry
+- NPC configs
+- prompts and rules
+- desktop settings
+
+The development repository root may still provide defaults, templates, or fallback manifests during development, but it is not the product data store shown in the UI.

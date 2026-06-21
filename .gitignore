@@ -15,3 +15,4 @@ apps/desktop/vitest.config.js
 apps/desktop/vitest.config.d.ts
 vendor/openclaw/
 graphify/
+.superpowers/
