@@ -21,6 +21,13 @@ function setupUser() {
     : userEvent.setup();
 }
 
+function expectLatestLocalModelRequest(message: string, model: string) {
+  expect(chatWithOllamaModelMock).toHaveBeenLastCalledWith(expect.objectContaining({
+    model,
+    message: expect.stringContaining(message)
+  }));
+}
+
 async function retryFailedChatThroughCurrentFlow() {
   const user = setupUser();
   await user.click(await screen.findByRole("button", { name: "重试本地任务" }));
@@ -62,10 +69,10 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText(/享元模式通过共享不可变的内部状态/)).toBeInTheDocument();
     });
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "qwen3.6:35b",
-      message: "软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么"
-    }));
+    expectLatestLocalModelRequest(
+      "软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么",
+      "qwen3.6:35b"
+    );
     expect(screen.queryByText(/本地助手能力说明/)).not.toBeInTheDocument();
     expect(screen.queryByText("本地任务执行失败")).not.toBeInTheDocument();
   });
@@ -192,10 +199,7 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText("已通过首个可用模型完成回答。")).toBeInTheDocument();
     });
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gemma4:26b",
-      message: "软件体系设计的享元模式易懂的解释"
-    }));
+    expectLatestLocalModelRequest("软件体系设计的享元模式易懂的解释", "gemma4:26b");
   });
 
   it("preflights Ollama once when the user submits before startup model detection finishes", async () => {
@@ -234,10 +238,7 @@ describe("App chat fallback", () => {
     });
 
     expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(2);
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gemma:26b",
-      message: "解释一下享元模式"
-    }));
+    expectLatestLocalModelRequest("解释一下享元模式", "gemma:26b");
     expect(screen.queryAllByText("本地模型对话失败")).toHaveLength(0);
 
     await act(async () => {
@@ -331,10 +332,7 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText(/我会根据当前问题和可用工具动态判断/)).toBeInTheDocument();
     });
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "qwen3.6:35b",
-      message: "你能帮我做什么"
-    }));
+    expectLatestLocalModelRequest("你能帮我做什么", "qwen3.6:35b");
     expect(screen.queryByText("本地助手能力说明")).not.toBeInTheDocument();
     expect(screen.queryByText(/I can help with local chat/i)).not.toBeInTheDocument();
   });
@@ -364,10 +362,7 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText(/结合当前上下文解释 RAG 能力/)).toBeInTheDocument();
     });
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "qwen3.6:35b",
-      message: "RAG 能力怎么样，适合帮我做什么"
-    }));
+    expectLatestLocalModelRequest("RAG 能力怎么样，适合帮我做什么", "qwen3.6:35b");
     expect(screen.queryByText("OpenClaw RAG capability overview")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
   });
@@ -395,15 +390,9 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
-      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-        model: "qwen3.6:35b",
-        message: "帮我检查 browser mcp plugin 为什么本地启动失败"
-      }));
+      expectLatestLocalModelRequest("帮我检查 browser mcp plugin 为什么本地启动失败", "qwen3.6:35b");
     });
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "qwen3.6:35b",
-      message: "帮我检查 browser mcp plugin 为什么本地启动失败"
-    }));
+    expectLatestLocalModelRequest("帮我检查 browser mcp plugin 为什么本地启动失败", "qwen3.6:35b");
     expect(screen.queryByText(/Controlled full permission is required before starting a local MCP plugin process/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "本地任务" })).not.toBeInTheDocument();
   });
@@ -431,10 +420,7 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
-      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-        model: "qwen3.6:35b",
-        message: "帮我检查本地 RAG rules search 为什么失败"
-      }));
+      expectLatestLocalModelRequest("帮我检查本地 RAG rules search 为什么失败", "qwen3.6:35b");
     });
     await waitFor(() => {
       expect(screen.getByText("我会先分析本地 RAG 检索失败的原因，而不是直接重复触发同一条检索链。")).toBeInTheDocument();
@@ -466,10 +452,7 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
-      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-        model: "qwen3.6:35b",
-        message: "why did the desktop app fail to run locally"
-      }));
+      expectLatestLocalModelRequest("why did the desktop app fail to run locally", "qwen3.6:35b");
     });
     await waitFor(() => {
       expect(screen.getByText("这类问题我会先从日志、权限链、运行时句柄和真实执行路径分析，而不是直接重新触发项目运行或截图任务。")).toBeInTheDocument();
@@ -629,10 +612,7 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText("已在模型恢复后完成回答。")).toBeInTheDocument();
     });
-    expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: "qwen3.6:35b",
-      message: "解释一下享元模式"
-    }));
+    expectLatestLocalModelRequest("解释一下享元模式", "qwen3.6:35b");
   }, 15_000);
 
   it("re-detects Ollama before retrying a failed local-model chat task", async () => {
@@ -678,10 +658,7 @@ describe("App chat fallback", () => {
       expect(screen.getByText("重新检测 Ollama 后已恢复回答。")).toBeInTheDocument();
     });
     expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(2);
-    expect(chatWithOllamaModelMock).toHaveBeenLastCalledWith(expect.objectContaining({
-      model: "qwen2.5-coder:7b",
-      message: "解释一下享元模式"
-    }));
+    expectLatestLocalModelRequest("解释一下享元模式", "qwen2.5-coder:7b");
   }, 15_000);
 
   it("retries a failed local-model chat after self-check when Ollama returns models but no selectedModel", async () => {
@@ -729,10 +706,7 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText("已在自动兜底模型上恢复回答。")).toBeInTheDocument();
     });
-    expect(chatWithOllamaModelMock).toHaveBeenLastCalledWith(expect.objectContaining({
-      model: "gemma4:26b",
-      message: "解释一下享元模式"
-    }));
+    expectLatestLocalModelRequest("解释一下享元模式", "gemma4:26b");
   }, 15_000);
 
   it("stops local-model retry when Ollama self-check fails instead of blindly calling chat again", async () => {
@@ -859,10 +833,7 @@ describe("App chat fallback", () => {
 
     expect(loadOllamaOverviewMock).toHaveBeenCalledTimes(2);
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(2);
-    expect(chatWithOllamaModelMock).toHaveBeenLastCalledWith(expect.objectContaining({
-      model: "gemma4:26b",
-      message: "解释一下享元模式"
-    }));
+    expectLatestLocalModelRequest("解释一下享元模式", "gemma4:26b");
     expect(screen.queryByLabelText("assistant-pending")).not.toBeInTheDocument();
   }, 15_000);
 

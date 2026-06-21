@@ -1061,7 +1061,7 @@ describe("MainConversation", () => {
         "Knowledge library: 默认知识库",
         "Knowledge library sources: 暂无匹配来源",
         "Indexed documents: 0",
-        "命中卡片：来源文件=rules.md；匹配分数=42；片段预览=Shell 执行必须经过权限确认。；回查指令=只看 rules.md"
+        "命中卡片：来源文件=rules.md；匹配分数=42；片段预览=Shell 执行必须经过权限确认。；回查指令=只看 rules.md；事实片段=Shell 执行必须经过权限确认。｜默认只允许安全范围内操作。"
       ]
     });
 
@@ -1082,6 +1082,7 @@ describe("MainConversation", () => {
     expect(screen.getByText("来源文件：rules.md")).toBeInTheDocument();
     expect(screen.getByText("匹配分数：42")).toBeInTheDocument();
     expect(screen.getByText("Shell 执行必须经过权限确认。")).toBeInTheDocument();
+    expect(screen.getByText("默认只允许安全范围内操作。")).toBeInTheDocument();
   });
 
   it("collapses network-search references behind the same compact info toggle", () => {
@@ -1098,7 +1099,8 @@ describe("MainConversation", () => {
           provider: "豆包官网",
           sourceLabel: "豆包官网",
           query: "帮我上网搜索豆包",
-          summary: "豆包是字节跳动推出的 AI 助手产品。"
+          summary: "豆包是字节跳动推出的 AI 助手产品。",
+          factSnippets: ["豆包提供智能问答能力。", "豆包支持写作辅助。"]
         },
         {
           title: "豆包帮助中心",
@@ -1120,14 +1122,70 @@ describe("MainConversation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
 
-    expect(screen.getByText("豆包")).toBeInTheDocument();
-    expect(screen.getByText("来源：豆包官网")).toBeInTheDocument();
-    expect(screen.getByText("来源：豆包帮助中心")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开条目：豆包" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开来源：豆包官网" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开来源：豆包帮助中心" })).toBeInTheDocument();
     expect(screen.queryByText("https://www.doubao.com/")).not.toBeInTheDocument();
-    expect(screen.getByText("豆包是字节跳动推出的 AI 助手产品。")).toBeInTheDocument();
-    expect(screen.getByText("豆包帮助中心")).toBeInTheDocument();
+    expect(screen.getByText("豆包提供智能问答能力。")).toBeInTheDocument();
+    expect(screen.getByText("豆包支持写作辅助。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开条目：豆包帮助中心" })).toBeInTheDocument();
     expect(screen.getByText("包含产品使用与常见问题说明。")).toBeInTheDocument();
-    expect(screen.getAllByText("原文链接").length).toBe(2);
+    expect(screen.queryByText("原文链接")).not.toBeInTheDocument();
+  });
+
+  it("renders network references and knowledge references in a unified grouped layout", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "解释 MCP 并参考本地规则"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: "已结合联网来源和知识库命中整理说明。",
+      auditDetailLines: [
+        "Knowledge library: 默认知识库",
+        "Knowledge library sources: rules.md",
+        "Indexed documents: 1",
+        "命中卡片：来源文件=rules.md；匹配分数=42；片段预览=Shell 执行必须经过权限确认。；回查指令=只看 rules.md"
+      ],
+      searchSources: [
+        {
+          title: "MCP overview",
+          url: "https://example.com/mcp",
+          provider: "Example Docs",
+          sourceLabel: "Example Docs",
+          query: "解释 MCP 并参考本地规则",
+          summary: "MCP 是连接模型与外部能力的协议。",
+          factSnippets: ["MCP 用于连接模型与外部工具。"]
+        }
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+
+    expect(screen.getByText("联网搜索来源")).toBeInTheDocument();
+    expect(screen.getByText("知识库来源")).toBeInTheDocument();
+    expect(screen.getByText("MCP 用于连接模型与外部工具。")).toBeInTheDocument();
+    expect(screen.getByText("Shell 执行必须经过权限确认。")).toBeInTheDocument();
+  });
+
+  it("does not expose knowledge-priority debug lines in the visible assistant reply", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "解释 MCP 和 CLI 的区别"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: "MCP 是协议，CLI 是命令行界面。",
+      auditDetailLines: [
+        "Knowledge source priority: network",
+        "Knowledge library: 默认知识库"
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.queryByText("Knowledge source priority: network")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Knowledge source priority:/i)).not.toBeInTheDocument();
   });
 
   it("renders assistant markdown without exposing raw double asterisks", () => {

@@ -142,10 +142,10 @@ describe("desktop dev server contract", () => {
     expect(launcher).toContain('SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"');
     expect(launcher).toContain('python3 "${SYNC_SCRIPT}"');
     expect(launcher).not.toContain("python3 scripts/sync-opencow-mac-apps.py");
-    expect(launcher).toContain('APP_BINARY="${DESKTOP_APP}/Contents/MacOS/${APP_EXECUTABLE}"');
-    expect(launcher).toContain('"${APP_BINARY}" >/dev/null 2>&1 &');
+    expect(launcher).toContain('if [[ ! -x "${DESKTOP_APP}/Contents/MacOS/${APP_EXECUTABLE}" ]]; then');
+    expect(launcher).toContain('/usr/bin/open -n "${DESKTOP_APP}"');
     expect(launcher.indexOf('python3 "${SYNC_SCRIPT}"')).toBeLessThan(
-      launcher.indexOf('"${APP_BINARY}" >/dev/null 2>&1 &')
+      launcher.indexOf('/usr/bin/open -n "${DESKTOP_APP}"')
     );
     expect(launcher).toContain("APP_BUNDLE_ID=\"cn.opencow.desktop\"");
     expect(launcher).toContain("APP_EXECUTABLE=\"opencow-desktop\"");

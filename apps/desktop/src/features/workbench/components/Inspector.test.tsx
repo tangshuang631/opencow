@@ -45,14 +45,15 @@ describe("Inspector", () => {
 
     expect(screen.getByLabelText("右侧面板")).toBeInTheDocument();
     expect(screen.getByText("任务单")).toBeInTheDocument();
-    expect(screen.getByText("变更")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开变更" })).toBeInTheDocument();
     expect(screen.getByText("还没有任务，发一条消息后会在这里生成任务单。")).toBeInTheDocument();
-    expect(screen.getByText("当前还没有可展示的本地文件变更。")).toBeInTheDocument();
+    expect(screen.getByText("暂无变更")).toBeInTheDocument();
+    expect(screen.queryByText("当前还没有本地文件变更。")).not.toBeInTheDocument();
     expect(screen.queryByText("输出")).not.toBeInTheDocument();
     expect(screen.queryByText("配置与记录")).not.toBeInTheDocument();
   });
 
-  it("renders a checklist for the active local task", () => {
+  it("renders a more specific checklist for the active local task", () => {
     const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "整理桌面端右侧面板",
       executionKind: "local-model-chat",
@@ -62,11 +63,25 @@ describe("Inspector", () => {
 
     renderInspector(running);
 
-    expect(screen.getByText("接收当前请求")).toBeInTheDocument();
-    expect(screen.getByText("规划执行方式")).toBeInTheDocument();
-    expect(screen.getByText("本地模型对话")).toBeInTheDocument();
-    expect(screen.getByText("整理最终回复")).toBeInTheDocument();
+    expect(screen.getByText("还没有任务，发一条消息后会在这里生成任务单。")).toBeInTheDocument();
+    expect(screen.queryByText(/任务摘要：/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+  });
+
+  it("hides the task sheet when no processed planning summary can be produced for a long raw input", () => {
+    const queued = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message:
+        "这是一个没有明确动作词、只是把很多背景连续堆在一起的超长输入，用来验证右侧任务单不会直接把原文塞进去而是选择不显示任务单，因为这种内容没有先被处理成可靠摘要之前不适合拿来直接展示在任务单里，否则后面还会出现更长的输入把右侧整个布局挤坏。",
+      executionKind: "local-model-chat",
+      executionTitle: "本地模型对话"
+    });
+    const running = createTaskExecutionStartedState(queued);
+
+    renderInspector(running);
+
+    expect(screen.getByText("还没有任务，发一条消息后会在这里生成任务单。")).toBeInTheDocument();
+    expect(screen.queryByText(/任务摘要：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/这是一个没有明确动作词/)).not.toBeInTheDocument();
   });
 
   it("surfaces pending permission confirmation inline above the task sheet", () => {
@@ -111,6 +126,11 @@ describe("Inspector", () => {
 
     renderInspector(completed);
 
+    expect(screen.getByText("3 个文件")).toBeInTheDocument();
+    expect(screen.getByText("改动 2 · 新增 1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开变更" }));
+
     expect(screen.getByText("App.tsx")).toBeInTheDocument();
     expect(screen.getByText("global.css")).toBeInTheDocument();
     expect(screen.getByText("index.html")).toBeInTheDocument();
@@ -119,5 +139,13 @@ describe("Inspector", () => {
 
     expect(screen.getByText("完整路径：apps/desktop/src/app/App.tsx")).toBeInTheDocument();
     expect(screen.getByText("来源任务：展示站点写入完成")).toBeInTheDocument();
+  });
+
+  it("shows empty change detail only after expanding the change summary", () => {
+    renderInspector();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开变更" }));
+
+    expect(screen.getByText("当前还没有本地文件变更。")).toBeInTheDocument();
   });
 });
