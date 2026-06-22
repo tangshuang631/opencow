@@ -177,3 +177,30 @@ pub fn chat_attachment_open(file_path: String) -> Result<(), String> {
         Err(format!("Failed to open attachment: {}", file_path))
     }
 }
+
+#[tauri::command]
+pub fn external_link_open(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open")
+        .arg(&url)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    let status = Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let status = Command::new("xdg-open")
+        .arg(&url)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("Failed to open link: {}", url))
+    }
+}

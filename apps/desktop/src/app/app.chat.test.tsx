@@ -77,6 +77,80 @@ describe("App chat fallback", () => {
     expect(screen.queryByText("本地任务执行失败")).not.toBeInTheDocument();
   });
 
+  it("strips reference-source tails out of the visible assistant reply body", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: [
+        "互联网传输层协议主要包括 TCP（传输控制协议）和 UDP（用户数据报协议）。",
+        "",
+        "参考来源：",
+        "1. 腾讯云开发者社区 | url=https://cloud.tencent.com/developer/article/2359519",
+        "2. 与非网 | url=https://www.eefocus.com/e/1658842.html"
+      ].join("\n")
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "互联网传输层协议有哪些" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/互联网传输层协议主要包括 TCP/)).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("参考来源：")).not.toBeInTheDocument();
+    expect(screen.queryByText(/url=https:\/\/cloud\.tencent\.com/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/url=https:\/\/www\.eefocus\.com/)).not.toBeInTheDocument();
+  });
+
+  it("does not force general knowledge questions into evidence-only answers when network search is enabled", async () => {
+    loadOllamaOverviewMock.mockResolvedValue({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock.mockResolvedValue({
+      model: "qwen3.6:35b",
+      message: "AES 是一种对称加密算法。"
+    });
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await user.click(screen.getByRole("button", { name: "会话" }));
+
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "常见的加密方式比如AES等等以及他们的原理" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+    });
+
+    const requestMessage = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
+    expect(requestMessage).not.toContain("只根据下面明确给出的证据作答");
+    expect(requestMessage).toContain("通用知识题");
+    expect(requestMessage).toContain("可以优先基于你已有的稳定知识直接回答");
+  });
+
   it("passes submitted image attachments into local model context", async () => {
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
@@ -1067,7 +1141,8 @@ describe("App chat fallback", () => {
 
     const pending = screen.getByLabelText("assistant-pending");
     expect(within(pending).getByText("正在思考")).toBeInTheDocument();
-    expect(within(pending).getByText(/Ollama 已连接，正在等待首轮输出，已等待约 \d+ 秒。/)).toBeInTheDocument();
+    expect(within(pending).getByText("正在准备回复…")).toBeInTheDocument();
+    expect(within(pending).queryByRole("progressbar", { name: "预计开始回复" })).not.toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).not.toBeInTheDocument();
     expect(screen.queryByText("本地模型对话失败")).not.toBeInTheDocument();
     expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(1);
@@ -1117,7 +1192,8 @@ describe("App chat fallback", () => {
     });
 
     pending = screen.getByLabelText("assistant-pending");
-    expect(within(pending).getByText(/Ollama 已连接，正在等待首轮输出，已等待约 \d+ 秒。/)).toBeInTheDocument();
+    expect(within(pending).getByText("正在准备回复…")).toBeInTheDocument();
+    expect(within(pending).queryByRole("progressbar", { name: "预计开始回复" })).not.toBeInTheDocument();
 
     await act(async () => {
       emitChunk?.("第一段，");
@@ -1605,8 +1681,8 @@ describe("App chat fallback", () => {
     await waitFor(() => {
       expect(screen.getByText(/第一段/)).toBeInTheDocument();
     });
-    expect(screen.queryAllByText(/已自动续写到安全上限/).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/如仍缺少后续内容，可以发送“继续”或缩小范围后重试/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/已自动续写到安全上限/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/如仍缺少后续内容，可以发送“继续”或缩小范围后重试/)).not.toBeInTheDocument();
   });
 
   it("continues a bounded length-limit local-model answer with prior context", async () => {
@@ -1638,7 +1714,7 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/已自动续写到安全上限/)).toBeInTheDocument();
+      expect(screen.getByText(/第三段/)).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
@@ -1692,7 +1768,7 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/已自动续写到安全上限/)).toBeInTheDocument();
+      expect(screen.getByText(/第三段/)).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
@@ -1745,7 +1821,7 @@ describe("App chat fallback", () => {
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/已自动续写到安全上限/)).toBeInTheDocument();
+      expect(screen.getByText(/第三段/)).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {

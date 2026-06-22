@@ -123,6 +123,7 @@ export type RecentConversationRecord = {
   title: string;
   summary: string;
   entries: ConversationEntry[];
+  npcId?: string | null;
   archivedAt?: string | null;
 };
 
@@ -244,6 +245,7 @@ export type WorkbenchState = {
   conversation: {
     id?: string;
     entries: ConversationEntry[];
+    npcId?: string | null;
     mode?: ConversationMode;
     restoredFromConversationId?: string | null;
   };
@@ -313,6 +315,11 @@ export type WorkbenchState = {
     summary: string;
   };
   settings: {
+    ollama: {
+      longAnswerNumPredict: number;
+      autoContinuationLimit: number;
+      continuationTailLimit: number;
+    };
     remoteApi: {
       collapsed: boolean;
       enabled: boolean;

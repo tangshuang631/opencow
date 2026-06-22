@@ -35,6 +35,7 @@ export {
 } from "./workbenchState.network";
 export {
   createModelSelectedState,
+  createOllamaSettingsState,
   createNpcLocalModelSelectedState,
   getChatCapableOllamaModels,
   mergeOllamaOverview,

@@ -46,7 +46,7 @@ describe("Inspector", () => {
     expect(screen.getByLabelText("右侧面板")).toBeInTheDocument();
     expect(screen.getByText("任务单")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "展开变更" })).toBeInTheDocument();
-    expect(screen.getByText("还没有任务，发一条消息后会在这里生成任务单。")).toBeInTheDocument();
+    expect(screen.queryByText("还没有任务，发一条消息后会在这里生成任务单。")).not.toBeInTheDocument();
     expect(screen.getByText("暂无变更")).toBeInTheDocument();
     expect(screen.queryByText("当前还没有本地文件变更。")).not.toBeInTheDocument();
     expect(screen.queryByText("输出")).not.toBeInTheDocument();
@@ -63,9 +63,8 @@ describe("Inspector", () => {
 
     renderInspector(running);
 
-    expect(screen.getByText("还没有任务，发一条消息后会在这里生成任务单。")).toBeInTheDocument();
     expect(screen.queryByText(/任务摘要：/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "停止" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "停止" })).not.toBeInTheDocument();
   });
 
   it("hides the task sheet when no processed planning summary can be produced for a long raw input", () => {
@@ -79,7 +78,7 @@ describe("Inspector", () => {
 
     renderInspector(running);
 
-    expect(screen.getByText("还没有任务，发一条消息后会在这里生成任务单。")).toBeInTheDocument();
+    expect(screen.queryByText("还没有任务，发一条消息后会在这里生成任务单。")).not.toBeInTheDocument();
     expect(screen.queryByText(/任务摘要：/)).not.toBeInTheDocument();
     expect(screen.queryByText(/这是一个没有明确动作词/)).not.toBeInTheDocument();
   });
@@ -127,7 +126,7 @@ describe("Inspector", () => {
     renderInspector(completed);
 
     expect(screen.getByText("3 个文件")).toBeInTheDocument();
-    expect(screen.getByText("改动 2 · 新增 1")).toBeInTheDocument();
+    expect(screen.getAllByText("变更").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "展开变更" }));
 
@@ -146,6 +145,22 @@ describe("Inspector", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "展开变更" }));
 
-    expect(screen.getByText("当前还没有本地文件变更。")).toBeInTheDocument();
+    expect(screen.getByText("当前没有新的本地文件改动。")).toBeInTheDocument();
+  });
+
+  it("shows compact added and removed line stats when the assistant result includes real diff numbers", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "整理变更摘要"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "变更整理完成",
+      resultSummary:
+        "变更路径：apps/desktop/src/app/App.tsx。 新增 117,043 行，删除 4,679 行。"
+    });
+
+    renderInspector(completed);
+
+    expect(screen.getByText("+117,043")).toBeInTheDocument();
+    expect(screen.getByText("-4,679")).toBeInTheDocument();
   });
 });

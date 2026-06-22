@@ -36,6 +36,8 @@ export type OllamaChatRequest = {
   requestId?: string;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
+  longAnswerNumPredict?: number;
+  autoContinuationLimit?: number;
 };
 
 export type OllamaChatResult = {
@@ -124,7 +126,9 @@ export async function chatWithOllamaModel(request: OllamaChatRequest): Promise<O
         requestId: request.requestId,
         signal: request.signal,
         onChunk: request.onChunk,
-        lengthLimitOnly: true
+        lengthLimitOnly: true,
+        longAnswerNumPredict: request.longAnswerNumPredict,
+        autoContinuationLimit: request.autoContinuationLimit
       });
       assertOllamaChatNotAborted(request.signal);
       for (
@@ -165,7 +169,9 @@ export async function chatWithOllamaModel(request: OllamaChatRequest): Promise<O
           requestId: request.requestId,
           signal: request.signal,
           onChunk: request.onChunk,
-          lengthLimitOnly: true
+          lengthLimitOnly: true,
+          longAnswerNumPredict: request.longAnswerNumPredict,
+          autoContinuationLimit: request.autoContinuationLimit
         });
         assertOllamaChatNotAborted(request.signal);
 
@@ -213,7 +219,9 @@ export async function chatWithOllamaModel(request: OllamaChatRequest): Promise<O
         requestId: request.requestId,
         signal: request.signal,
         onChunk: request.onChunk,
-        lengthLimitOnly: true
+        lengthLimitOnly: true,
+        longAnswerNumPredict: request.longAnswerNumPredict,
+        autoContinuationLimit: request.autoContinuationLimit
       });
       assertOllamaChatNotAborted(request.signal);
       for (
@@ -252,7 +260,9 @@ export async function chatWithOllamaModel(request: OllamaChatRequest): Promise<O
           requestId: request.requestId,
           signal: request.signal,
           onChunk: request.onChunk,
-          lengthLimitOnly: true
+          lengthLimitOnly: true,
+          longAnswerNumPredict: request.longAnswerNumPredict,
+          autoContinuationLimit: request.autoContinuationLimit
         });
         assertOllamaChatNotAborted(request.signal);
 
@@ -287,7 +297,9 @@ export async function chatWithOllamaModel(request: OllamaChatRequest): Promise<O
     initialResult: firstResult,
     requestId: request.requestId,
     signal: request.signal,
-    onChunk: request.onChunk
+    onChunk: request.onChunk,
+    longAnswerNumPredict: request.longAnswerNumPredict,
+    autoContinuationLimit: request.autoContinuationLimit
   });
 }
 
@@ -299,6 +311,8 @@ async function continueOllamaChatResultIfNeeded(payload: {
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
   lengthLimitOnly?: boolean;
+  longAnswerNumPredict?: number;
+  autoContinuationLimit?: number;
 }): Promise<OllamaChatResult> {
   assertOllamaChatNotAborted(payload.signal);
   if (payload.lengthLimitOnly && payload.initialResult.doneReason !== "length") {
@@ -318,15 +332,21 @@ async function continueOllamaChatResultIfNeeded(payload: {
   let mergedMessage = payload.initialResult.message;
   let latestModel = payload.initialResult.model;
   let latestDoneReason = payload.initialResult.doneReason;
+  const autoContinuationLimit = Math.min(
+    8,
+    Math.max(1, Math.round(payload.autoContinuationLimit ?? MAX_OLLAMA_LENGTH_LIMIT_CALLS))
+  );
 
-  for (let callCount = 1; continuationPrompt && callCount < MAX_OLLAMA_LENGTH_LIMIT_CALLS; callCount += 1) {
+  for (let callCount = 1; continuationPrompt && callCount < autoContinuationLimit; callCount += 1) {
     assertOllamaChatNotAborted(payload.signal);
     const continuationResult = await sendOllamaChatRequest({
       model: payload.model,
       message: continuationPrompt,
       requestId: payload.requestId,
       signal: payload.signal,
-      onChunk: payload.onChunk
+      onChunk: payload.onChunk,
+      longAnswerNumPredict: payload.longAnswerNumPredict,
+      autoContinuationLimit
     });
     assertOllamaChatNotAborted(payload.signal);
     latestModel = continuationResult.model;
@@ -375,7 +395,7 @@ async function sendOllamaChatRequest(request: OllamaChatRequest): Promise<Ollama
           message: request.message,
           images: request.images,
           requestId: request.requestId,
-          numPredict: getOllamaChatNumPredict(request.message),
+          numPredict: getOllamaChatNumPredict(request.message, request.longAnswerNumPredict),
           timeoutMs: getOllamaChatTimeoutMs(request.message),
           think: false
         }
@@ -502,7 +522,7 @@ async function chatFromBrowserPreview(request: OllamaChatRequest): Promise<Ollam
       model: request.model,
       messages: createOllamaChatMessages(request.message, request.images),
       options: {
-        num_predict: getOllamaChatNumPredict(request.message)
+        num_predict: getOllamaChatNumPredict(request.message, request.longAnswerNumPredict)
       },
       think: false,
       stream: true
@@ -665,9 +685,9 @@ function formatOllamaHttpError(status: number, body: string): string {
     : `Ollama chat failed with HTTP ${status}`;
 }
 
-function getOllamaChatNumPredict(message: string): number {
+function getOllamaChatNumPredict(message: string, longAnswerNumPredict?: number): number {
   return shouldUseLongOllamaOutputBudget(message)
-    ? LONG_OLLAMA_CHAT_NUM_PREDICT
+    ? Math.min(16384, Math.max(1024, Math.round(longAnswerNumPredict ?? LONG_OLLAMA_CHAT_NUM_PREDICT)))
     : DEFAULT_OLLAMA_CHAT_NUM_PREDICT;
 }
 

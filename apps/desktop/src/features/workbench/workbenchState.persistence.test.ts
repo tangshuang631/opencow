@@ -158,8 +158,26 @@ describe("workbenchState.persistence", () => {
       ...createInitialWorkbenchState(),
       conversation: {
         entries: currentEntries,
+        npcId: "research-bot",
         mode: "restored" as const,
         restoredFromConversationId: "recent-conversation-1"
+      },
+      npcWorkspace: {
+        ...createInitialWorkbenchState().npcWorkspace,
+        items: [
+          {
+            id: "research-bot",
+            name: "研究助手",
+            description: "负责资料整理",
+            defaultModel: "qwen2.5-coder:7b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          }
+        ]
       },
       history: {
         lastNonEmptyConversationEntries: currentEntries,
@@ -168,7 +186,8 @@ describe("workbenchState.persistence", () => {
             id: "recent-conversation-1",
             title: "恢复这段历史会话",
             summary: "恢复后刷新也应保持恢复态。",
-            entries: currentEntries
+            entries: currentEntries,
+            npcId: "research-bot"
           }
         ],
         archivedConversations: []
@@ -180,8 +199,38 @@ describe("workbenchState.persistence", () => {
     const restored = await loadPersistedWorkbenchState();
 
     expect(restored.conversation.entries[0]?.summary).toBe("恢复这段历史会话");
+    expect(restored.conversation.npcId).toBe("research-bot");
     expect(restored.conversation.mode).toBe("restored");
     expect(restored.conversation.restoredFromConversationId).toBe("recent-conversation-1");
+  });
+
+  it("drops a persisted conversation NPC when that NPC no longer exists", async () => {
+    const persistedState = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        ...createInitialWorkbenchState().conversation,
+        npcId: "missing-bot"
+      },
+      history: {
+        ...createInitialWorkbenchState().history,
+        draftConversations: [
+          {
+            id: "recent-conversation-1",
+            title: "旧 NPC 会话",
+            summary: "应当静默回退。",
+            entries: [],
+            npcId: "missing-bot"
+          }
+        ]
+      }
+    };
+
+    await persistWorkbenchState(persistedState);
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.conversation.npcId).toBeNull();
+    expect(restored.history.draftConversations[0]?.npcId).toBeNull();
   });
 
   it("restores persisted conversation attachments after reload", async () => {
@@ -206,6 +255,28 @@ describe("workbenchState.persistence", () => {
     const restored = await loadPersistedWorkbenchState();
 
     expect(restored.conversation.entries[0]?.attachments?.[0]?.name).toBe("capture.png");
+  });
+
+  it("restores persisted ollama long-answer settings after reload", async () => {
+    const persistedState = {
+      ...createInitialWorkbenchState(),
+      settings: {
+        ...createInitialWorkbenchState().settings,
+        ollama: {
+          longAnswerNumPredict: 12288,
+          autoContinuationLimit: 7,
+          continuationTailLimit: 3600
+        }
+      }
+    };
+
+    await persistWorkbenchState(persistedState);
+
+    const restored = await loadPersistedWorkbenchState();
+
+    expect(restored.settings.ollama.longAnswerNumPredict).toBe(12288);
+    expect(restored.settings.ollama.autoContinuationLimit).toBe(7);
+    expect(restored.settings.ollama.continuationTailLimit).toBe(3600);
   });
 
   it("deduplicates repeated draft conversations during persistence restore", async () => {

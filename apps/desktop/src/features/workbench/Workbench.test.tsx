@@ -266,6 +266,7 @@ function createWorkbenchProps(
     onCleanupStorage: noop,
     onToggleRemoteApi: noop,
     onToggleSearch: noop,
+    onSaveOllamaConfig: noop,
     onSaveRemoteApiConfig: noop,
     onSaveSearchProviderConfig: noop,
     onSelectModel: noop,
@@ -1957,6 +1958,69 @@ describe("Workbench", () => {
     expect(screen.getByRole("button", { name: "打开会话：之前的旧会话" })).toBeInTheDocument();
   });
 
+  it("shows the conversation NPC bar and switches explicit NPC activation without affecting editor selection semantics", async () => {
+    const onSelectConversationNpc = vi.fn();
+    const state = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        ...createInitialWorkbenchState().conversation,
+        npcId: null
+      },
+      npcWorkspace: {
+        ...createInitialWorkbenchState().npcWorkspace,
+        selectedNpcId: "writer-bot",
+        items: [
+          {
+            id: "research-bot",
+            name: "研究助手",
+            description: "负责资料整理",
+            defaultModel: "qwen2.5-coder:7b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          },
+          {
+            id: "writer-bot",
+            name: "写作助手",
+            description: "负责整理输出",
+            defaultModel: "qwen2.5-coder:7b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          }
+        ]
+      }
+    };
+
+    const { rerender } = render(<Workbench {...createWorkbenchProps(state, { onSelectConversationNpc })} />);
+
+    expect(screen.getByText("未启用 NPC")).toBeInTheDocument();
+    await click(screen.getByRole("button", { name: "会话 NPC" }));
+    await click(screen.getByRole("menuitemradio", { name: "研究助手" }));
+
+    expect(onSelectConversationNpc).toHaveBeenCalledWith("research-bot");
+
+    rerender(<Workbench {...createWorkbenchProps({
+      ...state,
+      conversation: {
+        ...state.conversation,
+        npcId: "research-bot"
+      }
+    }, { onSelectConversationNpc })} />);
+
+    expect(screen.getByText("当前 NPC：研究助手")).toBeInTheDocument();
+    await click(screen.getByRole("button", { name: "会话 NPC" }));
+    await click(screen.getByRole("menuitemradio", { name: "不使用 NPC" }));
+
+    expect(onSelectConversationNpc).toHaveBeenCalledWith(null);
+  });
+
   it("asks for confirmation in-app before permanently deleting a conversation from the cluster", async () => {
     const onDeleteRecentConversation = vi.fn();
     const state = {
@@ -2107,6 +2171,26 @@ describe("Workbench", () => {
     expect(within(settingsPanel).getByRole("button", { name: "20 段" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("button", { name: "清空会话" })).toBeInTheDocument();
     expect(within(settingsPanel).getByRole("button", { name: "清空知识库索引" })).toBeInTheDocument();
+    expect(within(settingsPanel).getByRole("spinbutton", { name: "长回答输出预算" })).toBeInTheDocument();
+    expect(within(settingsPanel).getByRole("spinbutton", { name: "自动续写次数上限" })).toBeInTheDocument();
+    expect(within(settingsPanel).getByRole("spinbutton", { name: "续写参考尾部长度" })).toBeInTheDocument();
+  });
+
+  it("saves configurable ollama long-answer settings from settings", async () => {
+    const onSaveOllamaConfig = vi.fn();
+    render(<Workbench {...createWorkbenchProps(createInitialWorkbenchState(), { onSaveOllamaConfig })} />);
+
+    await click(screen.getByRole("button", { name: "设置" }));
+    await change(screen.getByRole("spinbutton", { name: "长回答输出预算" }), "12288");
+    await change(screen.getByRole("spinbutton", { name: "自动续写次数上限" }), "7");
+    await change(screen.getByRole("spinbutton", { name: "续写参考尾部长度" }), "3600");
+    await click(screen.getByRole("button", { name: "保存长回答设置" }));
+
+    expect(onSaveOllamaConfig).toHaveBeenCalledWith({
+      longAnswerNumPredict: 12288,
+      autoContinuationLimit: 7,
+      continuationTailLimit: 3600
+    });
   });
 
   it("disables the archive action while the current conversation is still a blank draft", () => {

@@ -218,6 +218,7 @@ export function createUserTaskSubmittedState(
       conversation: {
         ...state.conversation,
         id: state.conversation.id || (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`),
+        npcId: state.conversation.npcId ?? null,
         mode: "history",
         restoredFromConversationId: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`,
         entries: payload.preserveExistingUserMessage
@@ -260,6 +261,7 @@ export function createUserTaskSubmittedState(
                   attachments: normalizedAttachments,
                   rollbackTargetId: nextTaskId
                 }),
+            npcId: state.conversation.npcId ?? null,
             archivedAt: null
           },
           ...state.history.draftConversations.filter((item) => item.id !== (state.conversation.id || (state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount + 1}`)))

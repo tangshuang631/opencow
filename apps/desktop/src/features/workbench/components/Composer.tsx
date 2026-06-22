@@ -16,6 +16,7 @@ type ComposerProps = {
   onSubmitTask: (message: string, attachments?: ChatAttachment[]) => void;
   onCancelActiveTask: () => void;
   onSelectModel: (modelName: string) => void;
+  onSelectConversationNpc?: (npcId: string | null) => void;
   onSelectNpcModel?: (modelName: string) => void;
   onOpenModelSettings?: (target: "ollama" | "remote-api") => void;
   onAddAttachments?: (attachments: ChatAttachment[]) => void;
@@ -31,6 +32,11 @@ const TEXT = {
   selectModel: "\u9009\u62e9\u6a21\u578b",
   configureOllama: "\u914d\u7f6e Ollama",
   configureRemoteApi: "\u914d\u7f6e\u5927\u6a21\u578b API",
+  conversationNpc: "会话 NPC",
+  noNpc: "未启用 NPC",
+  usingNpc: "当前 NPC",
+  switchNpc: "切换",
+  disableNpc: "不使用 NPC",
   addingAttachments: "正在添加附件…",
   stopTask: "\u505c\u6b62\u4efb\u52a1",
   send: "\u53d1\u9001"
@@ -80,6 +86,7 @@ export function Composer({
   onSubmitTask,
   onCancelActiveTask,
   onSelectModel,
+  onSelectConversationNpc,
   onSelectNpcModel,
   onOpenModelSettings,
   onAddAttachments,
@@ -87,6 +94,7 @@ export function Composer({
 }: ComposerProps) {
   const [draft, setDraft] = useState("");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [conversationNpcMenuOpen, setConversationNpcMenuOpen] = useState(false);
   const [isDragActive, setIsDragActive] = useState(false);
   const [localDraftAttachments, setLocalDraftAttachments] = useState<ChatAttachment[]>([]);
   const [pendingAttachmentImportCount, setPendingAttachmentImportCount] = useState(0);
@@ -99,6 +107,9 @@ export function Composer({
   const modelSetupPrompt = getModelSetupPrompt(state);
   const visibleDraftAttachments = mergeAttachments(state.composer.draftAttachments, localDraftAttachments);
   const isImportingAttachments = pendingAttachmentImportCount > 0;
+  const activeConversationNpc = state.conversation.npcId
+    ? state.npcWorkspace.items.find((item) => item.id === state.conversation.npcId) ?? null
+    : null;
 
   useEffect(() => {
     if (localDraftAttachments.length === 0) {
@@ -181,6 +192,59 @@ export function Composer({
     <footer className="composer-shell">
       <div className="composer-meta">
         <span>{getComposerStatusLine(state)}</span>
+      </div>
+      <div className="composer-session-row">
+        <span className="composer-session-label">{TEXT.conversationNpc}</span>
+        <div className="composer-session-picker">
+          <button
+            type="button"
+            className="composer-session-button"
+            aria-expanded={conversationNpcMenuOpen}
+            aria-haspopup="menu"
+            aria-label={TEXT.conversationNpc}
+            onClick={() => setConversationNpcMenuOpen((open) => !open)}
+          >
+            <span>{activeConversationNpc ? `${TEXT.usingNpc}：${activeConversationNpc.name}` : TEXT.noNpc}</span>
+            <span className="composer-session-action">{TEXT.switchNpc}</span>
+          </button>
+          {conversationNpcMenuOpen ? (
+            <div role="menu" aria-label="会话 NPC 选择" className="composer-session-menu">
+              <button
+                type="button"
+                role="menuitemradio"
+                aria-checked={!activeConversationNpc}
+                className={`composer-session-item ${!activeConversationNpc ? "composer-session-item-selected" : ""}`}
+                onClick={() => {
+                  onSelectConversationNpc?.(null);
+                  setConversationNpcMenuOpen(false);
+                }}
+              >
+                <span>{TEXT.disableNpc}</span>
+                {!activeConversationNpc ? <Check aria-hidden="true" size={16} /> : null}
+              </button>
+              {state.npcWorkspace.items.map((npc) => {
+                const selected = npc.id === activeConversationNpc?.id;
+
+                return (
+                  <button
+                    key={npc.id}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={selected}
+                    className={`composer-session-item ${selected ? "composer-session-item-selected" : ""}`}
+                    onClick={() => {
+                      onSelectConversationNpc?.(npc.id);
+                      setConversationNpcMenuOpen(false);
+                    }}
+                  >
+                    <span>{npc.name}</span>
+                    {selected ? <Check aria-hidden="true" size={16} /> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
       {modelSetupPrompt ? (
         <div className="composer-setup-prompt">

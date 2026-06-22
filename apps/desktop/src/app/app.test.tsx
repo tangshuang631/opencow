@@ -231,6 +231,11 @@ async function openSidebarDestination(name: string) {
   await click(screen.getByRole("button", { name }));
 }
 
+async function selectConversationNpc(name: string) {
+  await click(screen.getByRole("button", { name: "会话 NPC" }));
+  await click(await screen.findByRole("menuitemradio", { name }));
+}
+
 function submitComposerMessageFast(message: string) {
   fireEvent.change(getComposerInput(), {
     target: { value: message }
@@ -265,6 +270,7 @@ describe("App", () => {
     loadWorkspacePackagesOverviewMock.mockReset();
     loadWorkspaceConfigOverviewMock.mockReset();
     searchLocalKnowledgeMock.mockReset();
+    searchNetworkMock.mockReset();
     scanLocalSkillsMock.mockReset();
     inspectLocalSkillMock.mockReset();
     scanLocalMcpPluginsMock.mockReset();
@@ -630,6 +636,244 @@ describe("App", () => {
     const npcNavigation = await screen.findByLabelText("NPC 配置导航");
     expect(within(npcNavigation).getByText("资料研究员")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "NPC 简介" })).toHaveValue("真实详情说明");
+  });
+
+  it("uses the selected NPC model and persona context for ordinary chat", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [
+        { name: "qwen3.6:35b", sizeLabel: "20 GB" },
+        { name: "deepseek-r1:14b", sizeLabel: "9 GB" }
+      ]
+    });
+    const npcConfig = {
+      id: "research-bot",
+      name: "研究助手",
+      description: "负责核验外部资料并整理答案",
+      defaultModel: "deepseek-r1:14b",
+      personaTitle: "事实核验官",
+      personaPrompt: "先核验事实，再给出简洁中文结论。",
+      outputStyle: "分点简洁",
+      agentDraft: "优先拆分结论、依据和下一步。",
+      rulesDraft: "不要虚构未安装技能。",
+      enabledSkillNames: ["本地检索增强"],
+      knowledgeLibraryIds: [],
+      updatedAt: "2026-06-22T10:00:00.000Z"
+    };
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [npcConfig]
+    });
+    loadNpcWorkspaceConfigMock.mockResolvedValueOnce(npcConfig);
+    scanLocalSkillsMock.mockResolvedValueOnce({
+      summary: "loaded",
+      total_count: 1,
+      scanned_root_count: 1,
+      items: [
+        {
+          name: "本地检索增强",
+          path: "skills/rag/SKILL.md",
+          source: "workspace",
+          description: "读取本地文档并补充事实片段",
+          enabled: true
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "deepseek-r1:14b",
+      message: "已按 NPC 规则完成回答。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("research-bot");
+    });
+    expect(screen.getByText("未启用 NPC")).toBeInTheDocument();
+    await selectConversationNpc("研究助手");
+    expect(screen.getByText("当前 NPC：研究助手")).toBeInTheDocument();
+    await submitComposerMessage("帮我整理一下这段说明");
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("已按 NPC 规则完成回答。")).toBeInTheDocument();
+    });
+
+    expect(scanLocalSkillsMock).toHaveBeenCalled();
+    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith("帮我整理一下这段说明");
+    expect(chatWithOllamaModelMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      model: "deepseek-r1:14b",
+      message: expect.stringContaining("当前会话已进入 NPC 工作态")
+    }));
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
+    expect(prompt).toContain("事实核验官");
+    expect(prompt).toContain("先核验事实，再给出简洁中文结论");
+    expect(prompt).toContain("不要虚构未安装技能");
+    expect(prompt).toContain("本地检索增强 | 读取本地文档并补充事实片段");
+  });
+
+  it("aggregates local knowledge only from the selected NPC bound libraries during ordinary chat", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    const npcConfig = {
+      id: "research-bot",
+      name: "研究助手",
+      description: "负责结合产品资料整理答案",
+      defaultModel: "qwen3.6:35b",
+      personaTitle: "产品整理助手",
+      personaPrompt: "只根据绑定知识库整理结论。",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: [],
+      knowledgeLibraryIds: ["product-docs", "rules-library"],
+      updatedAt: "2026-06-22T11:00:00.000Z"
+    };
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [npcConfig]
+    });
+    loadNpcWorkspaceConfigMock.mockResolvedValueOnce(npcConfig);
+    searchLocalKnowledgeMock
+      .mockResolvedValueOnce({
+        query: "总结这个产品的回答规则",
+        summary: "product docs matched",
+        match_count: 1,
+        indexed_document_count: 2,
+        items: [
+          {
+            path: "knowledge/product/prd.md",
+            title: "prd.md",
+            snippet: "产品回答要先给结论，再给操作建议。",
+            score: 56
+          }
+        ]
+      })
+      .mockResolvedValueOnce({
+        query: "总结这个产品的回答规则",
+        summary: "rules library matched",
+        match_count: 1,
+        indexed_document_count: 1,
+        items: [
+          {
+            path: "knowledge/rules/answer-rules.md",
+            title: "answer-rules.md",
+            snippet: "回答里不要泄露调试过程，输出要中文简洁。",
+            score: 48
+          }
+        ]
+      });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "我已结合产品文档和规则库整理回答。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("research-bot");
+    });
+    await selectConversationNpc("研究助手");
+    await submitComposerMessage("总结这个产品的回答规则");
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("我已结合产品文档和规则库整理回答。")).toBeInTheDocument();
+    });
+
+    expect(searchLocalKnowledgeMock).toHaveBeenNthCalledWith(1, "总结这个产品的回答规则", { libraryId: "product-docs" });
+    expect(searchLocalKnowledgeMock).toHaveBeenNthCalledWith(2, "总结这个产品的回答规则", { libraryId: "rules-library" });
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
+    expect(prompt).toContain("当前 NPC 已绑定知识库数量：2");
+    expect(prompt).toContain("prd.md");
+    expect(prompt).toContain("answer-rules.md");
+  });
+
+  it("keeps using the conversation NPC after switching the NPC workspace editor to another card", async () => {
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [
+        { name: "qwen3.6:35b", sizeLabel: "20 GB" },
+        { name: "deepseek-r1:14b", sizeLabel: "9 GB" }
+      ]
+    });
+    const researchNpc = {
+      id: "research-bot",
+      name: "研究助手",
+      description: "负责核验外部资料并整理答案",
+      defaultModel: "deepseek-r1:14b",
+      personaTitle: "事实核验官",
+      personaPrompt: "先核验事实，再给出简洁中文结论。",
+      outputStyle: "分点简洁",
+      agentDraft: "优先拆分结论、依据和下一步。",
+      rulesDraft: "不要虚构未安装技能。",
+      enabledSkillNames: [],
+      knowledgeLibraryIds: [],
+      updatedAt: "2026-06-22T10:00:00.000Z"
+    };
+    const writerNpc = {
+      id: "writer-bot",
+      name: "写作助手",
+      description: "负责整理输出",
+      defaultModel: "qwen3.6:35b",
+      personaTitle: "成稿编辑",
+      personaPrompt: "负责把内容整理成最终文案。",
+      outputStyle: "简洁",
+      agentDraft: "",
+      rulesDraft: "",
+      enabledSkillNames: [],
+      knowledgeLibraryIds: [],
+      updatedAt: "2026-06-22T11:00:00.000Z"
+    };
+    loadNpcWorkspaceMock.mockResolvedValueOnce({
+      summary: "loaded",
+      selectedNpcId: "research-bot",
+      items: [researchNpc, writerNpc]
+    });
+    loadNpcWorkspaceConfigMock.mockImplementation(async (npcId: string) => (
+      npcId === "writer-bot" ? writerNpc : researchNpc
+    ));
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "deepseek-r1:14b",
+      message: "仍然按研究助手执行。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("research-bot");
+    });
+    await selectConversationNpc("研究助手");
+    await click(screen.getByRole("button", { name: "NPC" }));
+    await click(await screen.findByRole("button", { name: "写作助手" }));
+    await waitFor(() => {
+      expect(loadNpcWorkspaceConfigMock).toHaveBeenCalledWith("writer-bot");
+    });
+    await click(screen.getByRole("button", { name: "会话" }));
+    expect(screen.getByText("当前 NPC：研究助手")).toBeInTheDocument();
+    await submitComposerMessage("继续整理");
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText("仍然按研究助手执行。")).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      model: "deepseek-r1:14b",
+      message: expect.stringContaining("事实核验官")
+    }));
   });
 
   it("shows the close confirmation overlay when the native desktop close event is emitted", async () => {
@@ -1582,6 +1826,116 @@ describe("App", () => {
     });
   }, 10_000);
 
+  it("forces a freshness question through network search after search is enabled", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "文心一言最新的模型是什么",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "文心一言模型更新",
+          url: "https://example.com/ernie-update",
+          source_label: "百度智能云",
+          summary: "文心一言近期模型更新说明。"
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "我已结合联网来源整理文心一言近期模型信息。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.click(screen.getByRole("button", { name: "会话" }));
+
+    await user.type(getComposerInput(), "文心一言最新的模型是什么");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(searchNetworkMock).toHaveBeenCalledWith("文心一言最新的模型是什么", expect.objectContaining({
+        providerLabel: ""
+      }));
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining("联网搜索参考")
+      }));
+      expect(within(getConversationRegion()).getByText("我已结合联网来源整理文心一言近期模型信息。")).toBeInTheDocument();
+    });
+  }, 10_000);
+
+  it("asks to enable network search before answering a freshness question when search is disabled and continues after approval", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "文心一言最新的模型是什么",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "文心一言模型更新",
+          url: "https://example.com/ernie-update",
+          source_label: "百度智能云",
+          summary: "文心一言近期模型更新说明。"
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "我已结合联网来源继续回答这条时效性问题。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.type(getComposerInput(), "文心一言最新的模型是什么");
+    await user.click(getComposerSendButton());
+
+    const pendingConfirmationLabels = await screen.findAllByText("等待高风险确认");
+    expect(pendingConfirmationLabels.length).toBeGreaterThan(0);
+    expect(
+      screen.getByText("这是时效性问题，需要先确认开启联网搜索，避免本地模型直接回答过时或不准确的最新信息。")
+    ).toBeInTheDocument();
+
+    const searchCallsBeforeApproval = searchNetworkMock.mock.calls.length;
+    const modelCallsBeforeApproval = chatWithOllamaModelMock.mock.calls.length;
+
+    await approveDangerousConfirmation();
+
+    await waitFor(() => {
+      expect(searchNetworkMock.mock.calls.length).toBe(searchCallsBeforeApproval + 1);
+      expect(chatWithOllamaModelMock.mock.calls.length).toBe(modelCallsBeforeApproval + 1);
+      expect(searchNetworkMock).toHaveBeenCalledWith("文心一言最新的模型是什么", expect.objectContaining({
+        providerLabel: ""
+      }));
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining("联网搜索参考")
+      }));
+      expect(within(getConversationRegion()).getByText("我已结合联网来源继续回答这条时效性问题。")).toBeInTheDocument();
+    });
+  }, 10_000);
+
   it("does not keep unrelated old search sources in a later ordinary chat reply", async () => {
     const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
@@ -1660,6 +2014,9 @@ describe("App", () => {
     await user.click(within(getConversationRegion()).getByRole("button", { name: "展开信息引用" }));
     expect(within(getConversationRegion()).getByText("联网搜索来源")).toBeInTheDocument();
     expect(
+      within(getConversationRegion()).getByRole("button", { name: "打开来源：Hugging Face" })
+    ).toBeInTheDocument();
+    expect(
       within(getConversationRegion()).getByRole("button", { name: "打开条目：Transformers CLI" })
     ).toBeInTheDocument();
   }, 10_000);
@@ -1722,11 +2079,44 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("这次我只能基于已有知识谨慎回答。")).toBeInTheDocument();
     });
 
-    const secondPrompt = chatWithOllamaModelMock.mock.calls[1]?.[0]?.message ?? "";
+    const secondPrompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(secondPrompt).toContain("联网搜索已开启，但本轮没有可用外部来源");
     expect(secondPrompt).not.toContain("豆包官网");
     expect(secondPrompt).not.toContain("https://www.doubao.com/");
     expect(within(getConversationRegion()).queryByText("1 条信息引用")).not.toBeInTheDocument();
+  }, 10_000);
+
+  it("fails a freshness question when network search is enabled but the current round still has no usable sources", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockRejectedValueOnce(new Error("OpenCow 默认搜索当前不可用"));
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.click(screen.getByRole("button", { name: "会话" }));
+
+    await user.type(getComposerInput(), "文心一言最新的模型是什么");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(searchNetworkMock).toHaveBeenCalledWith("文心一言最新的模型是什么", expect.objectContaining({
+        providerLabel: ""
+      }));
+      expect(chatWithOllamaModelMock).not.toHaveBeenCalled();
+      expect(within(getConversationRegion()).getByText("本地模型对话失败")).toBeInTheDocument();
+      expect(within(getConversationRegion()).queryByText("1 条信息引用")).not.toBeInTheDocument();
+      expect(within(getConversationRegion()).queryByText("本地模型答复")).not.toBeInTheDocument();
+    });
   }, 10_000);
 
   it("combines local RAG hits with ordinary chat context when search is enabled but no external source is available", async () => {
@@ -1773,7 +2163,7 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("享元模式会共享内部状态，并把外部状态交给调用方传入。")).toBeInTheDocument();
     });
 
-    const prompt = chatWithOllamaModelMock.mock.calls[0]?.[0]?.message ?? "";
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(searchLocalKnowledgeMock).toHaveBeenCalledWith("享元模式的内部状态和外部状态是什么");
     expect(prompt).toContain("本地知识库参考");
     expect(prompt).toContain("联网搜索已开启，但本轮没有可用外部来源");
@@ -1979,10 +2369,108 @@ describe("App", () => {
 
     const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(prompt).toContain("事实片段");
-    expect(prompt).toContain("豆包提供智能问答能力。");
-    expect(prompt).toContain("豆包支持写作辅助。");
-    expect(prompt).toContain("豆包覆盖多场景助手能力。");
-    expect(prompt).not.toContain("这是一段较长的综合摘要，可能混合介绍、评价和解释。");
+    expect(prompt).toContain("事实片段1：豆包提供智能问答能力");
+    expect(prompt).toContain("事实片段2：豆包支持写作辅助");
+    expect(prompt).toContain("事实片段3：豆包覆盖多场景助手能力");
+    expect(prompt).not.toContain("summary=这是一段较长的综合摘要，可能混合介绍、评价和解释。");
+  }, 10_000);
+
+  it("tells the model to keep source names out of the main answer body when network references are present", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "智谱最新模型是什么",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "GLM-5.2 正式发布",
+          url: "https://www.bigmodel.cn/dev/news/glm-5-2-release",
+          source_label: "智谱开放平台",
+          summary: "GLM-5.2 是智谱发布的新一代模型。",
+          fact_snippets: ["GLM-5.2 是智谱发布的新一代模型。"]
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "GLM-5.2 是智谱目前较新的模型。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.click(screen.getByRole("button", { name: "会话" }));
+    await user.type(getComposerInput(), "智谱最新模型是什么");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+    });
+
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
+    expect(prompt).toContain("不要写“根据提供的来源”“来自某某来源”");
+    expect(prompt).toContain("不要在正文逐条点名 Sohu、Toutiao");
+  }, 10_000);
+
+  it("removes explicit source-name phrasing from the visible assistant answer body", async () => {
+    const user = setupUser();
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "智谱最新模型是什么",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "GLM-5.2 正式发布",
+          url: "https://www.bigmodel.cn/dev/news/glm-5-2-release",
+          source_label: "智谱开放平台",
+          summary: "GLM-5.2 是智谱发布的新一代模型。",
+          fact_snippets: ["GLM-5.2 是智谱发布的新一代模型。", "该模型强调推理与代码能力。"]
+        }
+      ]
+    });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "根据提供的来源，我们可以得出以下事实：\n\n1. GLM-5.2 是智谱最新模型（来自Sohu来源）。\n2. 该模型强调推理与代码能力（来自Toutiao来源）。"
+    });
+
+    render(<App />);
+
+    await findModelPicker("qwen3.6:35b");
+    await user.click(screen.getByRole("button", { name: "搜索" }));
+    await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
+    await screen.findByRole("button", { name: "关闭联网搜索" });
+    await user.click(screen.getByRole("button", { name: "会话" }));
+    await user.type(getComposerInput(), "智谱最新模型是什么");
+    await user.click(getComposerSendButton());
+
+    await waitFor(() => {
+      expect(within(getConversationRegion()).getByText(/GLM-5.2 是智谱最新模型/)).toBeInTheDocument();
+    });
+
+    expect(within(getConversationRegion()).queryByText(/根据提供的来源/)).not.toBeInTheDocument();
+    expect(within(getConversationRegion()).queryByText(/来自Sohu来源/)).not.toBeInTheDocument();
+    expect(within(getConversationRegion()).queryByText(/来自Toutiao来源/)).not.toBeInTheDocument();
   }, 10_000);
 
   it("shows structured fact snippets in the visible information references when available", async () => {
@@ -2097,7 +2585,7 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("享元模式会共享内部状态，并把外部状态交给调用方传入。")).toBeInTheDocument();
     });
 
-    const prompt = chatWithOllamaModelMock.mock.calls[0]?.[0]?.message ?? "";
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(searchNetworkMock).toHaveBeenCalledWith("享元模式的内部状态和外部状态是什么", expect.objectContaining({
       providerLabel: ""
     }));
@@ -2105,7 +2593,7 @@ describe("App", () => {
     expect(prompt).toContain("联网搜索参考");
     expect(prompt).toContain("本地知识库参考");
     expect(prompt).toContain("patterns.md");
-    expect(prompt).toContain("Flyweight pattern reference");
+    expect(prompt).toContain("source=Refactoring Guru");
   }, 10_000);
 
   it("shows local RAG hits as structured information references in ordinary chat and deduplicates overlaps against search sources", async () => {
@@ -2173,7 +2661,7 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("2 条信息引用")).toBeInTheDocument();
     });
 
-    const prompt = chatWithOllamaModelMock.mock.calls[0]?.[0]?.message ?? "";
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(prompt).toContain("Flyweight pattern reference");
     expect(prompt).toContain("patterns.md");
     expect(prompt.match(/Flyweight pattern reference/g)?.length ?? 0).toBe(1);
@@ -2245,7 +2733,7 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("这个项目里的规则也是把可共享的部分当作内部状态。")).toBeInTheDocument();
     });
 
-    const prompt = chatWithOllamaModelMock.mock.calls[0]?.[0]?.message ?? "";
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(prompt).toContain("本地知识库参考");
     expect(prompt).not.toContain("联网搜索参考");
     expect(prompt).not.toContain("联网搜索已开启，但本轮没有可用外部来源");
@@ -2316,7 +2804,7 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("这是最近的 OpenAI 动态整理。")).toBeInTheDocument();
     });
 
-    const prompt = chatWithOllamaModelMock.mock.calls[0]?.[0]?.message ?? "";
+    const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(prompt).toContain("联网搜索参考");
     expect(prompt).not.toContain("本地知识库参考");
     expect(prompt).toContain("OpenAI Blog");

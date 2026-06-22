@@ -71,6 +71,7 @@ pub fn run() {
             health,
             chat_attachments::chat_attachments_pick,
             chat_attachments::chat_attachment_open,
+            chat_attachments::external_link_open,
             workspace::knowledge_file_import,
             workspace::knowledge_file_remove,
             workspace::knowledge_imports_clear,

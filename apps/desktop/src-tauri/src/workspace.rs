@@ -411,7 +411,62 @@ async fn enrich_network_search_items(items: Vec<NetworkSearchResultItem>) -> Vec
         enriched.push(item);
     }
 
-    enriched
+    rank_network_search_items(enriched)
+}
+
+fn rank_network_search_items(mut items: Vec<NetworkSearchResultItem>) -> Vec<NetworkSearchResultItem> {
+    items.sort_by_key(|item| std::cmp::Reverse(score_network_search_item(item)));
+    items
+}
+
+fn score_network_search_item(item: &NetworkSearchResultItem) -> i32 {
+    let mut score = 0;
+    let normalized_url = item.url.to_lowercase();
+    let normalized_title = item.title.to_lowercase();
+    let normalized_summary = item.summary.to_lowercase();
+    let normalized_source = item.source_label.to_lowercase();
+    let combined = format!("{normalized_title} {normalized_summary} {normalized_source}");
+
+    for official_hint in [
+        "official",
+        "官网",
+        "官方",
+        "blog.openai.com",
+        "openai.com",
+        "baidu.com",
+        "z.ai",
+        "bigmodel.cn",
+    ] {
+        if normalized_url.contains(official_hint) || combined.contains(official_hint) {
+            score += 40;
+        }
+    }
+
+    for recency_hint in ["2026", "2025"] {
+        if combined.contains(recency_hint) || normalized_url.contains(recency_hint) {
+            score += 18;
+        }
+    }
+
+    for stale_hint in ["2024", "2023", "2022"] {
+        if combined.contains(stale_hint) || normalized_url.contains(stale_hint) {
+            score -= 20;
+        }
+    }
+
+    for noisy_host in ["163.com", "netease.com", "news.163.com", "www.163.com"] {
+        if normalized_url.contains(noisy_host) {
+            score -= 28;
+        }
+    }
+
+    if item.fact_snippets.is_empty() {
+        score -= 8;
+    } else {
+        score += 8;
+    }
+
+    score
 }
 
 async fn run_bing_rss_search(query: &str) -> Result<Vec<NetworkSearchResultItem>, String> {
@@ -450,7 +505,7 @@ async fn run_bing_rss_search(query: &str) -> Result<Vec<NetworkSearchResultItem>
         let summary = extract_xml_tag(item_block, "description")
             .map(decode_basic_html_entities)
             .map(|value| normalize_search_result_text(&value))
-            .unwrap_or_else(|| "OpenCow 默认搜索返回了可用网页结果。".to_string());
+            .unwrap_or_default();
 
         if title.trim().is_empty() || url.trim().is_empty() {
             continue;
@@ -507,7 +562,7 @@ async fn run_sogou_html_search(query: &str) -> Result<Vec<NetworkSearchResultIte
             .split_once("<div class=\"ft\"")
             .and_then(|(_, rest)| rest.split_once("</div>").map(|(value, _)| value))
             .map(normalize_search_result_text)
-            .unwrap_or_else(|| "OpenCow 默认搜索返回了可用网页结果。".to_string());
+            .unwrap_or_default();
 
         let resolved_url = extract_html_attribute(segment, "url")
             .filter(|value| value.starts_with("http"))
@@ -577,11 +632,7 @@ async fn run_wikipedia_open_search(query: &str) -> Result<Vec<NetworkSearchResul
             fact_snippets: build_fact_snippets(&title, &summary),
             title,
             url,
-            summary: if summary.trim().is_empty() {
-                "OpenCow 默认搜索返回了可用词条。".to_string()
-            } else {
-                summary
-            },
+            summary,
         });
     }
 
@@ -620,19 +671,65 @@ fn build_fact_snippets(title: &str, summary: &str) -> Vec<String> {
 }
 
 fn build_fact_snippets_from_text(text: &str) -> Vec<String> {
-    text
-        .split(|character: char| {
-            matches!(
-                character,
-                '。' | '！' | '？' | ';' | '；' | '\n' | '\r' | '.' | '!' | '?'
-            )
-        })
-        .map(str::trim)
-        .filter(|segment| !segment.is_empty())
-        .map(|segment| truncate_chars(segment, 120))
+    let characters: Vec<char> = text.chars().collect();
+    let mut segments = Vec::new();
+    let mut start = 0usize;
+
+    for (index, character) in characters.iter().enumerate() {
+        let should_split = match character {
+            '。' | '！' | '？' | ';' | '；' | '\n' | '\r' | '!' | '?' => true,
+            '.' => !is_decimal_or_version_dot(&characters, index),
+            _ => false,
+        };
+
+        if !should_split {
+            continue;
+        }
+
+        if let Some(segment) = slice_trimmed_chars(&characters, start, index) {
+            segments.push(truncate_chars(&segment, 120));
+        }
+        start = index + 1;
+    }
+
+    if let Some(segment) = slice_trimmed_chars(&characters, start, characters.len()) {
+        segments.push(truncate_chars(&segment, 120));
+    }
+
+    segments
+        .into_iter()
         .filter(|segment| segment.chars().count() >= 6)
         .take(4)
         .collect()
+}
+
+fn is_decimal_or_version_dot(characters: &[char], index: usize) -> bool {
+    if index == 0 || index + 1 >= characters.len() {
+        return false;
+    }
+
+    let previous = characters[index - 1];
+    let next = characters[index + 1];
+
+    previous.is_ascii_alphanumeric() && next.is_ascii_alphanumeric()
+}
+
+fn slice_trimmed_chars(characters: &[char], start: usize, end: usize) -> Option<String> {
+    if start >= end || end > characters.len() {
+        return None;
+    }
+
+    let segment = characters[start..end]
+        .iter()
+        .collect::<String>()
+        .trim()
+        .to_string();
+
+    if segment.is_empty() {
+        None
+    } else {
+        Some(segment)
+    }
 }
 
 async fn fetch_page_fact_snippets(url: &str) -> Vec<String> {
@@ -660,22 +757,32 @@ async fn fetch_page_fact_snippets(url: &str) -> Vec<String> {
         Err(_) => return Vec::new(),
     };
 
-    build_fact_snippets_from_html(&body)
+    build_fact_snippets_from_html_with_url(&body, url)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn build_fact_snippets_from_html(body: &str) -> Vec<String> {
-    let sanitized_body = strip_low_value_html_sections(body);
-    let narrowed = extract_preferred_html_block(&sanitized_body)
-        .or_else(|| extract_html_tag_content(body, "body"))
-        .unwrap_or(&sanitized_body);
-    let normalized = normalize_search_result_text(narrowed);
+    build_fact_snippets_from_html_with_url(body, "")
+}
 
-    if normalized.trim().is_empty() {
+fn build_fact_snippets_from_html_with_url(body: &str, url: &str) -> Vec<String> {
+    let sanitized_body = strip_low_value_html_sections(body);
+    let site_scoped_body = apply_site_specific_content_rules(&sanitized_body, url);
+    let narrowed = extract_preferred_html_block(&site_scoped_body)
+        .or_else(|| extract_html_tag_content(&site_scoped_body, "body"))
+        .unwrap_or(&site_scoped_body);
+    let normalized = normalize_html_content_text(narrowed);
+    let cleaned = scrub_low_value_text_noise(&normalized);
+
+    if cleaned.trim().is_empty() {
         return Vec::new();
     }
 
-    build_fact_snippets_from_text(&normalized)
+    build_fact_snippets_from_text(&cleaned)
         .into_iter()
+        .filter(|segment| !looks_like_navigation_noise(segment))
+        .filter(|segment| !looks_like_script_noise(segment))
+        .filter(|segment| !looks_like_garbled_text(segment))
         .filter(|segment| segment.chars().count() >= 8)
         .take(4)
         .collect()
@@ -684,7 +791,7 @@ fn build_fact_snippets_from_html(body: &str) -> Vec<String> {
 fn strip_low_value_html_sections(body: &str) -> String {
     let mut sanitized = body.to_string();
 
-    for tag in ["nav", "footer", "aside", "header"] {
+    for tag in ["nav", "footer", "aside", "header", "script", "style", "noscript", "form"] {
         sanitized = remove_html_tag_blocks(&sanitized, tag);
     }
 
@@ -697,6 +804,23 @@ fn strip_low_value_html_sections(body: &str) -> String {
         "相关文章",
         "相关阅读",
         "广告",
+        "快速导航",
+        "网易首页",
+        "网易新闻",
+        "网易公开课",
+        "网易严选",
+        "网易云课堂",
+        "免费邮箱",
+        "window.",
+        "uid_target",
+        "shareto",
+        "二维码",
+        "用微信扫码",
+        "责任编辑",
+        "打开网易新闻",
+        "网易公开课",
+        "网易严选",
+        "网易云课堂",
         "breadcrumb",
         "sidebar",
         "footer",
@@ -707,6 +831,19 @@ fn strip_low_value_html_sections(body: &str) -> String {
     }
 
     sanitized
+}
+
+fn apply_site_specific_content_rules(body: &str, url: &str) -> String {
+    let normalized_url = url.to_lowercase();
+
+    if normalized_url.contains("163.com") || normalized_url.contains("netease.com") {
+        let article_body = extract_html_tag_content(body, "article")
+            .or_else(|| extract_html_tag_content(body, "main"))
+            .unwrap_or(body);
+        return article_body.to_string();
+    }
+
+    body.to_string()
 }
 
 fn remove_html_tag_blocks(body: &str, tag: &str) -> String {
@@ -791,6 +928,14 @@ fn extract_html_tag_content<'a>(body: &'a str, tag: &str) -> Option<&'a str> {
 }
 
 fn strip_html_tags(value: &str) -> String {
+    strip_html_tags_internal(value, false)
+}
+
+fn strip_html_tags_preserving_newlines(value: &str) -> String {
+    strip_html_tags_internal(value, true)
+}
+
+fn strip_html_tags_internal(value: &str, preserve_newlines: bool) -> String {
     let mut plain = String::with_capacity(value.len());
     let mut in_tag = false;
 
@@ -803,11 +948,40 @@ fn strip_html_tags(value: &str) -> String {
         }
     }
 
-    decode_basic_html_entities(plain)
-        .replace('\n', " ")
-        .split_whitespace()
+    let decoded = decode_basic_html_entities(plain);
+
+    if !preserve_newlines {
+        return decoded
+            .replace('\n', " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+
+    decoded
+        .lines()
+        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
-        .join(" ")
+        .join("\n")
+}
+
+fn normalize_html_content_text(value: &str) -> String {
+    let mut structured = value.to_string();
+    for marker in [
+        "</p>", "</div>", "</section>", "</article>", "</main>", "</li>", "</ul>", "</ol>", "<br>", "<br/>",
+        "<br />", "</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>",
+    ] {
+        structured = structured.replace(marker, "\n");
+        structured = structured.replace(&marker.to_uppercase(), "\n");
+    }
+
+    strip_html_tags_preserving_newlines(&structured)
+        .split('\n')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn normalize_search_result_text(value: &str) -> String {
@@ -853,6 +1027,83 @@ fn normalize_search_result_text(value: &str) -> String {
         .trim_matches(|character: char| matches!(character, '"' | '\'' | '[' | ']' | ';' | ',' | ':'))
         .trim()
         .to_string()
+}
+
+fn scrub_low_value_text_noise(value: &str) -> String {
+    value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !looks_like_navigation_noise(line))
+        .filter(|line| !looks_like_script_noise(line))
+        .filter(|line| !looks_like_garbled_text(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn looks_like_navigation_noise(value: &str) -> bool {
+    let normalized = value.to_lowercase();
+
+    normalized.contains("网易首页")
+        || normalized.contains("快速导航")
+        || normalized.contains("新闻 国内 国际")
+        || normalized.contains("体育 nba cba")
+        || normalized.contains("娱乐 明星 电影")
+        || normalized.contains("财经 股票")
+        || normalized.contains("新品热卖")
+        || normalized.contains("居家生活")
+        || normalized.contains("服饰鞋包")
+        || normalized.contains("母婴亲子")
+        || normalized.contains("美食酒水")
+        || normalized.contains("邮箱 免费邮箱")
+        || normalized.contains("客户端下载")
+        || normalized.contains("申请入驻")
+        || normalized.contains("分享至好友和朋友圈")
+        || normalized.contains("举报 0 分享至")
+        || normalized.contains("打开网易新闻")
+        || normalized.contains("网易号 > 正文")
+}
+
+fn looks_like_script_noise(value: &str) -> bool {
+    let normalized = value.to_lowercase();
+
+    normalized.contains("window.")
+        || normalized.contains("uid_target")
+        || normalized.contains("new image().src")
+        || normalized.contains("javascript")
+        || normalized.contains("function(")
+        || normalized.contains("var ")
+        || normalized.contains("const ")
+        || normalized.contains("let ")
+}
+
+fn looks_like_garbled_text(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let total = trimmed.chars().count();
+    let replacement_count = trimmed.chars().filter(|character| *character == '�').count();
+    if replacement_count * 5 >= total {
+        return true;
+    }
+
+    let readable_count = trimmed
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(
+                    character,
+                    ' ' | '\n' | '\r' | '\t'
+                        | '，' | '。' | '：' | '；' | '、' | '（' | '）'
+                        | '(' | ')' | '-' | '_' | '/' | '《' | '》' | '“' | '”'
+                )
+                || ('\u{4e00}'..='\u{9fff}').contains(character)
+        })
+        .count();
+
+    readable_count * 10 < total * 6
 }
 
 fn extract_html_attribute(block: &str, attribute: &str) -> Option<String> {
@@ -916,6 +1167,15 @@ fn infer_source_label_from_url(url: &str, fallback: &str) -> String {
     }
     if normalized.contains("bilibili.com") {
         return "Bilibili".to_string();
+    }
+    if normalized.contains("openai.com") {
+        return "OpenAI".to_string();
+    }
+    if normalized.contains("bigmodel.cn") || normalized.contains("z.ai") {
+        return "智谱".to_string();
+    }
+    if normalized.contains("cloud.baidu.com") || normalized.contains("yiyan.baidu.com") {
+        return "百度文心".to_string();
     }
     if normalized.contains("mp.weixin.qq.com") {
         return "微信公众号".to_string();
@@ -1040,11 +1300,61 @@ fn build_search_match_tokens(query: &str) -> Vec<String> {
         .collect::<Vec<_>>();
 
     if contains_cjk(&collapsed) {
-        tokens.push(collapsed.replace(' ', "").to_lowercase());
+        let compact = collapsed.replace(' ', "").to_lowercase();
+        if !compact.is_empty() {
+            tokens.push(compact.clone());
+        }
+
+        for token in build_cjk_search_keywords(&compact) {
+            tokens.push(token);
+        }
     }
 
     tokens.sort();
     tokens.dedup();
+    tokens
+}
+
+fn build_cjk_search_keywords(compact: &str) -> Vec<String> {
+    let mut normalized = compact.to_string();
+    for suffix in [
+        "是什么",
+        "是哪个",
+        "有哪些",
+        "有哪",
+        "多少",
+        "吗",
+        "呢",
+        "呀",
+        "啊",
+        "吧",
+        "最新",
+        "最近",
+        "动态",
+        "信息",
+        "资料",
+        "官网",
+        "一下",
+    ] {
+        normalized = normalized.replace(suffix, "");
+    }
+
+    let chars = normalized.chars().collect::<Vec<_>>();
+    let mut tokens = Vec::new();
+
+    for size in [2_usize, 3, 4, 5, 6] {
+        if chars.len() < size {
+            continue;
+        }
+
+        for start in 0..=chars.len() - size {
+            let token = chars[start..start + size].iter().collect::<String>();
+            if token.chars().all(|character| contains_cjk(&character.to_string())) {
+                tokens.push(token);
+            }
+        }
+    }
+
     tokens
 }
 
@@ -6190,7 +6500,7 @@ fn escape_powershell_single_quote(input: &str) -> String {
 mod tests {
     use super::{
         build_controlled_full_shell_command, build_enabled_local_skill_items,
-        build_fact_snippets_from_html, build_knowledge_inventory,
+        build_fact_snippets_from_html, build_fact_snippets_from_html_with_url, build_knowledge_inventory,
         build_npc_showcase_screenshot_artifact_path,
         build_npc_showcase_site_root, build_openclaw_capability_spec, build_readonly_shell_command,
         build_workspace_write_shell_command, classify_mcp_plugin_source,
@@ -6199,7 +6509,7 @@ mod tests {
         list_workspace_npc_configs_for_selection, local_mcp_plugin_inspect, local_mcp_plugin_scan,
         local_mcp_plugin_start_preview, local_skill_disable_with_app, local_skill_install_with_app,
         looks_like_workspace_root, normalize_network_search_query, normalize_npc_workspace_record,
-        normalize_search_result_text, strip_low_value_html_sections,
+        normalize_search_result_text, rank_network_search_items, strip_low_value_html_sections,
         opencow_self_repair_enabled_skills_registry_with_app,
         opencow_self_repair_workspace_project_runtime_registry_with_app, parse_skill_frontmatter_name,
         parse_workspace_project_run_pid, read_enabled_skill_registry,
@@ -6210,7 +6520,7 @@ mod tests {
         workspace_project_npc_showcase_publish_preview, workspace_project_npc_showcase_site_write_with_app,
         workspace_project_run, workspace_project_run_preview, workspace_project_status,
         workspace_project_stop, workspace_readonly_command, workspace_write_command_with_app,
-        write_knowledge_import_registry, ImportedKnowledgeFileRecord, KnowledgeImportRegistry,
+        write_knowledge_import_registry, ImportedKnowledgeFileRecord, KnowledgeImportRegistry, NetworkSearchResultItem,
         KnowledgeLibraryRecord, NpcWorkspaceConfigUpsertPayload,
     };
     use serde_json::{json, Value};
@@ -6312,6 +6622,116 @@ mod tests {
     }
 
     #[test]
+    fn strips_portal_navigation_and_script_noise_from_fact_snippets() {
+        let html = r#"
+            <html>
+              <body>
+                <header>网易首页 应用 网易新闻 网易公开课 网易严选</header>
+                <article>
+                  <p>5大维度21项细分能力，沙利文最新大模型评测文心一言遥遥领先。</p>
+                  <p>2024年企业应用大模型怎么选。</p>
+                </article>
+                <script>
+                  window.UID_TARGET = ['0', '1', '2'];
+                </script>
+                <footer>快速导航 新闻 国内 国际 体育 NBA CBA</footer>
+              </body>
+            </html>
+        "#;
+
+        let snippets = build_fact_snippets_from_html_with_url(html, "https://www.163.com/dy/article/demo");
+        let joined = snippets.join(" ");
+        assert!(joined.contains("文心一言"));
+        assert!(joined.contains("企业应用大模型怎么选"));
+        assert!(!joined.contains("网易首页"));
+        assert!(!joined.contains("快速导航"));
+        assert!(!joined.contains("window"));
+        assert!(!joined.contains("UID_TARGET"));
+    }
+
+    #[test]
+    fn ranks_recent_official_results_above_stale_portal_results() {
+        let items = vec![
+            NetworkSearchResultItem {
+                title: "5大维度21项细分能力 沙利文最新大模型评测文心一言遥遥领先".to_string(),
+                url: "https://www.163.com/dy/article/demo".to_string(),
+                source_label: "网易".to_string(),
+                summary: "2024-03-25 来源：华商韬略".to_string(),
+                fact_snippets: vec!["2024年企业应用大模型怎么选".to_string()],
+            },
+            NetworkSearchResultItem {
+                title: "文心 5.0 正式版上线".to_string(),
+                url: "https://cloud.baidu.com/article/2026-wenxin-5".to_string(),
+                source_label: "百度智能云".to_string(),
+                summary: "2026 最新官方发布信息".to_string(),
+                fact_snippets: vec!["文心 5.0 正式版上线".to_string()],
+            },
+        ];
+
+        let ranked = rank_network_search_items(items);
+
+        assert_eq!(ranked[0].source_label, "百度智能云");
+        assert!(ranked[0].url.contains("baidu.com"));
+    }
+
+    #[test]
+    fn ranks_official_model_release_pages_above_video_and_portal_reposts() {
+        let items = vec![
+            NetworkSearchResultItem {
+                title: "GLM-5.2 最新体验：视频解读".to_string(),
+                url: "https://www.bilibili.com/video/BV1demo".to_string(),
+                source_label: "Bilibili".to_string(),
+                summary: "UP 主整理的模型体验".to_string(),
+                fact_snippets: vec!["体验视频".to_string()],
+            },
+            NetworkSearchResultItem {
+                title: "2024 年大模型行业观察".to_string(),
+                url: "https://www.sohu.com/a/demo".to_string(),
+                source_label: "搜狐".to_string(),
+                summary: "旧稿转载".to_string(),
+                fact_snippets: vec!["2024 年旧稿".to_string()],
+            },
+            NetworkSearchResultItem {
+                title: "GLM-5.2 正式发布".to_string(),
+                url: "https://www.bigmodel.cn/dev/news/glm-5-2-release".to_string(),
+                source_label: "智谱开放平台".to_string(),
+                summary: "2026 官方发布信息".to_string(),
+                fact_snippets: vec!["GLM-5.2 正式发布".to_string()],
+            },
+        ];
+
+        let ranked = rank_network_search_items(items);
+
+        assert_eq!(ranked[0].source_label, "智谱开放平台");
+        assert!(ranked[0].url.contains("bigmodel.cn"));
+        assert_eq!(ranked[2].source_label, "搜狐");
+    }
+
+    #[test]
+    fn filters_out_garbled_or_shell_like_fact_snippets() {
+        let html = r#"
+            <html>
+              <body>
+                <main>
+                  <p>������UID_TARGET window.__NUXT__ 推荐位 快速导航</p>
+                  <p>GLM-5.2 是智谱发布的新一代模型。</p>
+                  <p>该模型支持更强的推理与代码能力。</p>
+                </main>
+              </body>
+            </html>
+        "#;
+
+        let snippets = build_fact_snippets_from_html_with_url(html, "https://example.com/article");
+        let joined = snippets.join(" ");
+
+        assert!(joined.contains("GLM-5.2 是智谱发布的新一代模型"));
+        assert!(joined.contains("更强的推理与代码能力"));
+        assert!(!joined.contains("UID_TARGET"));
+        assert!(!joined.contains("����"));
+        assert!(!joined.contains("快速导航"));
+    }
+
+    #[test]
     fn keeps_primary_article_sentences_as_fact_snippets() {
         let html = r#"
             <html>
@@ -6347,6 +6767,24 @@ mod tests {
             "Kansas City Weather News",
             "Missouri Weather Updates",
             "https://www.kmbc.com/weather"
+        ));
+    }
+
+    #[test]
+    fn matches_natural_chinese_queries_against_relevant_brand_results() {
+        let tokens = super::build_search_match_tokens("文心一言最新的模型是哪个");
+
+        assert!(result_matches_query(
+            &tokens,
+            "文心 - 百度旗下AI助手",
+            "文心一言支持智能问答和模型能力更新。",
+            "https://yiyan.baidu.com/"
+        ));
+        assert!(!result_matches_query(
+            &tokens,
+            "今日天气预报",
+            "北京气温与空气质量实时播报。",
+            "https://weather.example.com/"
         ));
     }
 

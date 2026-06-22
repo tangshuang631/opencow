@@ -109,6 +109,94 @@ describe("App workbench persistence", () => {
     });
   });
 
+  it("restores the explicitly enabled conversation NPC after the app remounts", async () => {
+    const persistedState = {
+      ...createInitialWorkbenchState(),
+      conversation: {
+        ...createInitialWorkbenchState().conversation,
+        npcId: "research-bot",
+        entries: [
+          {
+            id: "restored-entry",
+            kind: "user" as const,
+            title: "用户",
+            summary: "恢复带 NPC 的会话"
+          }
+        ]
+      },
+      npcWorkspace: {
+        ...createInitialWorkbenchState().npcWorkspace,
+        selectedNpcId: "writer-bot",
+        items: [
+          {
+            id: "research-bot",
+            name: "研究助手",
+            description: "负责资料整理",
+            defaultModel: "qwen3.6:35b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          },
+          {
+            id: "writer-bot",
+            name: "写作助手",
+            description: "负责整理输出",
+            defaultModel: "qwen3.6:35b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          }
+        ]
+      },
+      history: {
+        ...createInitialWorkbenchState().history,
+        lastNonEmptyConversationEntries: [
+          {
+            id: "restored-entry",
+            kind: "user" as const,
+            title: "用户",
+            summary: "恢复带 NPC 的会话"
+          }
+        ],
+        draftConversations: [
+          {
+            id: "draft-conversation-1",
+            title: "恢复带 NPC 的会话",
+            summary: "刷新后应继续使用研究助手。",
+            entries: [
+              {
+                id: "restored-entry",
+                kind: "user" as const,
+                title: "用户",
+                summary: "恢复带 NPC 的会话"
+              }
+            ],
+            npcId: "research-bot",
+            archivedAt: null
+          }
+        ]
+      }
+    };
+    await workbenchPersistence.persistWorkbenchState(persistedState);
+
+    render(<App />);
+
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+
+    const restoredConversation = await screen.findByRole("region", { name: "会话" });
+    await waitFor(() => {
+      expect(within(restoredConversation).getAllByText("恢复带 NPC 的会话").length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("当前 NPC：研究助手")).toBeInTheDocument();
+    expect(screen.queryByText("当前 NPC：写作助手")).not.toBeInTheDocument();
+  }, 15_000);
+
   it("keeps the conversation cleared across remounts after the user manually clears it", async () => {
     chatWithOllamaModelMock.mockResolvedValue({
       model: "qwen3.6:35b",

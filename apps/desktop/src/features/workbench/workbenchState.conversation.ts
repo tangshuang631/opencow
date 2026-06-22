@@ -24,8 +24,20 @@ function createDraftConversationRecord(
     title,
     summary,
     entries,
+    npcId: state.conversation.npcId ?? null,
     archivedAt: null
   };
+}
+
+function resolveConversationNpcId(
+  state: WorkbenchState,
+  candidateNpcId: string | null | undefined
+) {
+  if (!candidateNpcId) {
+    return null;
+  }
+
+  return state.npcWorkspace.items.some((item) => item.id === candidateNpcId) ? candidateNpcId : null;
 }
 
 function deduplicateConversationRecords(
@@ -77,13 +89,14 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
   const draftRecord = createDraftConversationRecord(state, state.conversation.entries);
   const nextDraftConversationId = `draft-conversation-${state.storage.sessionCount + 1}`;
   const nextDraftConversations = [
-    {
-      id: nextDraftConversationId,
-      title: "新会话",
-      summary: "等待第一条消息",
-      entries: [],
-      archivedAt: null
-    },
+        {
+          id: nextDraftConversationId,
+          title: "新会话",
+          summary: "等待第一条消息",
+          entries: [],
+          npcId: null,
+          archivedAt: null
+        },
     ...(
       shouldPreserveConversationHistory
         ? [{ ...draftRecord, archivedAt: null }]
@@ -106,6 +119,7 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
     conversation: {
       id: nextDraftConversations[0]?.id ?? nextDraftConversationId,
       entries: [],
+      npcId: null,
       mode: "blank",
       restoredFromConversationId: nextDraftConversations[0]?.id ?? null
     },
@@ -172,6 +186,7 @@ export function restoreRecentConversationState(
     conversation: {
       id: record.id,
       entries: record.entries,
+      npcId: resolveConversationNpcId(state, record.npcId),
       mode: record.entries.length === 0 ? "blank" : "restored",
       restoredFromConversationId: record.id
     },
@@ -240,6 +255,9 @@ export function deleteRecentConversationState(
         ? (nextDraftConversations[0]?.id ?? `draft-conversation-${state.storage.sessionCount}`)
         : state.conversation.id,
       entries: nextConversationEntries,
+      npcId: deletedCurrentConversation
+        ? resolveConversationNpcId(state, nextDraftConversations[0]?.npcId)
+        : state.conversation.npcId ?? null,
       mode: nextConversationMode,
       restoredFromConversationId: nextRestoredFromConversationId
     },
@@ -282,6 +300,7 @@ export function createArchivedConversationState(state: WorkbenchState): Workbenc
     conversation: {
       id: nextDraftConversationId,
       entries: [],
+      npcId: null,
       mode: "blank",
       restoredFromConversationId: nextDraftConversationId
     },
@@ -296,6 +315,7 @@ export function createArchivedConversationState(state: WorkbenchState): Workbenc
           title: "新会话",
           summary: "等待第一条消息",
           entries: [],
+          npcId: null,
           archivedAt: null
         }
       ],

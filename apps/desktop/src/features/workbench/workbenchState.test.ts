@@ -46,6 +46,9 @@ describe("createInitialWorkbenchState", () => {
     expect(state.model.remoteApiEnabled).toBe(false);
     expect(state.settings.remoteApi.baseUrl).toBe("");
     expect(state.settings.remoteApi.collapsed).toBe(true);
+    expect(state.settings.ollama.longAnswerNumPredict).toBe(8192);
+    expect(state.settings.ollama.autoContinuationLimit).toBe(5);
+    expect(state.settings.ollama.continuationTailLimit).toBe(2400);
     expect(state.permission.mode).toBe("readonly");
     expect(state.permission.summary).toBe("仅允许读取已授权目录与附件。");
     expect(state.permission.requiresConfirmation).toBe(true);

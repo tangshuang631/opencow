@@ -24,6 +24,7 @@ import {
   removeKnowledgeFile,
   type RollbackContext,
   restoreRollbackFiles,
+  scanLocalSkills,
   searchLocalKnowledge,
   searchNetwork,
   selectKnowledgeLibrary,
@@ -50,6 +51,7 @@ import {
   createNewConversationState,
   deleteRecentConversationState,
   createModelSelectedState,
+  createOllamaSettingsState,
   createNpcLocalModelSelectedState,
   createOllamaLoadErrorState,
   createRemoteApiConfigState,
@@ -106,7 +108,6 @@ const LOCAL_MODEL_CHAT_TIMEOUT_MS = 480_000;
 const LONG_LOCAL_MODEL_CHAT_TIMEOUT_MS = 480_000;
 const READONLY_EXPLANATION_TIMEOUT_MS = 10_000;
 const LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT = createLocalModelLengthRecoveryHint();
-const LOCAL_MODEL_CONTINUATION_TAIL_LIMIT = 1200;
 const LOCAL_MODEL_PROGRESS_INTERVAL_MS = 15_000;
 const MAX_CHAT_SEARCH_CONTEXT_ITEMS = 3;
 const MAX_CHAT_SEARCH_FIELD_LENGTH = 240;
@@ -806,6 +807,14 @@ function sourceContainsExplicitOwnershipEvidence(source: WorkbenchState["sources
   return /属于|旗下|推出|来自|由.+?(推出|发布|研发)|公司|团队|品牌|主体|运营/.test(haystack);
 }
 
+function shouldUseStrictEvidenceMode(message: string) {
+  return Boolean(
+    extractComparisonSubjects(message)
+    || looksLikeOwnershipQuestion(message)
+    || shouldTreatQuestionAsNetworkFreshnessQuery(message)
+  );
+}
+
 function createEvidenceGuardLines(
   message: string,
   visibleSources: WorkbenchState["sources"]["items"]
@@ -852,6 +861,10 @@ function createEvidenceGuardLines(
   return lines;
 }
 
+function stripLocalModelLengthLimitRecoveryHint(text: string) {
+  return text.replace(LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT, "").trim();
+}
+
 function createStructuredSourceLines(visibleSources: WorkbenchState["sources"]["items"]) {
   return visibleSources.map((source, index) => {
     const title = truncateChatSearchField(source.title || "未命名来源");
@@ -875,6 +888,24 @@ function createStructuredSourceLines(visibleSources: WorkbenchState["sources"]["
   });
 }
 
+function normalizeSearchGroundedAnswer(message: string) {
+  return message
+    .replace(/^根据提供的来源[，,]?\s*/gm, "")
+    .replace(/^根据以上来源[，,]?\s*/gm, "")
+    .replace(/^结合以上来源[，,]?\s*/gm, "")
+    .replace(/^以下结论来自.*$/gm, "")
+    .replace(/\n\s*参考来源：[\s\S]*$/m, "")
+    .replace(/\n\s*来源清单：[\s\S]*$/m, "")
+    .replace(/\n\s*参考资料：[\s\S]*$/m, "")
+    .replace(/\n\s*\d+\.\s*.+?\|\s*url=https?:\/\/\S+.*$/gm, "")
+    .replace(/\n\s*\d+\.\s*.+?\s+url=https?:\/\/\S+.*$/gm, "")
+    .replace(/（?来自(?:[^）\n。；;]*?)来源）?/g, "")
+    .replace(/\(?来自(?:[^\)\n。；;]*?)来源\)?/g, "")
+    .replace(/（?基于(?:[^）\n。；;]*?)来源）?/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function createLocalModelChatMessage(payload: {
   message: string;
   attachments?: ChatAttachment[];
@@ -884,6 +915,7 @@ function createLocalModelChatMessage(payload: {
   searchProviderLabel: string;
   sources: WorkbenchState["sources"]["items"];
   localKnowledgeContextLines?: string[];
+  npcContextLines?: string[];
   showMissingNetworkSourcesNotice?: boolean;
 }): string {
   const normalizedMessage = payload.message.trim();
@@ -922,6 +954,8 @@ function createLocalModelChatMessage(payload: {
     if (payload.searchEnabled) {
       return [
         ...attachmentContext,
+        ...(payload.npcContextLines ?? []),
+        ...(payload.npcContextLines?.length ? [""] : []),
         ...(payload.localKnowledgeContextLines ?? []),
         ...(payload.localKnowledgeContextLines?.length ? [""] : []),
         ...(payload.showMissingNetworkSourcesNotice === false
@@ -938,6 +972,8 @@ function createLocalModelChatMessage(payload: {
 
     return [
       ...attachmentContext,
+      ...(payload.npcContextLines ?? []),
+      ...(payload.npcContextLines?.length ? [""] : []),
       ...(payload.localKnowledgeContextLines ?? []),
       ...(payload.localKnowledgeContextLines?.length ? [""] : []),
       normalizedMessage
@@ -945,17 +981,30 @@ function createLocalModelChatMessage(payload: {
   }
 
   const sourceLines = createStructuredSourceLines(visibleSources);
+  const strictEvidenceMode = shouldUseStrictEvidenceMode(normalizedMessage);
 
   return [
     ...attachmentContext,
+    ...(payload.npcContextLines ?? []),
+    ...(payload.npcContextLines?.length ? [""] : []),
     ...(payload.localKnowledgeContextLines ?? []),
     ...(payload.localKnowledgeContextLines?.length ? [""] : []),
     "联网搜索参考（只作为参考，不要盲信；请自行判断来源可靠性、时效性和与问题的相关性，综合后用中文回答。）",
-    ...createEvidenceGuardLines(normalizedMessage, visibleSources),
-    "回答要求：若某条来源提供了事实片段，请优先依据事实片段作答；不要把整段综合摘要当成确定事实照搬。",
-    "回答约束：如果来源没有明确写出品牌归属、产品背景或主体关系，就不要自行补写，也不要把不同产品或公司混成一个主体。",
-    "回答约束：如果现有来源不足以支持结论，请直接说明“现有来源不足以确认”，不要把单条摘要扩写成确定事实。",
-    "回答约束：比较类问题优先总结来源里明确出现的能力、场景、限制和时间信息，不要额外编造官网未写明的归属信息。",
+    ...(strictEvidenceMode
+      ? [
+          ...createEvidenceGuardLines(normalizedMessage, visibleSources),
+          "回答要求：若某条来源提供了事实片段，请优先依据事实片段作答；不要把整段综合摘要当成确定事实照搬。",
+          "回答约束：如果来源没有明确写出品牌归属、产品背景或主体关系，就不要自行补写，也不要把不同产品或公司混成一个主体。",
+          "回答约束：如果现有来源不足以支持结论，请直接说明“现有来源不足以确认”，不要把单条摘要扩写成确定事实。",
+          "回答约束：比较类问题优先总结来源里明确出现的能力、场景、限制和时间信息，不要额外编造官网未写明的归属信息。"
+        ]
+      : [
+          "当前问题是通用知识题。可以优先基于你已有的稳定知识直接回答，再参考下列来源做交叉校验和补充。",
+          "如果来源与常识或主流定义冲突，优先给出更稳妥、更通用的解释，并说明某些细节未在当前来源中展开。",
+          "不要因为来源片段不完整就停止回答；应先给出正常解释，再把来源能确认的补充点融合进去。"
+        ]),
+    "输出约束：正文只写你整理后的判断、分析和结论，不要写“根据提供的来源”“来自某某来源”这类句式。",
+    "输出约束：不要在正文逐条点名 Sohu、Toutiao、网易、Bing、搜狗等来源名；来源归属统一放到下方引用区。",
     ...sourceLines,
     "",
     `用户问题：${normalizedMessage}`
@@ -966,6 +1015,28 @@ type LocalKnowledgeContextResult = Awaited<ReturnType<typeof searchLocalKnowledg
 
 type KnowledgeSourcePriority = "network" | "local";
 
+type NpcRuntimeSkill = {
+  name: string;
+  description: string;
+  installed: boolean;
+  source?: string;
+};
+
+type NpcRuntimeContext = {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel: string;
+  personaTitle?: string;
+  personaPrompt: string;
+  outputStyle: string;
+  agentDraft: string;
+  rulesDraft: string;
+  enabledSkills: NpcRuntimeSkill[];
+  missingSkillNames: string[];
+  knowledgeLibraryIds: string[];
+};
+
 function normalizeReferenceComparisonText(value: string): string {
   return value
     .toLowerCase()
@@ -973,6 +1044,184 @@ function normalizeReferenceComparisonText(value: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function resolveSelectedNpcRuntimeContext(
+  state: WorkbenchState,
+  installedSkillItems: Array<{
+    name: string;
+    description: string;
+    source: string;
+    enabled: boolean;
+  }> = []
+): NpcRuntimeContext | null {
+  const selectedNpc = state.npcWorkspace.items.find((item) => item.id === state.conversation.npcId);
+
+  if (!selectedNpc) {
+    return null;
+  }
+
+  const installedByName = new Map(installedSkillItems.map((item) => [item.name, item]));
+  const enabledSkills = selectedNpc.enabledSkillNames.map((skillName) => {
+    const installedSkill = installedByName.get(skillName);
+
+    return {
+      name: skillName,
+      description: installedSkill?.description ?? "",
+      installed: Boolean(installedSkill),
+      source: installedSkill?.source
+    };
+  });
+
+  return {
+    id: selectedNpc.id,
+    name: selectedNpc.name,
+    description: selectedNpc.description,
+    defaultModel: selectedNpc.defaultModel,
+    personaTitle: selectedNpc.personaTitle,
+    personaPrompt: selectedNpc.personaPrompt,
+    outputStyle: selectedNpc.outputStyle,
+    agentDraft: selectedNpc.agentDraft,
+    rulesDraft: selectedNpc.rulesDraft,
+    enabledSkills,
+    missingSkillNames: enabledSkills.filter((skill) => !skill.installed).map((skill) => skill.name),
+    knowledgeLibraryIds: selectedNpc.knowledgeLibraryIds
+  };
+}
+
+async function loadSelectedNpcRuntimeContext(state: WorkbenchState): Promise<NpcRuntimeContext | null> {
+  const selectedNpc = state.npcWorkspace.items.find((item) => item.id === state.conversation.npcId);
+
+  if (!selectedNpc) {
+    return null;
+  }
+
+  if (selectedNpc.enabledSkillNames.length === 0) {
+    return resolveSelectedNpcRuntimeContext(state);
+  }
+
+  try {
+    const installedSkills = await scanLocalSkills();
+    return resolveSelectedNpcRuntimeContext(state, installedSkills.items);
+  } catch {
+    return resolveSelectedNpcRuntimeContext(state);
+  }
+}
+
+function createNpcContextLines(npcContext: NpcRuntimeContext | null): string[] {
+  if (!npcContext) {
+    return [];
+  }
+
+  const lines = [
+    "当前会话已进入 NPC 工作态。回答时优先遵循这个 NPC 的人设、规则、技能边界和知识范围。",
+    `NPC 名称：${npcContext.name}`,
+    npcContext.description ? `NPC 简介：${npcContext.description}` : null,
+    npcContext.personaTitle ? `人设标题：${npcContext.personaTitle}` : null,
+    npcContext.personaPrompt ? `系统提示词：${npcContext.personaPrompt}` : null,
+    npcContext.outputStyle ? `输出风格：${npcContext.outputStyle}` : null,
+    npcContext.agentDraft ? `Agent 草案：${npcContext.agentDraft}` : null,
+    npcContext.rulesDraft ? `规则草案：${npcContext.rulesDraft}` : null
+  ].filter((line): line is string => Boolean(line));
+
+  if (npcContext.enabledSkills.length > 0) {
+    lines.push("当前 NPC 已绑定技能（只作为可用能力范围，不要虚构未绑定技能）：");
+    lines.push(...npcContext.enabledSkills.map((skill, index) => (
+      `${index + 1}. ${skill.name}${skill.description ? ` | ${skill.description}` : ""}${skill.installed ? "" : " | 当前本地未安装"}`
+    )));
+  } else {
+    lines.push("当前 NPC 没有绑定技能。");
+  }
+
+  if (npcContext.knowledgeLibraryIds.length > 0) {
+    lines.push(`当前 NPC 已绑定知识库数量：${npcContext.knowledgeLibraryIds.length}。优先使用这些知识库命中的事实片段。`);
+  } else {
+    lines.push("当前 NPC 还没有绑定专属知识库；如命中全局知识库内容，只能作为通用补充。");
+  }
+
+  return lines;
+}
+
+function mergeLocalKnowledgeResults(
+  query: string,
+  libraryIds: string[],
+  results: LocalKnowledgeContextResult[]
+): LocalKnowledgeContextResult {
+  const deduplicated = new Map<string, LocalKnowledgeContextResult["items"][number]>();
+
+  for (const result of results) {
+    for (const item of result.items) {
+      const key = `${item.path}::${item.snippet}`;
+
+      if (!deduplicated.has(key)) {
+        deduplicated.set(key, item);
+      }
+    }
+  }
+
+  const items = Array.from(deduplicated.values())
+    .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+    .slice(0, 3);
+
+  return {
+    query,
+    summary: items.length > 0
+      ? `NPC 绑定知识库命中 ${items.length} 条片段，覆盖 ${libraryIds.length} 个知识库。`
+      : `NPC 绑定知识库未命中内容，已检查 ${libraryIds.length} 个知识库。`,
+    provider: results.map((result) => result.provider).find(Boolean),
+    fallback_reason: results.map((result) => result.fallback_reason).find(Boolean) ?? null,
+    match_count: items.length,
+    indexed_document_count: results.reduce((sum, result) => sum + result.indexed_document_count, 0),
+    items
+  };
+}
+
+async function searchLocalKnowledgeForConversation(
+  query: string,
+  npcContext: NpcRuntimeContext | null
+): Promise<LocalKnowledgeContextResult | null> {
+  const libraryIds = npcContext?.knowledgeLibraryIds.filter(Boolean) ?? [];
+
+  if (libraryIds.length === 0) {
+    return searchLocalKnowledge(query);
+  }
+
+  const settledResults = await Promise.allSettled(
+    libraryIds.map((libraryId) => searchLocalKnowledge(query, { libraryId }))
+  );
+  const successfulResults = settledResults
+    .filter((result): result is PromiseFulfilledResult<LocalKnowledgeContextResult> => result.status === "fulfilled")
+    .map((result) => result.value);
+
+  if (successfulResults.length === 0) {
+    const firstRejected = settledResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
+
+    if (firstRejected) {
+      throw firstRejected.reason;
+    }
+
+    return null;
+  }
+
+  return mergeLocalKnowledgeResults(query, libraryIds, successfulResults);
+}
+
+function resolvePreferredOllamaChatModel(
+  fallbackModel: string,
+  availableModels: WorkbenchState["model"]["availableModels"],
+  npcContext: NpcRuntimeContext | null
+): string | null {
+  const npcPreferredModel = npcContext?.defaultModel.trim();
+
+  if (npcPreferredModel) {
+    const resolvedNpcModel = resolveUsableOllamaChatModel(npcPreferredModel, availableModels);
+
+    if (resolvedNpcModel) {
+      return resolvedNpcModel;
+    }
+  }
+
+  return resolveUsableOllamaChatModel(fallbackModel, availableModels);
 }
 
 function looksLikeTimeSensitiveNetworkQuestion(message: string): boolean {
@@ -987,12 +1236,16 @@ function looksLikeProjectKnowledgeQuestion(message: string): boolean {
   return /这个项目|当前项目|本项目|项目里|项目内|代码库|仓库里|仓库内|规则|规范|约定|实现|架构|prompt|agent\.md|rules\.md|skill|skills|rag|知识库|npc/i.test(normalized);
 }
 
+function shouldTreatQuestionAsNetworkFreshnessQuery(message: string): boolean {
+  return looksLikeTimeSensitiveNetworkQuestion(message) && !looksLikeProjectKnowledgeQuestion(message);
+}
+
 function resolveKnowledgeSourcePriority(message: string): KnowledgeSourcePriority {
   if (looksLikeProjectKnowledgeQuestion(message)) {
     return "local";
   }
 
-  if (looksLikeTimeSensitiveNetworkQuestion(message) || looksLikeExplicitNetworkSearchRequest(message)) {
+  if (shouldTreatQuestionAsNetworkFreshnessQuery(message) || looksLikeExplicitNetworkSearchRequest(message)) {
     return "network";
   }
 
@@ -1186,17 +1439,29 @@ async function executeLocalModelChatTask(payload: {
   availableModels: WorkbenchState["model"]["availableModels"];
   message: string;
   attachments?: ChatAttachment[];
+  ollamaConfig: WorkbenchState["settings"]["ollama"];
   searchEnabled: boolean;
   searchProviderLabel: string;
   searchBaseUrl?: string;
   searchApiKey?: string;
   suppressFallbackNotice?: boolean;
   sources: WorkbenchState["sources"]["items"];
+  npcContext?: NpcRuntimeContext | null;
   requestId?: string;
   signal?: AbortSignal;
   onChunk?: (chunk: string) => void;
 }): Promise<AssistantTaskExecutionResult> {
-  const selectedModel = resolveUsableOllamaChatModel(payload.model, payload.availableModels);
+  if (!payload.searchEnabled && shouldTreatQuestionAsNetworkFreshnessQuery(payload.message)) {
+    throw new Error(
+      "This is a time-sensitive question and network search is still disabled. Ask the user to enable network search before answering with the local model."
+    );
+  }
+
+  const selectedModel = resolvePreferredOllamaChatModel(
+    payload.model,
+    payload.availableModels,
+    payload.npcContext ?? null
+  );
 
   if (!selectedModel) {
     throw new Error(
@@ -1214,7 +1479,10 @@ async function executeLocalModelChatTask(payload: {
   const sourcePriority = resolveKnowledgeSourcePriority(payload.message);
 
   try {
-    localKnowledgeResult = await searchLocalKnowledge(payload.message);
+    localKnowledgeResult = await searchLocalKnowledgeForConversation(
+      payload.message,
+      payload.npcContext ?? null
+    );
   } catch {
     localKnowledgeResult = null;
   }
@@ -1241,7 +1509,7 @@ async function executeLocalModelChatTask(payload: {
       searchFallbackReason = networkResult.fallback_reason ?? null;
       usedSearchFallback = networkResult.used_fallback;
     } catch (error) {
-      visibleSources = payload.sources.slice(0, MAX_CHAT_SEARCH_CONTEXT_ITEMS);
+      visibleSources = [];
       searchFallbackReason = error instanceof Error ? error.message : "联网搜索失败";
     }
   }
@@ -1288,6 +1556,18 @@ async function executeLocalModelChatTask(payload: {
         ? "enabled-no-sources"
         : "enabled-deduplicated"
     : "disabled";
+
+  if (payload.searchEnabled && shouldTreatQuestionAsNetworkFreshnessQuery(payload.message) && visibleSources.length === 0) {
+    throw new Error(
+      [
+        "联网搜索已开启，但当前问题需要实时外部来源，本轮未获取到可用结果。",
+        `当前搜索 provider：${effectiveSearchProvider || payload.searchProviderLabel.trim() || "OpenCow 默认搜索"}`,
+        `失败原因：${searchFallbackReason || "当前默认搜索未返回可用来源"}`,
+        "请稍后重试，或在搜索页配置可用的自定义搜索 API 后再继续。"
+      ].join("\n")
+    );
+  }
+
   const selectedModelSummary = payload.availableModels.find((model) => model.name === selectedModel);
   const result = await chatWithOllamaModel({
     model: selectedModel,
@@ -1298,6 +1578,7 @@ async function executeLocalModelChatTask(payload: {
       selectedModel,
       selectedModelSupportsVision: isLikelyVisionOllamaModel(selectedModelSummary),
       showMissingNetworkSourcesNotice: shouldShowMissingNetworkSourcesNotice,
+      npcContextLines: createNpcContextLines(payload.npcContext ?? null),
       localKnowledgeContextLines: deduplicatedLocalKnowledgeResult
         ? [
             ...createDeduplicatedNetworkNotice(
@@ -1314,18 +1595,17 @@ async function executeLocalModelChatTask(payload: {
       .map((attachment) => attachment.base64Data as string),
     requestId: payload.requestId,
     signal: payload.signal,
-    onChunk: payload.onChunk
+    onChunk: payload.onChunk,
+    longAnswerNumPredict: payload.ollamaConfig.longAnswerNumPredict,
+    autoContinuationLimit: payload.ollamaConfig.autoContinuationLimit
   });
   const lengthLimitRecoveryLines = result.doneReason === "length"
-    ? [
-        "",
-        LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT
-      ]
+    ? []
     : [];
 
   return {
     resultTitle: "本地模型答复",
-    resultSummary: [result.message, ...lengthLimitRecoveryLines].join("\n"),
+    resultSummary: [normalizeSearchGroundedAnswer(result.message), ...lengthLimitRecoveryLines].join("\n"),
     searchSources: payload.searchEnabled ? visibleSources : undefined,
     searchStatePatch: payload.searchEnabled
       ? {
@@ -1346,6 +1626,14 @@ async function executeLocalModelChatTask(payload: {
       `Search context status: ${searchContextStatus}`,
       `Search provider: ${searchProviders.join(", ") || "none"}`,
       `Knowledge source priority: ${sourcePriority}`,
+      ...(payload.npcContext
+        ? [
+            `NPC context: ${payload.npcContext.name}`,
+            `NPC model preference: ${payload.npcContext.defaultModel || "none"}`,
+            `NPC bound skills: ${payload.npcContext.enabledSkills.map((skill) => skill.name).join("、") || "none"}`,
+            `NPC bound knowledge libraries: ${payload.npcContext.knowledgeLibraryIds.join(", ") || "none"}`
+          ]
+        : []),
       ...(deduplicatedLocalKnowledgeResult ? createLocalKnowledgeAuditDetailLines(deduplicatedLocalKnowledgeResult) : [])
     ]
   };
@@ -2157,21 +2445,19 @@ function getTailText(text: string, limit: number): string {
 
 function createLocalModelLengthLimitContinuationMessage(state: WorkbenchState): string | null {
   const latestAssistantEntry = state.conversation.entries.find((entry) => entry.kind === "assistant");
-
-  if (!latestAssistantEntry?.summary.includes(LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT)) {
-    return null;
-  }
-
   const latestLocalModelTask = state.tasks.items.find(
     (item) => item.executionKind === "local-model-chat" && item.status === "completed"
   );
 
-  if (!latestLocalModelTask) {
+  if (
+    !latestLocalModelTask
+    || !latestAssistantEntry
+  ) {
     return null;
   }
 
-  const priorAnswer = latestAssistantEntry.summary.replace(LOCAL_MODEL_LENGTH_LIMIT_RECOVERY_HINT, "").trim();
-  const answerTail = getTailText(priorAnswer, LOCAL_MODEL_CONTINUATION_TAIL_LIMIT);
+  const priorAnswer = stripLocalModelLengthLimitRecoveryHint(latestAssistantEntry.summary);
+  const answerTail = getTailText(priorAnswer, state.settings.ollama.continuationTailLimit);
 
   if (!answerTail) {
     return null;
@@ -2764,12 +3050,13 @@ export function App() {
         const executeLocalModelChatWithPreflight = async () => {
           let activeModel = stateRef.current.model.activeModel;
           let availableModels = stateRef.current.model.availableModels;
+          const npcContext = await loadSelectedNpcRuntimeContext(stateRef.current);
 
-          if (!resolveUsableOllamaChatModel(activeModel, availableModels)) {
+          if (!resolvePreferredOllamaChatModel(activeModel, availableModels, npcContext)) {
             const overview = await loadOllamaOverview();
             activeModel = overview.selectedModel;
             availableModels = overview.models;
-            localModelDiagnosticModel = resolveUsableOllamaChatModel(activeModel, availableModels) || activeModel;
+            localModelDiagnosticModel = resolvePreferredOllamaChatModel(activeModel, availableModels, npcContext) || activeModel;
 
             startTransition(() => {
               setState((current) =>
@@ -2779,7 +3066,7 @@ export function App() {
               );
             });
           } else {
-            localModelDiagnosticModel = resolveUsableOllamaChatModel(activeModel, availableModels) || activeModel;
+            localModelDiagnosticModel = resolvePreferredOllamaChatModel(activeModel, availableModels, npcContext) || activeModel;
           }
 
           const commonPayload = {
@@ -2787,6 +3074,7 @@ export function App() {
               availableModels,
               message: localModelMessage,
               attachments: activeTask.attachments,
+              ollamaConfig: stateRef.current.settings.ollama,
               rollbackContext: {
                 conversationId: stateRef.current.conversation.id ?? stateRef.current.conversation.restoredFromConversationId ?? "draft-conversation-1",
                 rollbackEntryId: activeTask.id
@@ -2797,6 +3085,7 @@ export function App() {
               searchApiKey: stateRef.current.search.customApiKey,
               suppressFallbackNotice: stateRef.current.search.suppressFallbackNotice,
               sources: stateRef.current.sources.items,
+              npcContext,
               requestId: localModelRequestId,
               signal: localModelAbortController.signal,
               onChunk: (chunk: string) => {
@@ -3040,13 +3329,16 @@ export function App() {
       || /\binternet search\b/i.test(normalized)
       || /\bsearch (the )?web\b/i.test(normalized)
       || (/\blatest\b/i.test(normalized) && /\b(search|find|lookup)\b/i.test(normalized));
+    const requiresFreshNetworkAnswer = shouldTreatQuestionAsNetworkFreshnessQuery(normalized);
 
-    if (!currentState.search.enabled && wantsNaturalNetworkSearch) {
+    if (!currentState.search.enabled && (wantsNaturalNetworkSearch || requiresFreshNetworkAnswer)) {
       return {
         feature: "search" as const,
         enabled: true,
         source: "conversation_request",
-        reason: "\u7528\u6237\u8bf7\u6c42\u8054\u7f51\u641c\u7d22\u6700\u65b0\u8d44\u6599\uff0c\u9700\u8981\u5148\u786e\u8ba4\u542f\u7528\u8054\u7f51\u641c\u7d22\u3002",
+        reason: requiresFreshNetworkAnswer
+          ? "这是时效性问题，需要先确认开启联网搜索，避免本地模型直接回答过时或不准确的最新信息。"
+          : "\u7528\u6237\u8bf7\u6c42\u8054\u7f51\u641c\u7d22\u6700\u65b0\u8d44\u6599\uff0c\u9700\u8981\u5148\u786e\u8ba4\u542f\u7528\u8054\u7f51\u641c\u7d22\u3002",
         providerLabel: currentState.search.customProviderLabel,
         queuedMessage: normalized
       };
@@ -3652,6 +3944,16 @@ export function App() {
     });
   }
 
+  function handleSaveOllamaConfig(payload: {
+    longAnswerNumPredict: number;
+    autoContinuationLimit: number;
+    continuationTailLimit: number;
+  }) {
+    startTransition(() => {
+      setState((current) => createOllamaSettingsState(current, payload));
+    });
+  }
+
   function handleSaveSearchProviderConfig(payload: {
     providerLabel: string;
     baseUrl?: string;
@@ -3970,6 +4272,16 @@ export function App() {
           };
         });
       });
+  }
+
+  function handleSelectConversationNpc(npcId: string | null) {
+    setState((current) => ({
+      ...current,
+      conversation: {
+        ...current.conversation,
+        npcId: npcId && current.npcWorkspace.items.some((item) => item.id === npcId) ? npcId : null
+      }
+    }));
   }
 
   function handleSelectNpcWorkspaceSection(section: WorkbenchState["npcWorkspace"]["activeSection"]) {
@@ -4303,6 +4615,7 @@ export function App() {
         onCleanupStorage={handleCleanupStorage}
         onToggleRemoteApi={handleToggleRemoteApi}
         onToggleSearch={handleToggleSearch}
+        onSaveOllamaConfig={handleSaveOllamaConfig}
         onSaveRemoteApiConfig={handleSaveRemoteApiConfig}
         onSaveSearchProviderConfig={handleSaveSearchProviderConfig}
         onSelectModel={handleSelectModel}
@@ -4322,6 +4635,7 @@ export function App() {
         onCreateKnowledgeLibrary={handleCreateKnowledgeLibrary}
         onSelectKnowledgeLibrary={handleSelectKnowledgeLibrary}
         onCreateNpcWorkspace={handleCreateNpcWorkspace}
+        onSelectConversationNpc={handleSelectConversationNpc}
         onSelectNpcWorkspace={handleSelectNpcWorkspace}
         onSelectNpcWorkspaceSection={handleSelectNpcWorkspaceSection}
         onUpdateNpcWorkspaceOverview={handleUpdateNpcWorkspaceOverview}

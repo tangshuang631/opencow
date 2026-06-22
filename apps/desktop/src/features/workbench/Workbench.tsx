@@ -58,6 +58,11 @@ type WorkbenchProps = {
   onCleanupStorage: (target: StorageCleanupTarget) => void;
   onToggleRemoteApi: (enabled: boolean) => void;
   onToggleSearch: (enabled: boolean) => void;
+  onSaveOllamaConfig: (payload: {
+    longAnswerNumPredict: number;
+    autoContinuationLimit: number;
+    continuationTailLimit: number;
+  }) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSaveSearchProviderConfig: (payload: {
     providerLabel: string;
@@ -85,6 +90,7 @@ type WorkbenchProps = {
   onCreateKnowledgeLibrary?: (name: string, description?: string) => void;
   onSelectKnowledgeLibrary?: (libraryId: string) => void;
   onCreateNpcWorkspace?: (name: string, description?: string) => void;
+  onSelectConversationNpc?: (npcId: string | null) => void;
   onSelectNpcWorkspace?: (npcId: string) => void;
   onSelectNpcWorkspaceSection?: (section: WorkbenchState["npcWorkspace"]["activeSection"]) => void;
   onUpdateNpcWorkspaceOverview?: (
@@ -1795,6 +1801,7 @@ function SettingsPanel({
   state,
   focusTarget,
   onRetryOllamaCheck,
+  onSaveOllamaConfig,
   onToggleRemoteApi,
   onSaveRemoteApiConfig,
   onSelectNpcModel,
@@ -1806,6 +1813,11 @@ function SettingsPanel({
   state: WorkbenchState;
   focusTarget: ModelSettingsTarget | null;
   onRetryOllamaCheck: () => void;
+  onSaveOllamaConfig: (payload: {
+    longAnswerNumPredict: number;
+    autoContinuationLimit: number;
+    continuationTailLimit: number;
+  }) => void;
   onToggleRemoteApi: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSelectNpcModel: (modelName: string) => void;
@@ -1817,6 +1829,9 @@ function SettingsPanel({
   const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
   const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
   const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
+  const [longAnswerNumPredict, setLongAnswerNumPredict] = useState(String(state.settings.ollama.longAnswerNumPredict));
+  const [autoContinuationLimit, setAutoContinuationLimit] = useState(String(state.settings.ollama.autoContinuationLimit));
+  const [continuationTailLimit, setContinuationTailLimit] = useState(String(state.settings.ollama.continuationTailLimit));
   const [archivedConversationQuery, setArchivedConversationQuery] = useState("");
   const activeFocusLabel = focusTarget === "remote-api" ? "大模型 API 设置" : "Ollama 设置";
   const archivedConversations = state.history.archivedConversations ?? [];
@@ -1853,6 +1868,16 @@ function SettingsPanel({
     state.settings.remoteApi.providerLabel
   ]);
 
+  useEffect(() => {
+    setLongAnswerNumPredict(String(state.settings.ollama.longAnswerNumPredict));
+    setAutoContinuationLimit(String(state.settings.ollama.autoContinuationLimit));
+    setContinuationTailLimit(String(state.settings.ollama.continuationTailLimit));
+  }, [
+    state.settings.ollama.autoContinuationLimit,
+    state.settings.ollama.continuationTailLimit,
+    state.settings.ollama.longAnswerNumPredict
+  ]);
+
   return (
     <section className="workspace-panel settings-panel" aria-label="设置">
       <header className="workspace-panel-header">
@@ -1870,9 +1895,61 @@ function SettingsPanel({
           {state.model.diagnostic ? <p>{state.model.diagnostic}</p> : null}
           <p>可用模型: {state.model.availableModels.length}</p>
         </div>
+        <div className="settings-form">
+          <label>
+            <span>长回答输出预算</span>
+            <input
+              aria-label="长回答输出预算"
+              type="number"
+              min={1024}
+              max={16384}
+              step={256}
+              value={longAnswerNumPredict}
+              onChange={(event) => setLongAnswerNumPredict(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>自动续写次数上限</span>
+            <input
+              aria-label="自动续写次数上限"
+              type="number"
+              min={1}
+              max={8}
+              step={1}
+              value={autoContinuationLimit}
+              onChange={(event) => setAutoContinuationLimit(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>续写参考尾部长度</span>
+            <input
+              aria-label="续写参考尾部长度"
+              type="number"
+              min={1200}
+              max={4800}
+              step={100}
+              value={continuationTailLimit}
+              onChange={(event) => setContinuationTailLimit(event.target.value)}
+            />
+          </label>
+        </div>
+        <p className="muted">值越大，长回答更不容易中断，但耗时和资源占用会更高。</p>
         <div className="action-row">
           <button className="action-button action-button-primary" type="button" onClick={onRetryOllamaCheck}>
             重新检测 Ollama
+          </button>
+          <button
+            className="action-button"
+            type="button"
+            onClick={() =>
+              onSaveOllamaConfig({
+                longAnswerNumPredict: Number.parseInt(longAnswerNumPredict, 10),
+                autoContinuationLimit: Number.parseInt(autoContinuationLimit, 10),
+                continuationTailLimit: Number.parseInt(continuationTailLimit, 10)
+              })
+            }
+          >
+            保存长回答设置
           </button>
         </div>
       </section>
@@ -2104,6 +2181,7 @@ export function Workbench({
   onCleanupStorage,
   onToggleRemoteApi,
   onToggleSearch,
+  onSaveOllamaConfig,
   onSaveRemoteApiConfig,
   onSaveSearchProviderConfig,
   onSelectModel,
@@ -2120,6 +2198,7 @@ export function Workbench({
   onCreateKnowledgeLibrary,
   onSelectKnowledgeLibrary,
   onCreateNpcWorkspace,
+  onSelectConversationNpc,
   onSelectNpcWorkspace,
   onSelectNpcWorkspaceSection,
   onUpdateNpcWorkspaceOverview,
@@ -2775,6 +2854,7 @@ export function Workbench({
             state={state}
             focusTarget={settingsFocus}
             onRetryOllamaCheck={onRetryOllamaCheck}
+            onSaveOllamaConfig={onSaveOllamaConfig}
             onToggleRemoteApi={onToggleRemoteApi}
             onSaveRemoteApiConfig={onSaveRemoteApiConfig}
             onSelectNpcModel={onSelectNpcModel ?? (() => undefined)}
@@ -2792,6 +2872,7 @@ export function Workbench({
             onSubmitTask={handleSubmitTask}
             onCancelActiveTask={onCancelActiveTask}
             onSelectModel={onSelectModel}
+            onSelectConversationNpc={onSelectConversationNpc}
             onSelectNpcModel={onSelectNpcModel}
             onOpenModelSettings={handleOpenModelSettings}
             onAddAttachments={onAddComposerAttachments}

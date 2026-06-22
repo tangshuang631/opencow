@@ -5,6 +5,7 @@ import {
   createHighRiskConfirmationState,
   createInitialWorkbenchState,
   createNewConversationState,
+  restoreRecentConversationState,
   createTaskExecutionCancelledState,
   createTaskExecutionSucceededState,
   createTaskExecutionStartedState,
@@ -63,6 +64,7 @@ describe("createNewConversationState", () => {
     const next = createNewConversationState(pendingDangerousConfirmation);
 
     expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.npcId).toBeNull();
     expect(next.conversation.mode).toBe("blank");
     expect(next.conversation.restoredFromConversationId).toContain("draft-conversation-");
     expect(next.permission.pendingModeChange).toBeNull();
@@ -136,6 +138,7 @@ describe("createNewConversationState", () => {
     const next = createNewConversationState(completed);
 
     expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.npcId).toBeNull();
     expect(next.conversation.mode).toBe("blank");
     expect(next.history.draftConversations[0]?.title).toBe("新会话");
     expect(next.history.draftConversations[1]?.title).toContain("帮我上网搜索豆包");
@@ -150,6 +153,7 @@ describe("createNewConversationState", () => {
     const next = createNewConversationState(submitted);
 
     expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.npcId).toBeNull();
     expect(next.conversation.mode).toBe("blank");
     expect(next.history.lastNonEmptyConversationEntries.some(
       (entry) => entry.summary === "保留这段历史，供下次恢复"
@@ -289,8 +293,112 @@ describe("createNewConversationState", () => {
     const next = createArchivedConversationState(completed);
 
     expect(next.conversation.entries).toHaveLength(0);
+    expect(next.conversation.npcId).toBeNull();
     expect(next.conversation.mode).toBe("blank");
     expect(next.history.archivedConversations[0]?.title).toContain("把当前草稿归档");
     expect(next.history.draftConversations[0]?.title).toBe("新会话");
+  });
+
+  it("preserves the current conversation NPC in archived history but resets new conversation execution state", () => {
+    const initial = {
+      ...createInitialWorkbenchState(),
+      npcWorkspace: {
+        ...createInitialWorkbenchState().npcWorkspace,
+        items: [
+          {
+            id: "research-bot",
+            name: "研究助手",
+            description: "负责资料整理",
+            defaultModel: "qwen2.5-coder:7b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          }
+        ]
+      },
+      conversation: {
+        ...createInitialWorkbenchState().conversation,
+        npcId: "research-bot"
+      }
+    };
+    const submitted = createUserTaskSubmittedState(initial, {
+      message: "保留这个会话 NPC"
+    });
+
+    const next = createNewConversationState(submitted);
+
+    expect(next.conversation.npcId).toBeNull();
+    expect(next.history.archivedConversations[0]?.npcId).toBe("research-bot");
+    expect(next.history.draftConversations[1]?.npcId).toBe("research-bot");
+  });
+
+  it("restores the conversation NPC from recent history when the NPC still exists", () => {
+    const currentEntries = [
+      {
+        id: "recent-entry-user",
+        kind: "user" as const,
+        title: "用户",
+        summary: "恢复带 NPC 的最近会话"
+      }
+    ];
+    const state = {
+      ...createInitialWorkbenchState(),
+      npcWorkspace: {
+        ...createInitialWorkbenchState().npcWorkspace,
+        items: [
+          {
+            id: "research-bot",
+            name: "研究助手",
+            description: "负责资料整理",
+            defaultModel: "qwen2.5-coder:7b",
+            personaPrompt: "",
+            outputStyle: "简洁",
+            agentDraft: "",
+            rulesDraft: "",
+            enabledSkillNames: [],
+            knowledgeLibraryIds: []
+          }
+        ]
+      },
+      history: {
+        lastNonEmptyConversationEntries: currentEntries,
+        draftConversations: [
+          {
+            id: "recent-conversation-1",
+            title: "恢复带 NPC 的最近会话",
+            summary: "应该一起恢复 NPC。",
+            entries: currentEntries,
+            npcId: "research-bot"
+          }
+        ],
+        archivedConversations: []
+      }
+    };
+
+    const next = deleteRecentConversationState(
+      {
+        ...state,
+        history: {
+          ...state.history,
+          draftConversations: [
+            ...state.history.draftConversations,
+            {
+              id: "recent-conversation-2",
+              title: "占位",
+              summary: "占位",
+              entries: []
+            }
+          ]
+        }
+      },
+      "recent-conversation-2"
+    );
+    const restored = restoreRecentConversationState(state, "recent-conversation-1");
+
+    expect(next).toBeDefined();
+    expect(restored.conversation.npcId).toBe("research-bot");
   });
 });

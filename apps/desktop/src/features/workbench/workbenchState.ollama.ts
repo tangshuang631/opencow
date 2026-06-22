@@ -283,3 +283,67 @@ export function createNpcLocalModelSelectedState(state: WorkbenchState, modelNam
     "session"
   );
 }
+
+function clampLongAnswerNumPredict(value: number) {
+  return Math.min(16384, Math.max(1024, Math.round(value)));
+}
+
+function clampAutoContinuationLimit(value: number) {
+  return Math.min(8, Math.max(1, Math.round(value)));
+}
+
+function clampContinuationTailLimit(value: number) {
+  return Math.min(4800, Math.max(1200, Math.round(value)));
+}
+
+export function createOllamaSettingsState(
+  state: WorkbenchState,
+  payload: {
+    longAnswerNumPredict: number;
+    autoContinuationLimit: number;
+    continuationTailLimit?: number;
+  }
+): WorkbenchState {
+  const nextLongAnswerNumPredict = clampLongAnswerNumPredict(payload.longAnswerNumPredict);
+  const nextAutoContinuationLimit = clampAutoContinuationLimit(payload.autoContinuationLimit);
+  const nextContinuationTailLimit = clampContinuationTailLimit(
+    payload.continuationTailLimit ?? state.settings.ollama.continuationTailLimit
+  );
+
+  if (
+    state.settings.ollama.longAnswerNumPredict === nextLongAnswerNumPredict
+    && state.settings.ollama.autoContinuationLimit === nextAutoContinuationLimit
+    && state.settings.ollama.continuationTailLimit === nextContinuationTailLimit
+  ) {
+    return state;
+  }
+
+  return recordRollbackEntry(
+    {
+      ...state,
+      settings: {
+        ...state.settings,
+        ollama: {
+          ...state.settings.ollama,
+          longAnswerNumPredict: nextLongAnswerNumPredict,
+          autoContinuationLimit: nextAutoContinuationLimit,
+          continuationTailLimit: nextContinuationTailLimit
+        }
+      },
+      audit: {
+        summary: "已更新 Ollama 长回答设置",
+        lastEvent: {
+          module: "ollama",
+          detail: `longAnswerNumPredict=${nextLongAnswerNumPredict} autoContinuationLimit=${nextAutoContinuationLimit} continuationTailLimit=${nextContinuationTailLimit}`,
+          timestamp: "已执行",
+          source: "ollama_settings"
+        }
+      },
+      error: null
+    },
+    `ollama-settings-${state.rollback.entries.length}`,
+    "Ollama 设置更新",
+    "已保存本地长回答预算与自动续写设置。",
+    "session"
+  );
+}

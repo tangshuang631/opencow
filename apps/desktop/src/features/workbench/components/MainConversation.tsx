@@ -1,6 +1,22 @@
-import { Bot, ChevronDown, Globe, LoaderCircle, RotateCcw } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  FilePenLine,
+  FilePlus2,
+  FileSearch,
+  Files,
+  Globe,
+  LoaderCircle,
+  Play,
+  RotateCcw,
+  Save,
+  ScanSearch,
+  ShieldCheck,
+  Trash2
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import type { ChatAttachment, WorkbenchState } from "../workbenchState";
 import {
   getLocalizedPermissionReason,
@@ -36,6 +52,7 @@ const TEXT = {
 const LONG_TEXT_LIMIT = 220;
 const LONG_TITLE_LIMIT = 80;
 const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
+const TAURI_INTERNALS_KEY = "__TAURI_INTERNALS__";
 const SUCCESS_TRACE_PREFIXES = [
   "Input summary:",
   "Execution kind:",
@@ -98,6 +115,61 @@ type SearchReferenceCard = {
   summary: string;
   factSnippets: string[];
 };
+
+function stripHtmlForReferenceText(value: string) {
+  return value.replace(/<[^>]+>/g, " ");
+}
+
+function isLowValueReferenceSnippet(value: string) {
+  const normalized = normalizeWorkbenchText(stripHtmlForReferenceText(value)).trim();
+
+  if (!normalized) {
+    return true;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (
+    normalized.includes("OpenCow 默认搜索返回了可用网页结果")
+    || normalized.includes("OpenCow 默认搜索返回了可用词条")
+    || normalized.includes("OpenCow 默认搜索")
+    || normalized.includes("网易首页")
+    || normalized.includes("快速导航")
+    || normalized.includes("猜你喜欢")
+    || normalized.includes("推荐阅读")
+    || normalized.includes("分享至好友和朋友圈")
+    || lower.includes("window.")
+    || lower.includes("uid_target")
+    || lower.includes("javascript")
+    || lower.includes("function(")
+    || /<[a-z][\s\S]*>/i.test(value)
+  ) {
+    return true;
+  }
+
+  const total = normalized.length;
+  const replacementCount = [...normalized].filter((character) => character === "�").length;
+  if (replacementCount * 5 >= total) {
+    return true;
+  }
+
+  return false;
+}
+
+function getVisibleReferenceSnippets(snippets: string[], fallback: string) {
+  const normalizedSnippets = (snippets.length > 0 ? snippets : [fallback])
+    .map((snippet) => normalizeWorkbenchText(stripHtmlForReferenceText(snippet)).trim())
+    .filter(Boolean)
+    .filter((snippet) => !isLowValueReferenceSnippet(snippet));
+
+  if (normalizedSnippets.length > 0) {
+    return normalizedSnippets;
+  }
+
+  const normalizedFallback = normalizeWorkbenchText(stripHtmlForReferenceText(fallback)).trim();
+  return normalizedFallback && !isLowValueReferenceSnippet(normalizedFallback)
+    ? [normalizedFallback]
+    : [];
+}
 
 function parseKnowledgeHitCards(detailLines: string[]) {
   const cards: KnowledgeHitCard[] = [];
@@ -395,6 +467,11 @@ async function openReferenceUrl(url: string) {
     return;
   }
 
+  if (typeof window !== "undefined" && TAURI_INTERNALS_KEY in window) {
+    await invoke("external_link_open", { url: normalized });
+    return;
+  }
+
   if (typeof window !== "undefined" && normalized.startsWith("http")) {
     window.open(normalized, "_blank", "noopener,noreferrer");
   }
@@ -436,9 +513,18 @@ function CollapsibleWorkbenchText({
 
 function renderInlineMarkdown(text: string) {
   const normalized = normalizeWorkbenchText(text);
-  const parts = normalized.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  const parts = normalized.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
 
   return parts.map((part, index) => {
+    const codeMatch = part.match(/^`([^`]+)`$/);
+    if (codeMatch) {
+      return (
+        <code className="message-inline-code" key={`${part}-${index}`}>
+          {codeMatch[1]}
+        </code>
+      );
+    }
+
     const boldMatch = part.match(/^\*\*([^*]+)\*\*$/);
 
     if (boldMatch) {
@@ -455,14 +541,84 @@ function renderInlineMarkdown(text: string) {
 
 type MarkdownBlock =
   | { type: "heading"; content: string }
+  | { type: "divider" }
+  | { type: "operation"; content: string; tone: "reading" | "editing" | "completed" }
   | { type: "paragraph"; content: string }
-  | { type: "ordered-list"; items: Array<{ content: string; children: string[] }> };
+  | { type: "ordered-list"; items: Array<{ content: string; children: string[] }> }
+  | { type: "table"; rows: string[][] };
+
+function isOperationLine(text: string) {
+  const normalized = text.trim();
+
+  return /^(已(?:读取|搜索代码|搜索|编辑|运行|检查|保存|更新|创建|删除|修复)\S*.*|正在(?:编辑|读取|搜索|运行|检查|保存|更新).*)$/.test(normalized);
+}
+
+function getOperationIcon(text: string) {
+  const normalized = text.trim();
+
+  if (normalized.includes("搜索代码")) {
+    return ScanSearch;
+  }
+
+  if (normalized.includes("搜索")) {
+    return FileSearch;
+  }
+
+  if (normalized.includes("读取")) {
+    return Files;
+  }
+
+  if (normalized.includes("编辑")) {
+    return FilePenLine;
+  }
+
+  if (normalized.includes("保存") || normalized.includes("更新")) {
+    return Save;
+  }
+
+  if (normalized.includes("创建")) {
+    return FilePlus2;
+  }
+
+  if (normalized.includes("删除")) {
+    return Trash2;
+  }
+
+  if (normalized.includes("检查") || normalized.includes("修复")) {
+    return ShieldCheck;
+  }
+
+  if (normalized.includes("运行")) {
+    return Play;
+  }
+
+  return Files;
+}
+
+function getOperationTone(text: string): "reading" | "editing" | "completed" {
+  const normalized = text.trim();
+
+  if (normalized.startsWith("正在")) {
+    return "editing";
+  }
+
+  if (
+    normalized.includes("读取")
+    || normalized.includes("搜索")
+    || normalized.includes("检查")
+  ) {
+    return "reading";
+  }
+
+  return "completed";
+}
 
 function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   const lines = normalizeWorkbenchText(text).replace(/\r\n/g, "\n").split("\n");
   const blocks: MarkdownBlock[] = [];
   let paragraphLines: string[] = [];
   let orderedListItems: Array<{ content: string; children: string[] }> = [];
+  let tableLines: string[] = [];
 
   function flushParagraph() {
     if (paragraphLines.length === 0) {
@@ -488,6 +644,29 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
     orderedListItems = [];
   }
 
+  function flushTable() {
+    if (tableLines.length === 0) {
+      return;
+    }
+
+    const rows = tableLines
+      .map((line) => line
+        .split("|")
+        .map((cell) => cell.trim())
+        .filter(Boolean))
+      .filter((row) => row.length > 0)
+      .filter((row) => !row.every((cell) => /^:?-{2,}:?$/.test(cell)));
+
+    if (rows.length > 0) {
+      blocks.push({
+        type: "table",
+        rows
+      });
+    }
+
+    tableLines = [];
+  }
+
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
@@ -495,8 +674,18 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
     if (!trimmed) {
       flushParagraph();
       flushOrderedList();
+      flushTable();
       continue;
     }
+
+    if (/^\|.*\|$/.test(trimmed)) {
+      flushParagraph();
+      flushOrderedList();
+      tableLines.push(trimmed);
+      continue;
+    }
+
+    flushTable();
 
     const orderedMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
 
@@ -519,9 +708,42 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
     if (/^\*\*[^*]+:\*\*$/.test(trimmed)) {
       flushParagraph();
       flushOrderedList();
+      flushTable();
       blocks.push({
         type: "heading",
         content: trimmed.replace(/^\*\*|\*\*$/g, "")
+      });
+      continue;
+    }
+
+    const markdownHeadingMatch = trimmed.match(/^#{1,6}\s+(.+)$/);
+    if (markdownHeadingMatch) {
+      flushParagraph();
+      flushOrderedList();
+      flushTable();
+      blocks.push({
+        type: "heading",
+        content: markdownHeadingMatch[1]?.trim() ?? ""
+      });
+      continue;
+    }
+
+    if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+      flushParagraph();
+      flushOrderedList();
+      flushTable();
+      blocks.push({ type: "divider" });
+      continue;
+    }
+
+    if (isOperationLine(trimmed)) {
+      flushParagraph();
+      flushOrderedList();
+      flushTable();
+      blocks.push({
+        type: "operation",
+        content: trimmed,
+        tone: getOperationTone(trimmed)
       });
       continue;
     }
@@ -532,6 +754,7 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
 
   flushParagraph();
   flushOrderedList();
+  flushTable();
 
   return blocks;
 }
@@ -569,6 +792,41 @@ function AssistantMarkdownMessage({ text }: { text: string }) {
           );
         }
 
+        if (block.type === "table") {
+          return (
+            <div className="message-rich-table" key={`${block.type}-${index}`}>
+              {block.rows.map((row, rowIndex) => (
+                <div className="message-rich-table-row" key={`${row.join("-")}-${rowIndex}`}>
+                  {row.map((cell, cellIndex) => (
+                    <p className="message-rich-table-cell" key={`${cell}-${cellIndex}`}>
+                      {renderInlineMarkdown(cell)}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (block.type === "divider") {
+          return <div aria-hidden="true" className="message-rich-divider" key={`${block.type}-${index}`} />;
+        }
+
+        if (block.type === "operation") {
+          const OperationIcon = getOperationIcon(block.content);
+          return (
+            <div
+              className={`message-rich-operation message-rich-operation-${block.tone}`}
+              key={`${block.type}-${index}`}
+            >
+              <span className="message-rich-operation-icon" aria-hidden="true">
+                <OperationIcon size={15} strokeWidth={1.9} />
+              </span>
+              <p className="message-rich-operation-text">{renderInlineMarkdown(block.content)}</p>
+            </div>
+          );
+        }
+
         return (
           <p className="message-summary" key={`${block.type}-${index}`}>
             {renderInlineMarkdown(block.content)}
@@ -580,7 +838,16 @@ function AssistantMarkdownMessage({ text }: { text: string }) {
 }
 
 function renderAssistantSummary(text: string): ReactNode {
-  if (!text.includes("**") && !/^\s*\d+\.\s+/m.test(text) && !/^\s*[*-]\s+/m.test(text)) {
+  if (
+    !text.includes("**")
+    && !text.includes("`")
+    && !/^\s*\d+\.\s+/m.test(text)
+    && !/^\s*[*-]\s+/m.test(text)
+    && !/^\s*#{1,6}\s+/m.test(text)
+    && !/^\s*\|.*\|\s*$/m.test(text)
+    && !/^\s*(?:---+|\*\*\*+)\s*$/m.test(text)
+    && !/^(已(?:读取|搜索代码|搜索|编辑|运行|检查|保存|更新|创建|删除|修复)\S*.*|正在(?:编辑|读取|搜索|运行|检查|保存|更新).*)$/m.test(text)
+  ) {
     return <p className="message-summary">{normalizeWorkbenchText(text)}</p>;
   }
 
@@ -672,9 +939,9 @@ function InformationReferences({
                       <Globe aria-hidden="true" size={14} />
                       <span>{normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}</span>
                     </button>
-                    {(card.factSnippets.length > 0 ? card.factSnippets : [card.summary]).map((snippet) => (
+                    {getVisibleReferenceSnippets(card.factSnippets, card.summary).map((snippet) => (
                       <p className="message-reference-summary" key={`${entryId}-${card.url}-${snippet}`}>
-                        {normalizeWorkbenchText(snippet)}
+                        {snippet}
                       </p>
                     ))}
                   </div>
@@ -699,9 +966,9 @@ function InformationReferences({
                 <div className="message-knowledge-item" key={`${entryId}-${card.sourceTitle}-${card.score}`}>
                   <p className="message-detail">来源文件：{normalizeWorkbenchText(card.sourceTitle)}</p>
                   <p className="message-detail">匹配分数：{normalizeWorkbenchText(card.score)}</p>
-                  {(card.factSnippets.length > 0 ? card.factSnippets : [card.snippet]).map((snippet) => (
+                  {getVisibleReferenceSnippets(card.factSnippets, card.snippet).map((snippet) => (
                     <p className="message-reference-summary" key={`${entryId}-${card.sourceTitle}-${snippet}`}>
-                      {normalizeWorkbenchText(snippet)}
+                      {snippet}
                     </p>
                   ))}
                   <button
@@ -969,7 +1236,11 @@ export function MainConversation({
                 </div>
               ) : (
                 <div className="thinking-summary-group">
-                  {renderAssistantSummary(getPendingAssistantSummaryText(pendingTask))}
+                  {pendingTask.streamingSummary?.trim() ? (
+                    renderAssistantSummary(getPendingAssistantSummaryText(pendingTask))
+                  ) : (
+                    <p className="message-detail">正在准备回复…</p>
+                  )}
                 </div>
               )}
             </div>

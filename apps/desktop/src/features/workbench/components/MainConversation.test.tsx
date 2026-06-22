@@ -14,6 +14,7 @@ import {
   createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
   createTaskExecutionProgressState,
+  createTaskExecutionStreamingChunkState,
   createTaskExecutionSucceededState,
   createTaskExecutionStartedState,
   createUserTaskSubmittedState,
@@ -24,9 +25,19 @@ import {
 import { mergeOllamaOverview } from "../workbenchState";
 import { MainConversation } from "./MainConversation";
 
+const { invokeMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn()
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: invokeMock
+}));
+
 describe("MainConversation", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    invokeMock.mockReset();
+    delete (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   });
 
   it("keeps a new conversation visually blank by default", () => {
@@ -856,9 +867,74 @@ describe("MainConversation", () => {
     const pending = screen.getByLabelText("assistant-pending");
 
     expect(within(pending).getByText("正在思考")).toBeInTheDocument();
-    expect(within(pending).getByText("Ollama 仍在生成，已等待约 15 秒。")).toBeInTheDocument();
+    expect(within(pending).getByText("正在准备回复…")).toBeInTheDocument();
+    expect(within(pending).queryByRole("progressbar", { name: "预计开始回复" })).not.toBeInTheDocument();
     expect(pending.querySelector(".task-inline-panel")).toBeNull();
     expect(screen.getAllByText("开源协议有哪些").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the local-model waiting state minimal before the first streamed chunk arrives", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "开源协议有哪些",
+        executionKind: "local-model-chat",
+        executionTitle: "本地模型对话",
+        executionAuditSummary: "Local assistant planned an ordinary local model chat response.",
+        executionAuditDetail: "Local model chat task: 开源协议有哪些"
+      })
+    );
+    const progressed = createTaskExecutionProgressState(running, {
+      taskId: running.tasks.activeTaskId ?? "",
+      progressSummary: "Ollama 已连接，正在等待首轮输出，已等待约 15 秒。"
+    });
+
+    render(
+      <MainConversation
+        state={progressed}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+      />
+    );
+
+    const pending = screen.getByLabelText("assistant-pending");
+
+    expect(within(pending).getByText("正在思考")).toBeInTheDocument();
+    expect(within(pending).getByText("正在准备回复…")).toBeInTheDocument();
+    expect(within(pending).queryByRole("progressbar", { name: "预计开始回复" })).not.toBeInTheDocument();
+    expect(within(pending).queryByText("Ollama 已连接，正在等待首轮输出，已等待约 15 秒。")).not.toBeInTheDocument();
+  });
+
+  it("switches from the estimated reply progress bar to streaming content after the first chunk", () => {
+    const running = createTaskExecutionStartedState(
+      createUserTaskSubmittedState(createInitialWorkbenchState(), {
+        message: "解释一下享元模式",
+        executionKind: "local-model-chat",
+        executionTitle: "本地模型对话",
+        executionAuditSummary: "Local assistant planned an ordinary local model chat response.",
+        executionAuditDetail: "Local model chat task: 解释一下享元模式"
+      })
+    );
+    const progressed = createTaskExecutionProgressState(running, {
+      taskId: running.tasks.activeTaskId ?? "",
+      progressSummary: "Ollama 已连接，正在等待首轮输出，已等待约 15 秒。"
+    });
+    const streamed = createTaskExecutionStreamingChunkState(progressed, {
+      taskId: progressed.tasks.activeTaskId ?? "",
+      chunk: "第一段回答。"
+    });
+
+    render(
+      <MainConversation
+        state={streamed}
+        onPreviewRollback={vi.fn()}
+        onCancelActiveTask={vi.fn()}
+      />
+    );
+
+    const pending = screen.getByLabelText("assistant-pending");
+
+    expect(within(pending).getByText("第一段回答。")).toBeInTheDocument();
+    expect(within(pending).queryByRole("progressbar", { name: "预计开始回复" })).not.toBeInTheDocument();
   });
 
   it("shows NPC config generation as a local-model pending task with heartbeat text", () => {
@@ -887,7 +963,8 @@ describe("MainConversation", () => {
     const pending = screen.getByLabelText("assistant-pending");
 
     expect(within(pending).getByText("正在思考")).toBeInTheDocument();
-    expect(within(pending).getByText("Ollama 已连接，正在等待首轮输出，已等待约 15 秒。")).toBeInTheDocument();
+    expect(within(pending).getByText("正在准备回复…")).toBeInTheDocument();
+    expect(within(pending).queryByRole("progressbar", { name: "预计开始回复" })).not.toBeInTheDocument();
     expect(screen.getAllByText("你能帮我创建一个课程助手npc吗").length).toBeGreaterThan(0);
   });
 
@@ -1133,6 +1210,131 @@ describe("MainConversation", () => {
     expect(screen.queryByText("原文链接")).not.toBeInTheDocument();
   });
 
+  it("filters low-value or html-like reference snippets from visible citations", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "帮我搜索 GLM 最新模型"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "联网搜索结果",
+      resultSummary: "已通过 OpenCow 默认搜索 返回 1 条来源。",
+      searchSources: [
+        {
+          title: "GLM-5.2 正式发布",
+          url: "https://www.bigmodel.cn/dev/news/glm-5-2-release",
+          provider: "智谱开放平台",
+          sourceLabel: "智谱开放平台",
+          query: "帮我搜索 GLM 最新模型",
+          summary: "GLM-5.2 是智谱发布的新一代模型。",
+          factSnippets: [
+            "网易首页 快速导航 推荐阅读",
+            "<div>window.UID_TARGET = ['0']</div>",
+            "GLM-5.2 是智谱发布的新一代模型。"
+          ]
+        }
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+
+    expect(screen.getByText("GLM-5.2 是智谱发布的新一代模型。")).toBeInTheDocument();
+    expect(screen.queryByText(/网易首页/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/UID_TARGET/)).not.toBeInTheDocument();
+  });
+
+  it("renders markdown headings, dividers, and table-like rows without leaking raw markdown markers", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "解释 IPv4 和 IPv6 的区别"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: [
+        "## IPv4 和 IPv6 的异同点",
+        "",
+        "下面是详细比较：",
+        "",
+        "---",
+        "",
+        "### 主要区别一览表",
+        "| 特性 | IPv4 | IPv6 |",
+        "| --- | --- | --- |",
+        "| 地址长度 | 32位 | 128位 |"
+      ].join("\n")
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByText("IPv4 和 IPv6 的异同点")).toBeInTheDocument();
+    expect(screen.getByText("主要区别一览表")).toBeInTheDocument();
+    expect(screen.getByText("地址长度")).toBeInTheDocument();
+    expect(screen.queryByText("## IPv4 和 IPv6 的异同点")).not.toBeInTheDocument();
+    expect(screen.queryByText("| 特性 | IPv4 | IPv6 |")).not.toBeInTheDocument();
+    expect(document.querySelector(".message-rich-divider")).not.toBeNull();
+    expect(document.querySelector(".message-rich-table")).not.toBeNull();
+  });
+
+  it("opens search references with the system browser in desktop mode", () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {}
+    });
+
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "帮我搜索 GLM 最新模型"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "联网搜索结果",
+      resultSummary: "已通过 OpenCow 默认搜索 返回 1 条来源。",
+      searchSources: [
+        {
+          title: "GLM-5.2 正式发布",
+          url: "https://www.bigmodel.cn/dev/news/glm-5-2-release",
+          provider: "智谱开放平台",
+          sourceLabel: "智谱开放平台",
+          query: "帮我搜索 GLM 最新模型",
+          summary: "GLM-5.2 是智谱发布的新一代模型。",
+          factSnippets: ["GLM-5.2 是智谱发布的新一代模型。"]
+        }
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开来源：智谱开放平台" }));
+
+    expect(invokeMock).toHaveBeenCalledWith("external_link_open", {
+      url: "https://www.bigmodel.cn/dev/news/glm-5-2-release"
+    });
+  });
+
+  it("never shows default-search placeholder copy inside visible references", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "帮我比较 deepseek 和豆包"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "联网搜索结果",
+      resultSummary: "已通过 OpenCow 默认搜索 返回 1 条来源。",
+      searchSources: [
+        {
+          title: "全面评测,DeepSeek和豆包,哪个更好用_哔哩哔哩_bilibili",
+          url: "https://www.bilibili.com/video/demo",
+          provider: "Bilibili",
+          sourceLabel: "Bilibili",
+          query: "帮我比较 deepseek 和豆包",
+          summary: "OpenCow 默认搜索返回了可用网页结果。"
+        }
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+
+    expect(screen.queryByText("OpenCow 默认搜索返回了可用网页结果。")).not.toBeInTheDocument();
+  });
+
   it("renders network references and knowledge references in a unified grouped layout", () => {
     const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "解释 MCP 并参考本地规则"
@@ -1207,5 +1409,51 @@ describe("MainConversation", () => {
     expect(screen.getByText("核心目的")).toBeInTheDocument();
     expect(screen.getByText("抽象工厂")).toBeInTheDocument();
     expect(screen.getByText("具体工厂")).toBeInTheDocument();
+  });
+
+  it("renders inline file names and keys as gray code pills inside assistant content", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "说明这次改了哪些文件"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: "这次主要调整了 `Workbench.tsx`、`App.tsx` 和 `settings.ollama`。"
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    const inlineCodes = document.querySelectorAll(".message-inline-code");
+    expect(inlineCodes.length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("Workbench.tsx")).toBeInTheDocument();
+    expect(screen.getByText("App.tsx")).toBeInTheDocument();
+    expect(screen.getByText("settings.ollama")).toBeInTheDocument();
+  });
+
+  it("renders lightweight operation separators for step-like assistant updates", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "继续实现"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: [
+        "已读取 2 个文件和已搜索代码",
+        "",
+        "我已经定位到主链路了，接下来会直接补设置状态和请求透传。",
+        "",
+        "正在编辑 `Workbench.tsx`"
+      ].join("\n")
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    const operations = document.querySelectorAll(".message-rich-operation");
+    expect(operations).toHaveLength(2);
+    expect(operations[0]?.querySelector("svg")).not.toBeNull();
+    expect(operations[1]?.querySelector("svg")).not.toBeNull();
+    expect(operations[0]).toHaveClass("message-rich-operation-reading");
+    expect(operations[1]).toHaveClass("message-rich-operation-editing");
+    expect(screen.getByText("已读取 2 个文件和已搜索代码")).toBeInTheDocument();
+    expect(screen.getByText("正在编辑")).toBeInTheDocument();
+    expect(screen.getByText(/我已经定位到主链路了/)).toBeInTheDocument();
   });
 });

@@ -364,6 +364,37 @@ describe("ollamaService", () => {
     });
   });
 
+  it("uses the configured long-answer output budget for long desktop chat questions", async () => {
+    let chatPayload: unknown;
+    await runWithDesktopIpcOnly(async () => {
+      mockIPC((cmd, payload) => {
+        if (cmd === "ollama_chat") {
+          chatPayload = payload;
+          return {
+            model: "qwen3.6:35b",
+            message: "这是一个较长回答。"
+          };
+        }
+
+        return null;
+      });
+
+      await chatWithOllamaModel({
+        model: "qwen3.6:35b",
+        message: "请完整总结这份很长的文档，并给出详细分析、分点结论和完整建议。",
+        longAnswerNumPredict: 12288
+      });
+    });
+
+    expect(chatPayload).toEqual({
+      request: expect.objectContaining({
+        model: "qwen3.6:35b",
+        numPredict: 12288,
+        think: false
+      })
+    });
+  });
+
   it("passes request ids to desktop Ollama chat and cancellation commands", async () => {
     const seenPayloads: Array<{ cmd: string; payload: unknown }> = [];
     await runWithDesktopIpcOnly(async () => {

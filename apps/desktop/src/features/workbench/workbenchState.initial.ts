@@ -27,6 +27,7 @@ export function createInitialWorkbenchState(): WorkbenchState {
     conversation: {
       id: "draft-conversation-1",
       entries: [],
+      npcId: null,
       mode: "blank",
       restoredFromConversationId: null
     },
@@ -98,6 +99,11 @@ export function createInitialWorkbenchState(): WorkbenchState {
       summary: "等待工具执行结果或本地产物摘要。"
     },
     settings: {
+      ollama: {
+        longAnswerNumPredict: 8192,
+        autoContinuationLimit: 5,
+        continuationTailLimit: 2400
+      },
       remoteApi: {
         collapsed: true,
         enabled: false,

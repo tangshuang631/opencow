@@ -43,6 +43,11 @@ type ChangeItem = {
   detail: string;
 };
 
+type ChangeStats = {
+  addedLines: number | null;
+  removedLines: number | null;
+};
+
 function truncateInspectorText(value: string, limit: number) {
   const normalized = normalizeWorkbenchText(value).replace(/\s+/g, " ").trim();
 
@@ -230,6 +235,38 @@ function splitChineseList(value: string) {
     .filter(Boolean);
 }
 
+function parseChangeStats(blocks: string[]): ChangeStats {
+  let addedLines: number | null = null;
+  let removedLines: number | null = null;
+
+  for (const block of blocks) {
+    const normalized = normalizeWorkbenchText(block);
+    const explicitChineseMatch =
+      normalized.match(/新增\s*(\d[\d,]*)\s*行.*?删除\s*(\d[\d,]*)\s*行/i)
+      ?? normalized.match(/增加\s*(\d[\d,]*)\s*行.*?删除\s*(\d[\d,]*)\s*行/i);
+    const explicitSymbolMatch = normalized.match(/\+(\d[\d,]*)\s*[\/|· ]\s*-(\d[\d,]*)/)
+      ?? normalized.match(/\+(\d[\d,]*)\s*-(\d[\d,]*)/);
+    const gitStatMatch =
+      normalized.match(/(\d[\d,]*)\s+insertions?\(\+\).*?(\d[\d,]*)\s+deletions?\(-\)/i)
+      ?? normalized.match(/(\d[\d,]*)\s+additions?\(\+\).*?(\d[\d,]*)\s+deletions?\(-\)/i);
+
+    const match = explicitChineseMatch ?? explicitSymbolMatch ?? gitStatMatch;
+    if (!match) {
+      continue;
+    }
+
+    const nextAdded = Number((match[1] ?? "0").replaceAll(",", ""));
+    const nextRemoved = Number((match[2] ?? "0").replaceAll(",", ""));
+
+    if (Number.isFinite(nextAdded) && Number.isFinite(nextRemoved)) {
+      addedLines = Math.max(addedLines ?? 0, nextAdded);
+      removedLines = Math.max(removedLines ?? 0, nextRemoved);
+    }
+  }
+
+  return { addedLines, removedLines };
+}
+
 function collectChangeItems(state: WorkbenchState): ChangeItem[] {
   const items: ChangeItem[] = [];
   const seen = new Set<string>();
@@ -312,15 +349,13 @@ export function Inspector({
   const changedFileCount = changeItems.length;
   const addedFileCount = changeItems.filter((item) => item.kind === "added").length;
   const modifiedFileCount = changeItems.filter((item) => item.kind === "modified").length;
-  const changeSummaryLabel = changedFileCount === 0
-    ? "暂无变更"
-    : `${changedFileCount} 个文件`;
-  const changeSummaryDetail = changedFileCount === 0
-    ? "当前没有新的本地文件改动。"
-    : [
-        modifiedFileCount > 0 ? `改动 ${modifiedFileCount}` : null,
-        addedFileCount > 0 ? `新增 ${addedFileCount}` : null
-      ].filter(Boolean).join(" · ");
+  const changeStats = useMemo(
+    () => parseChangeStats(state.conversation.entries.flatMap((entry) => [entry.summary, ...(entry.detailLines ?? [])])),
+    [state.conversation.entries]
+  );
+  const hasRealLineStats = changeStats.addedLines !== null || changeStats.removedLines !== null;
+  const changeSummaryLabel = changedFileCount === 0 ? "暂无变更" : "变更";
+  const changeSummaryDetail = changedFileCount === 0 ? null : `${changedFileCount} 个文件`;
 
   return (
     <aside aria-label="右侧面板" className="inspector glass-gradient-sidebar-right">
@@ -369,15 +404,8 @@ export function Inspector({
             <p className="knowledge-section-eyebrow">当前执行</p>
             <h2>任务单</h2>
           </div>
-          {activeTask ? (
-            <button type="button" className="message-link-button" onClick={onCancelActiveTask}>
-              停止
-            </button>
-          ) : null}
         </div>
-        {checklistItems.length === 0 ? (
-          <p className="npc-empty-state">还没有任务，发一条消息后会在这里生成任务单。</p>
-        ) : (
+        {checklistItems.length > 0 ? (
           <div className="inspector-checklist">
             {checklistItems.map((item) => (
               <div className={`inspector-checklist-item inspector-checklist-item-${item.status}`} key={item.id}>
@@ -386,7 +414,7 @@ export function Inspector({
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </section>
 
       <section className="inspector-task-sheet">
@@ -408,13 +436,28 @@ export function Inspector({
             <span className="inspector-change-summary-title">变更</span>
           </span>
           <span className="inspector-change-summary-trailing">
-            <span className="inspector-change-summary-count">{changeSummaryLabel}</span>
-            {changeSummaryDetail ? <span className="inspector-change-summary-meta">{changeSummaryDetail}</span> : null}
+            {changedFileCount === 0 ? (
+              <span className="inspector-change-summary-count">{changeSummaryLabel}</span>
+            ) : (
+              <>
+                {changeSummaryDetail ? <span className="inspector-change-summary-meta">{changeSummaryDetail}</span> : null}
+                {hasRealLineStats ? (
+                  <span className="inspector-change-summary-stats" aria-label="变更统计">
+                    {changeStats.addedLines !== null ? (
+                      <span className="inspector-change-summary-added">+{changeStats.addedLines.toLocaleString("en-US")}</span>
+                    ) : null}
+                    {changeStats.removedLines !== null ? (
+                      <span className="inspector-change-summary-removed">-{changeStats.removedLines.toLocaleString("en-US")}</span>
+                    ) : null}
+                  </span>
+                ) : null}
+              </>
+            )}
           </span>
         </button>
         {isChangeSummaryExpanded ? (
           changedFileCount === 0 ? (
-            <p className="inspector-change-empty">当前还没有本地文件变更。</p>
+            <p className="inspector-change-empty">当前没有新的本地文件改动。</p>
           ) : (
             <div className="npc-compact-list inspector-change-list">
               {changeItems.map((item) => {

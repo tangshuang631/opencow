@@ -185,19 +185,34 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
   const revivedRestoredFromConversationId = revivedConversationMode === "restored"
     ? (state.conversation.restoredFromConversationId ?? null)
     : null;
+  const revivedConversationNpcId = state.conversation.npcId
+    && revivedNpcWorkspace.items.some((item) => item.id === state.conversation.npcId)
+    ? state.conversation.npcId
+    : null;
 
   return {
     ...state,
     conversation: {
       entries: revivedConversationEntries,
+      npcId: revivedConversationNpcId,
       mode: revivedConversationMode,
       restoredFromConversationId: revivedRestoredFromConversationId
     },
     composer: revivedComposer,
     history: {
       lastNonEmptyConversationEntries: revivedHistoryEntries,
-      draftConversations: revivedDraftConversations,
-      archivedConversations: revivedArchivedConversations
+      draftConversations: revivedDraftConversations.map((record) => ({
+        ...record,
+        npcId: record.npcId && revivedNpcWorkspace.items.some((item) => item.id === record.npcId)
+          ? record.npcId
+          : null
+      })),
+      archivedConversations: revivedArchivedConversations.map((record) => ({
+        ...record,
+        npcId: record.npcId && revivedNpcWorkspace.items.some((item) => item.id === record.npcId)
+          ? record.npcId
+          : null
+      }))
     },
     knowledge: revivedKnowledge,
     npcWorkspace: revivedNpcWorkspace,
@@ -229,6 +244,11 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
       suppressFallbackNotice: state.search?.suppressFallbackNotice ?? false
     },
     settings: {
+      ollama: {
+        longAnswerNumPredict: state.settings?.ollama?.longAnswerNumPredict ?? 8192,
+        autoContinuationLimit: state.settings?.ollama?.autoContinuationLimit ?? 5,
+        continuationTailLimit: state.settings?.ollama?.continuationTailLimit ?? 2400
+      },
       remoteApi: {
         collapsed: state.settings?.remoteApi?.collapsed ?? true,
         enabled: state.settings?.remoteApi?.enabled ?? false,
@@ -303,6 +323,7 @@ export async function persistWorkbenchState(state: WorkbenchState) {
     ...state,
     conversation: {
       ...state.conversation,
+      npcId: state.conversation.npcId ?? null,
       mode: state.conversation.mode ?? (state.conversation.entries.length > 0 ? "history" : "blank"),
       restoredFromConversationId: state.conversation.mode === "restored"
         ? (state.conversation.restoredFromConversationId ?? null)
