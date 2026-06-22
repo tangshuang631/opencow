@@ -1,0 +1,27 @@
+dev:
+  push:
+    - docker:
+        image: node:22
+      stages:
+        - name: install
+          script:
+            - npm ci
+        - name: desktop-unit
+          script:
+            - npm --workspace apps/desktop run test -- src/features/workbench/workbenchState.conversation.test.ts src/features/workbench/workbenchState.persistence.test.ts src/features/workbench/Workbench.test.tsx -t "shows the conversation NPC bar and switches explicit NPC activation without affecting editor selection semantics|preserves the current conversation NPC in archived history but resets new conversation execution state|restores the conversation NPC from recent history when the NPC still exists|drops a persisted conversation NPC when that NPC no longer exists"
+            - npm --workspace apps/desktop run test -- src/app/app.test.tsx -t "uses the selected NPC model and persona context for ordinary chat|aggregates local knowledge only from the selected NPC bound libraries during ordinary chat|keeps using the conversation NPC after switching the NPC workspace editor to another card"
+        - name: desktop-build
+          script:
+            - npm --workspace apps/desktop run build
+
+main:
+  push:
+    - docker:
+        image: node:22
+      stages:
+        - name: install
+          script:
+            - npm ci
+        - name: desktop-build
+          script:
+            - npm --workspace apps/desktop run build
