@@ -15,6 +15,32 @@ dev:
             - npm --workspace apps/desktop run build
 
 main:
+  pull_request:
+    - docker:
+        image: node:22
+      stages:
+        - name: allow-dev-only
+          script:
+            - test "$CNB_PULL_REQUEST_BRANCH" = "dev"
+        - name: install
+          script:
+            - npm ci
+        - name: desktop-build
+          script:
+            - npm --workspace apps/desktop run build
+  pull_request.mergeable:
+    - docker:
+        image: node:22
+      stages:
+        - name: allow-dev-only
+          script:
+            - test "$CNB_PULL_REQUEST_BRANCH" = "dev"
+        - name: auto-merge-dev-into-main
+          type: git:auto-merge
+          options:
+            mergeType: squash
+            mergeCommitMessage: $CNB_PULL_REQUEST_TITLE
+            removeSourceBranch: false
   push:
     - docker:
         image: node:22

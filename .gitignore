@@ -13,3 +13,8 @@ apps/desktop/vite.config.d.ts
 apps/desktop/vitest.config.js
 apps/desktop/vitest.config.d.ts
 vendor/openclaw/
+.DS_Store
+apps/.DS_Store
+.opencow/
+.superpowers/
+graphify/
