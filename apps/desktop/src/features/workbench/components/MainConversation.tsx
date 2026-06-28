@@ -203,28 +203,100 @@ function parseSearchReferenceCards(detailLines: string[]) {
   const remainingLines: string[] = [];
 
   for (const line of detailLines) {
-    const match = line.match(/^搜索来源：标题=(.+?)；(?:来源|提供方)=(.+?)；查询=(.+?)；地址=(.+?)；摘要=(.+?)(?:；事实片段=(.+))?$/);
+    const card = parseSearchReferenceLine(line);
 
-    if (!match) {
+    if (!card) {
       remainingLines.push(line);
       continue;
     }
 
-    cards.push({
-      title: match[1]?.trim() ?? "",
-      provider: match[2]?.trim() ?? "",
-      sourceLabel: match[2]?.trim() ?? "",
-      query: match[3]?.trim() ?? "",
-      url: match[4]?.trim() ?? "",
-      summary: match[5]?.trim() ?? "",
-      factSnippets: match[6]
-        ?.split("｜")
-        .map((snippet) => snippet.trim())
-        .filter(Boolean) ?? []
-    });
+    cards.push(card);
   }
 
   return { cards, remainingLines };
+}
+
+function parseSearchReferenceLine(line: string): SearchReferenceCard | null {
+  const normalizedLine = line.trim();
+
+  if (!normalizedLine.startsWith("搜索来源：标题=")) {
+    return null;
+  }
+
+  const withoutPrefix = normalizedLine.replace(/^搜索来源：标题=/, "");
+  const sourceDelimiter = withoutPrefix.includes("；来源=") ? "；来源=" : "；提供方=";
+  const sourceIndex = withoutPrefix.indexOf(sourceDelimiter);
+
+  if (sourceIndex < 0) {
+    return null;
+  }
+
+  const title = withoutPrefix.slice(0, sourceIndex).trim();
+  const afterSource = withoutPrefix.slice(sourceIndex + sourceDelimiter.length);
+  const queryDelimiter = "；查询=";
+  const queryIndex = afterSource.indexOf(queryDelimiter);
+
+  if (queryIndex < 0) {
+    return null;
+  }
+
+  const provider = afterSource.slice(0, queryIndex).trim();
+  const afterQuery = afterSource.slice(queryIndex + queryDelimiter.length);
+  const { value: query, remainder: afterQueryRemainder } = takeLabeledReferenceValue(afterQuery, ["；地址=", "；摘要=", "；事实片段="]);
+  const fields = parseTrailingReferenceFields(afterQueryRemainder);
+
+  return {
+    title,
+    provider,
+    sourceLabel: provider,
+    query: query.trim(),
+    url: fields["地址"]?.trim() ?? "",
+    summary: fields["摘要"]?.trim() ?? "",
+    factSnippets: fields["事实片段"]
+      ?.split("｜")
+      .map((snippet) => snippet.trim())
+      .filter(Boolean) ?? []
+  };
+}
+
+function takeLabeledReferenceValue(text: string, labels: string[]) {
+  const nextLabel = labels
+    .map((label) => ({ label, index: text.indexOf(label) }))
+    .filter((item) => item.index >= 0)
+    .sort((left, right) => left.index - right.index)[0];
+
+  if (!nextLabel) {
+    return { value: text, remainder: "" };
+  }
+
+  return {
+    value: text.slice(0, nextLabel.index),
+    remainder: text.slice(nextLabel.index)
+  };
+}
+
+function parseTrailingReferenceFields(text: string) {
+  const fields: Record<string, string> = {};
+  let remainder = text;
+
+  while (remainder) {
+    const labelMatch = remainder.match(/^；(地址|摘要|事实片段)=/);
+
+    if (!labelMatch) {
+      break;
+    }
+
+    const label = labelMatch[1] ?? "";
+    const valueStart = labelMatch[0].length;
+    const { value, remainder: nextRemainder } = takeLabeledReferenceValue(
+      remainder.slice(valueStart),
+      ["；地址=", "；摘要=", "；事实片段="].filter((candidate) => candidate !== `；${label}=`)
+    );
+    fields[label] = value;
+    remainder = nextRemainder;
+  }
+
+  return fields;
 }
 
 function isKnowledgeMetadataLine(line: string) {
@@ -441,9 +513,38 @@ function createConversationHeader(entries: WorkbenchState["conversation"]["entri
   }
 
   return {
-    title: isLongWorkbenchText(title) ? "长文本对话" : createCompactText(title, LONG_TITLE_LIMIT),
+    title: createConversationTitle(title),
     overview
   };
+}
+
+function createConversationTitle(text: string) {
+  const normalized = normalizeWorkbenchText(text).replace(/\r\n/g, "\n").trim();
+
+  if (!isLongWorkbenchText(normalized)) {
+    return createCompactText(normalized, LONG_TITLE_LIMIT);
+  }
+
+  return createCompactText(createLongTextTitleCandidate(normalized), LONG_TITLE_LIMIT);
+}
+
+function createLongTextTitleCandidate(text: string) {
+  const lines = text
+    .split("\n")
+    .map((line) => line
+      .replace(/^```[a-zA-Z0-9_-]*\s*/, "")
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^[>*\-\d.\s]+/, "")
+      .replace(/^[\s{}()[\];,.:]+/, "")
+      .trim())
+    .filter(Boolean);
+  const firstUsefulLine =
+    lines.find((line) => /[\u4e00-\u9fff]/.test(line) && line.length >= 8)
+    ?? lines.find((line) => /[a-zA-Z_][\w:<>&*\s(),.-]*\{?$/.test(line))
+    ?? lines[0]
+    ?? text;
+
+  return firstUsefulLine.replace(/\s+/g, " ").trim();
 }
 
 function createCompactText(text: string, limit = LONG_TEXT_LIMIT) {
@@ -543,6 +644,7 @@ type MarkdownBlock =
   | { type: "heading"; content: string }
   | { type: "divider" }
   | { type: "operation"; content: string; tone: "reading" | "editing" | "completed" }
+  | { type: "code"; language: string; content: string }
   | { type: "paragraph"; content: string }
   | { type: "ordered-list"; items: Array<{ content: string; children: string[] }> }
   | { type: "table"; rows: string[][] };
@@ -619,6 +721,8 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   let paragraphLines: string[] = [];
   let orderedListItems: Array<{ content: string; children: string[] }> = [];
   let tableLines: string[] = [];
+  let codeFenceLanguage: string | null = null;
+  let codeLines: string[] = [];
 
   function flushParagraph() {
     if (paragraphLines.length === 0) {
@@ -667,9 +771,42 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
     tableLines = [];
   }
 
+  function flushCode() {
+    if (codeFenceLanguage === null) {
+      return;
+    }
+
+    blocks.push({
+      type: "code",
+      language: codeFenceLanguage,
+      content: codeLines.join("\n").trimEnd()
+    });
+    codeFenceLanguage = null;
+    codeLines = [];
+  }
+
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
+    const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_-]*)\s*$/);
+
+    if (codeFenceLanguage !== null) {
+      if (fenceMatch) {
+        flushCode();
+      } else {
+        codeLines.push(line);
+      }
+      continue;
+    }
+
+    if (fenceMatch) {
+      flushParagraph();
+      flushOrderedList();
+      flushTable();
+      codeFenceLanguage = fenceMatch[1]?.trim() ?? "";
+      codeLines = [];
+      continue;
+    }
 
     if (!trimmed) {
       flushParagraph();
@@ -755,6 +892,7 @@ function parseMarkdownBlocks(text: string): MarkdownBlock[] {
   flushParagraph();
   flushOrderedList();
   flushTable();
+  flushCode();
 
   return blocks;
 }
@@ -810,6 +948,19 @@ function AssistantMarkdownMessage({ text }: { text: string }) {
 
         if (block.type === "divider") {
           return <div aria-hidden="true" className="message-rich-divider" key={`${block.type}-${index}`} />;
+        }
+
+        if (block.type === "code") {
+          return (
+            <figure className="message-code-block" key={`${block.type}-${index}`}>
+              {block.language ? (
+                <figcaption className="message-code-language">{block.language}</figcaption>
+              ) : null}
+              <pre>
+                <code>{block.content}</code>
+              </pre>
+            </figure>
+          );
         }
 
         if (block.type === "operation") {
@@ -928,33 +1079,46 @@ function InformationReferences({
                 <div className="message-knowledge-item" key={`${entryId}-${card.url}-${card.title}`}>
                   <p className="message-detail">{normalizeWorkbenchText(card.title)}</p>
                   <div className="message-reference-link-row">
-                    <button
-                      className="message-reference-link"
-                      type="button"
-                      aria-label={`打开来源：${normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}`}
-                      onClick={() => {
-                        void openReferenceUrl(card.url);
-                      }}
-                    >
-                      <Globe aria-hidden="true" size={14} />
-                      <span>{normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}</span>
-                    </button>
+                    {card.url ? (
+                      <button
+                        className="message-reference-link"
+                        type="button"
+                        aria-label={`打开来源：${normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}`}
+                        onClick={() => {
+                          void openReferenceUrl(card.url);
+                        }}
+                      >
+                        <Globe aria-hidden="true" size={14} />
+                        <span>{normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}</span>
+                      </button>
+                    ) : (
+                      <p className="message-reference-source">
+                        {normalizeWorkbenchText(card.sourceLabel || card.provider || card.title)}
+                      </p>
+                    )}
+                    {card.query ? (
+                      <p className="message-reference-summary">
+                        查询：{createCompactText(card.query, 86)}
+                      </p>
+                    ) : null}
                     {getVisibleReferenceSnippets(card.factSnippets, card.summary).map((snippet) => (
                       <p className="message-reference-summary" key={`${entryId}-${card.url}-${snippet}`}>
                         {snippet}
                       </p>
                     ))}
                   </div>
-                  <button
-                    className="message-reference-title-link"
-                    type="button"
-                    aria-label={`打开条目：${normalizeWorkbenchText(card.title)}`}
-                    onClick={() => {
-                      void openReferenceUrl(card.url);
-                    }}
-                  >
-                    {normalizeWorkbenchText(card.title)}
-                  </button>
+                  {card.url ? (
+                    <button
+                      className="message-reference-title-link"
+                      type="button"
+                      aria-label={`打开条目：${normalizeWorkbenchText(card.title)}`}
+                      onClick={() => {
+                        void openReferenceUrl(card.url);
+                      }}
+                    >
+                      {normalizeWorkbenchText(card.title)}
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </>

@@ -1027,14 +1027,29 @@ describe("MainConversation", () => {
     render(<MainConversation state={submitted} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
 
     expect(screen.queryByText(longInput)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "长文本对话" })).toBeInTheDocument();
-    expect(screen.getAllByText(/^第1题 这是一段很长的题目正文和选项内容/)).toHaveLength(1);
-    expect(screen.getAllByText(/…$/)).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "长文本对话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^第1题 这是一段很长的题目正文和选项内容/ })).toBeInTheDocument();
+    expect(document.querySelector(".message-summary-collapsed")).toHaveTextContent(/…$/);
 
     fireEvent.click(screen.getByRole("button", { name: "展开完整输入" }));
 
     expect(screen.getByText(longInput)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "收起输入" })).toBeInTheDocument();
+  });
+
+  it("strips code-closing punctuation from generated long input titles", () => {
+    const longInput = [
+      "}; 修复代码问题：这段输入前面带有 C++ 类闭合符号，但标题应该使用真正的任务文字。",
+      ...Array.from({ length: 16 }, (_, index) => `补充上下文 ${index + 1}：请检查边界条件和返回格式。`)
+    ].join("\n");
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: longInput
+    });
+
+    render(<MainConversation state={submitted} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.queryByRole("heading", { name: /^};/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^修复代码问题/ })).toBeInTheDocument();
   });
 
   it("shows auto-compressed older messages without exposing retention copy", () => {
@@ -1210,6 +1225,46 @@ describe("MainConversation", () => {
     expect(screen.queryByText("原文链接")).not.toBeInTheDocument();
   });
 
+  it("keeps malformed long-query search reference lines collapsed as information references", () => {
+    const longCodeQuery = [
+      "class Solution {",
+      "public:",
+      "  void merge(vector<int>& nums1, int m, vector<int>& nums2, int n) {",
+      "    for (int i=0;int j=0;j<n){",
+      "      if(nums1[i]>nums2[j]){",
+      "        int temp=nums1[i];",
+      "      }",
+      "    }",
+      "  }",
+      "}",
+      "SOURCE_QUERY_SENTINEL_SHOULD_STAY_COLLAPSED"
+    ].join("\n");
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "检查这段 merge 代码"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: "这个 merge 实现有边界问题。",
+      auditDetailLines: [
+        `搜索来源：标题=十大经典排序算法整理汇总(附代码)_知乎；来源=知乎；查询=${longCodeQuery}`
+      ]
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "展开信息引用" })).toBeInTheDocument();
+    expect(screen.getByText("1 条信息引用")).toBeInTheDocument();
+    expect(screen.queryByText(/搜索来源：标题=/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/SOURCE_QUERY_SENTINEL_SHOULD_STAY_COLLAPSED/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "展开信息引用" }));
+
+    expect(screen.getByText("联网搜索来源")).toBeInTheDocument();
+    expect(screen.getByText("十大经典排序算法整理汇总(附代码)_知乎")).toBeInTheDocument();
+    expect(screen.getByText((content) => content.startsWith("查询：class Solution { public: void merge"))).toBeInTheDocument();
+    expect(screen.queryByText(/SOURCE_QUERY_SENTINEL_SHOULD_STAY_COLLAPSED/)).not.toBeInTheDocument();
+  });
+
   it("filters low-value or html-like reference snippets from visible citations", () => {
     const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
       message: "帮我搜索 GLM 最新模型"
@@ -1272,6 +1327,39 @@ describe("MainConversation", () => {
     expect(screen.queryByText("| 特性 | IPv4 | IPv6 |")).not.toBeInTheDocument();
     expect(document.querySelector(".message-rich-divider")).not.toBeNull();
     expect(document.querySelector(".message-rich-table")).not.toBeNull();
+  });
+
+  it("renders fenced code blocks as standalone code blocks without leaking fences", () => {
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "修正 merge 实现"
+    });
+    const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
+      resultTitle: "本地模型答复",
+      resultSummary: [
+        "正确写法如下：",
+        "",
+        "```cpp",
+        "class Solution {",
+        "public:",
+        "  void merge(vector<int>& nums1, int m, vector<int>& nums2, int n) {",
+        "    int i = m - 1;",
+        "  }",
+        "};",
+        "```",
+        "",
+        "从后往前合并可以避免覆盖。"
+      ].join("\n")
+    });
+
+    render(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    const codeBlock = document.querySelector(".message-code-block");
+    expect(codeBlock).not.toBeNull();
+    expect(codeBlock).toHaveTextContent("class Solution");
+    expect(screen.getByText("cpp")).toBeInTheDocument();
+    expect(screen.queryByText("```cpp")).not.toBeInTheDocument();
+    expect(screen.queryByText("```")).not.toBeInTheDocument();
+    expect(screen.getByText("从后往前合并可以避免覆盖。")).toBeInTheDocument();
   });
 
   it("opens search references with the system browser in desktop mode", () => {
