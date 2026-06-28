@@ -39,5 +39,96 @@ describe("assistantTaskService readonly shell execution", () => {
     expect(result.resultTitle).toBe("Workspace git status");
     expect(result.resultSummary).toContain("git status --short");
     expect(result.resultSummary).toContain("App.tsx");
+    expect(result.resultSummary).toContain("命令：git status --short");
+    expect(result.resultSummary).toContain("输出预览：");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
+  });
+
+  it("summarizes readonly shell diagnostics as a self-check report", async () => {
+    runReadonlyShellCommandMock.mockResolvedValueOnce({
+      command_id: "workspace-root-list",
+      command_label: "Get-ChildItem -Force",
+      stdout_preview: "apps\npackages\ndocs\nOPENCOW_CORE_RULES.md",
+      line_count: 4,
+      summary: "Readonly shell command completed successfully."
+    });
+
+    const result = await executeAssistantTask({
+      kind: "readonly-shell-workspace-root",
+      title: "Readonly shell diagnostics",
+      summary: "Run a readonly shell diagnostic by listing the workspace root before retrying command execution.",
+      auditSummary: "Local assistant planned readonly shell diagnostics.",
+      auditDetail:
+        "Readonly shell diagnostics task: workspace root listing | request=检查权限批准和工作区根目录再重试"
+    });
+
+    expect(result.resultTitle).toBe("Readonly shell diagnostics");
+    expect(result.resultSummary).toContain("只读 Shell 自检报告：");
+    expect(result.resultSummary).toContain("Shell 桥接可用");
+    expect(result.resultSummary).toContain("工作区根目录可访问");
+    expect(result.resultSummary).toContain("命令白名单已接受 workspace-root-list");
+    expect(result.resultSummary).toContain("审计链路已保留只读 Shell 诊断");
+    expect(result.resultSummary).toContain("输出预览：apps");
+    expect(result.resultSummary).not.toContain("Self-check report:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
+  });
+
+  it("adds command, permission, and recovery context when readonly shell execution fails", async () => {
+    runReadonlyShellCommandMock.mockRejectedValueOnce(
+      new Error("Tauri readonly_command failed: git executable unavailable.")
+    );
+
+    await expect(
+      executeAssistantTask({
+        kind: "readonly-shell-git-status",
+        title: "Workspace git status",
+        summary: "Inspect current workspace git changes before deeper assistant execution.",
+        auditSummary: "Local assistant planned a readonly git status command.",
+        auditDetail: "Readonly shell command task: git status --short"
+      })
+    ).rejects.toThrow(
+      /Shell execution failed in assistantTaskService\. Command id: git-status\. Required permission: readonly\. Underlying error: Tauri readonly_command failed: git executable unavailable\. Next step: verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying\./i
+    );
+  });
+
+  it("aborts readonly shell execution when the assistant task signal is cancelled", async () => {
+    let resolveCommand: (value: {
+      command_id: string;
+      command_label: string;
+      stdout_preview: string;
+      line_count: number;
+      summary: string;
+    }) => void = () => {};
+    runReadonlyShellCommandMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCommand = resolve;
+      })
+    );
+    const abortController = new AbortController();
+    const executionPromise = executeAssistantTask(
+      {
+        kind: "readonly-shell-git-status",
+        title: "Workspace git status",
+        summary: "Inspect current workspace git changes before deeper assistant execution.",
+        auditSummary: "Local assistant planned a readonly git status command.",
+        auditDetail: "Readonly shell command task: git status --short"
+      },
+      {
+        signal: abortController.signal
+      }
+    );
+
+    abortController.abort();
+    resolveCommand({
+      command_id: "git-status",
+      command_label: "git status --short",
+      stdout_preview: " M apps/desktop/src/app/App.tsx",
+      line_count: 1,
+      summary: "Readonly shell command completed successfully."
+    });
+
+    await expect(executionPromise).rejects.toThrow(/Assistant task execution aborted/i);
   });
 });

@@ -5,12 +5,17 @@
   "description": "Local-first Windows desktop AI assistant based on OpenClaw.",
   "scripts": {
     "dev": "npm --workspace apps/desktop run dev",
+    "predesktop:dev": "npm --workspace packages/openclaw-adapter run build",
     "desktop:dev": "npm --workspace apps/desktop run tauri:dev",
+    "desktop:sync:mac": "python3 scripts/sync-opencow-mac-apps.py",
+    "desktop:run:mac": "zsh scripts/start-opencow-latest-desktop-mac.command",
     "desktop:test:start": "start-opencow-test.bat",
     "desktop:test:check": "start-opencow-test.bat check",
     "build": "npm --workspaces --if-present run build",
     "test": "npm --workspaces --if-present run test",
     "test:unit": "npm --workspaces --if-present run test:unit",
+    "test:scripts": "node --test scripts/*.test.mjs",
+    "graphify": "node scripts/graphify-run.mjs",
     "verify:all": "powershell -ExecutionPolicy Bypass -File scripts/verify-all.ps1",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:health": "node scripts/check-health.mjs"

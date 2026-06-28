@@ -28,6 +28,63 @@ describe("assistantTaskService npc collaboration preview", () => {
     });
   });
 
+  it("requests permission before an LLM-generated NPC config write", () => {
+    const plan = planAssistantTask("你能帮我配置一个课程助手npc吗", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-config-write"
+    });
+  });
+
+  it("keeps Chinese NPC draft requests on the readonly preview path", () => {
+    const plan = planAssistantTask("先给我课程助手 NPC 的只读草案", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "npc-local-collaboration-preview",
+      title: "NPC collaboration preview"
+    });
+  });
+
+  it("plans a readonly NPC default template preview without requesting config write permission", () => {
+    const plan = planAssistantTask("先给我课程助手 NPC 的默认模板", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "npc-template-preview",
+      title: "NPC default template preview"
+    });
+  });
+
+  it("executes a readonly NPC default template preview with all product fields", async () => {
+    const result = await executeAssistantTask({
+      kind: "npc-template-preview",
+      title: "NPC default template preview",
+      summary: "先给我课程助手 NPC 的默认模板",
+      auditSummary: "Local assistant planned a readonly NPC default template preview.",
+      auditDetail: "Readonly NPC template preview task"
+    } as const);
+
+    expect(result.resultTitle).toBe("NPC 默认模板预览");
+    expect(result.resultSummary).toContain("名称：课程助手");
+    expect(result.resultSummary).toContain("系统提示词：");
+    expect(result.resultSummary).toContain("默认模型：");
+    expect(result.resultSummary).toContain("默认工具：");
+    expect(result.resultSummary).toContain("默认知识库：");
+    expect(result.resultSummary).toContain("风险策略：");
+    expect(result.resultSummary).toContain("输出风格：");
+    expect(result.resultSummary).toContain("保存前仍需 workspace-write 权限");
+  });
+
+  it("plans a document processing NPC config write once workspace-write is available", () => {
+    const plan = planAssistantTask("你能帮我配置一个文档处理npc吗", "workspace-write");
+
+    expect(plan).toMatchObject({
+      kind: "npc-config-write",
+      title: "大模型生成并保存 NPC 配置"
+    });
+  });
+
   it("executes an npc collaboration preview by combining npc readiness, enabled skills, and local docs", async () => {
     loadOpenClawCapabilityOverviewMock.mockResolvedValueOnce({
       capability_id: "npc",
@@ -93,6 +150,15 @@ describe("assistantTaskService npc collaboration preview", () => {
     expect(result.resultSummary).toContain("docs-helper");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
-    expect(result.resultSummary).toContain("Indexed documents: 7");
+    expect(result.resultSummary).toContain("状态：ready-foundation");
+    expect(result.resultSummary).toContain("已启用 Skills：coding-agent、docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("本地上下文：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("已索引文档：7");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Enabled skills:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Local context:");
+    expect(result.resultSummary).not.toContain("Indexed documents:");
   });
 });

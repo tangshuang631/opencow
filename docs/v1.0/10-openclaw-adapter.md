@@ -934,17 +934,22 @@ npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTas
 cargo test workspace_project_run_preview -- --nocapture
 ```
 
-## 6.23 First permission-backed local project run landing
+## 6.23 Permission-backed local project lifecycle landing
 
-The next concrete desktop-first execution slice is now the first real local project run task:
+The desktop-first assistant chain now includes the first real local project lifecycle trio:
 
 - `workspace-project-run`
+- `workspace-project-status`
+- `workspace-project-stop`
 
 Current planner behavior:
 
 - explicit local run requests such as `run the desktop app locally` no longer fall back into generic help
 - in `readonly`, the planner returns `permission-request` for `workspace-write`
 - after approval, the planner continues into the fixed `workspace-project-run` task kind
+- explicit status requests such as `show the status of the desktop app local run` map directly into the readonly `workspace-project-status` task kind
+- explicit stop requests such as `stop the desktop app local run` return `permission-request` in `readonly`
+- after approval, the planner continues into the fixed `workspace-project-stop` task kind
 
 Current desktop execution behavior:
 
@@ -958,8 +963,10 @@ Current Tauri behavior:
 - resolve the workspace root
 - match a runnable local project from approved workspace candidates
 - choose a fixed launch command from `dev`, then `start`, then `build`
-- start the project through a narrow PowerShell job-based launch path
-- return a stable process-handle-like result to the desktop assistant chain
+- start the project through a narrow PowerShell launch path and return the real child `pid`
+- persist lifecycle records in `.opencow/runtime/workspace-project-runs.json`
+- answer readonly status checks through the same runtime registry
+- stop matched local project runs through the same runtime registry instead of a disconnected shell guess
 
 Current safety boundary remains intentionally narrow:
 
@@ -972,15 +979,79 @@ Current safety boundary remains intentionally narrow:
 
 Current known limitation:
 
-- the returned `pid` is currently derived from the PowerShell background job handle instead of a durable child-process lifecycle model
-- a later slice should replace this with a stronger launch-and-stop contract before long-running multi-step NPC workflows depend on it
+- the runtime registry is now durable enough for the current desktop mainline, including invalid-JSON repair, legacy migration, and persisted launch or status metadata
+- this is still not a full long-running orchestration system for broader NPC workflows, process restarts, or remote coordination
 
 Verification for this slice:
 
 ```bash
-npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.project-run.test.ts
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.project-run.test.ts src/localAssistantPlan.project-status.test.ts src/localAssistantPlan.project-stop.test.ts
 npm --workspace packages/openclaw-adapter run build
-npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/app/app.project-run.test.tsx
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.project-run.test.ts src/features/assistant/assistantTaskService.project-status.test.ts src/features/assistant/assistantTaskService.project-stop.test.ts src/app/app.project-run.test.tsx
 npm --workspace apps/desktop exec tsc --noEmit
-cargo test workspace_project_run -- --nocapture
+cargo test workspace_project_ -- --nocapture
 ```
+
+## 6.23a First permission-backed opencow self-repair mutation mapping
+
+The adapter now also exposes the first narrow writable opencow self-repair mapping:
+
+- `opencow-self-repair-enabled-skills-registry`
+
+This mapping is intentionally narrow:
+
+- it is selected only for explicit continuation or execute wording about repairing opencow's enabled-skills registry
+- in `readonly`, it returns a `permission-request` for `workspace-write`
+- after approval, it resolves to one fixed self-repair task kind instead of a free-form repair plan
+- it targets only `.opencow/skills/enabled-skills.json`
+- it does not restart processes, mutate unrelated config, or infer arbitrary write targets
+
+Verification for this slice:
+
+```bash
+npm --workspace packages/openclaw-adapter exec vitest run src/localAssistantPlan.self-repair.test.ts
+npm --workspace packages/openclaw-adapter run build
+npm --workspace apps/desktop exec vitest run src/features/assistant/assistantTaskService.self-repair.test.ts src/app/app.self-repair.test.tsx
+npm --workspace apps/desktop exec tsc --noEmit
+cargo test opencow_self_repair_enabled_skills_registry_recovers_from_invalid_json -- --nocapture
+```
+
+## 6.23b Current adapter boundary for self-repair mutation
+
+The adapter side of self-repair is no longer preview-only, but it still intentionally exposes only narrow writable repair targets.
+
+Current landed adapter scope:
+
+- readonly preview planning through `opencow-self-repair-preview`
+- permission-backed continuation planning through `opencow-self-repair-enabled-skills-registry`
+- permission-backed continuation planning through `opencow-self-repair-workspace-project-runtime-registry`
+- fixed repair targeting for `.opencow/skills/enabled-skills.json`
+- fixed repair targeting for `.opencow/runtime/workspace-project-runs.json`
+
+Current non-goals at this stage:
+
+- no broad assistant-owned config rewrite planning
+- no destructive or process-restart self-repair planning
+- no free-form guessed repair target selected from arbitrary user text
+
+Rule for the next adapter self-repair mapping:
+
+- a new mapping should land only if it keeps the same narrow contract:
+  - explicit self-repair wording
+  - fixed target path or state surface
+  - correct permission or confirmation gating
+  - verification-oriented result contract
+  - no bypass around audit-visible and rollback-visible desktop execution
+
+## 6.24 Local-model-first planner guardrail for Chinese troubleshooting
+
+The adapter planner now keeps broad Chinese troubleshooting and configuration wording on the ordinary local model chat path unless a real controlled mutation flow exists.
+
+Current guardrail:
+
+- Chinese `配置`, `检查`, and `脚本` are no longer treated as generic triggers for fixed workspace config, package, or capability overview tasks.
+- Requests such as "帮我检查 package.json 为什么启动脚本报错", "帮我配置 package.json scripts 让桌面端更稳定", "帮我检查 RAG 为什么没有检索出内容", and "帮我检查 mcp 插件工作流为什么启动失败" remain `local-model-chat`.
+- Explicit readonly inventory wording such as `概览`, `列出`, `查看`, `inspect`, `overview`, and `list` can still route to fixed readonly overview tasks.
+- Controlled mutation flows such as LLM-generated NPC config writes, local skill install or enable, MCP plugin start, and shell execution remain routed through permission, confirmation, audit, and rollback-visible chains.
+
+This keeps ordinary answers generated by the selected local model instead of returning template-like capability summaries, while preserving deterministic planner routes for real host-side actions.

@@ -1,5 +1,7 @@
 import { recordRollbackEntry } from "./workbenchState.rollback";
-import { prependConversationEntry } from "./workbenchState.shared";
+import {
+  prependConversationEntry
+} from "./workbenchState.shared";
 import type { WorkbenchState } from "./workbenchState.types";
 
 export function createRemoteApiToggleState(state: WorkbenchState, enabled: boolean): WorkbenchState {
@@ -120,9 +122,15 @@ export function createSearchToggleState(
     providerLabel?: string;
   }
 ): WorkbenchState {
-  const nextProvider = payload.enabled ? payload.providerLabel || state.search.providerLabel || "Tavily" : "";
+  const requestedProvider = payload.providerLabel?.trim() || state.search.customProviderLabel.trim();
+  const effectiveProvider = payload.enabled
+    ? requestedProvider || "OpenCow 默认搜索"
+    : state.search.effectiveProvider;
 
-  if (state.search.enabled === payload.enabled && state.search.providerLabel === nextProvider) {
+  if (
+    state.search.enabled === payload.enabled
+    && state.search.effectiveProvider === effectiveProvider
+  ) {
     return state;
   }
 
@@ -132,8 +140,12 @@ export function createSearchToggleState(
     {
       ...state,
       search: {
+        ...state.search,
         enabled: payload.enabled,
-        providerLabel: nextProvider
+        providerLabel: effectiveProvider,
+        customProviderLabel: payload.enabled ? requestedProvider : state.search.customProviderLabel,
+        effectiveProvider,
+        lastFallbackReason: payload.enabled ? state.search.lastFallbackReason : null
       },
       conversation: {
         entries: prependConversationEntry(state.conversation.entries, {
@@ -141,7 +153,7 @@ export function createSearchToggleState(
           kind: "system",
           title,
           summary: payload.enabled
-            ? `联网搜索已切换为 ${nextProvider}，后续搜索前仍会记录来源与摘要。`
+            ? `联网搜索已开启，当前默认使用 ${effectiveProvider}，后续搜索会记录来源与摘要。`
             : "联网搜索已关闭，当前不会自动注入外部来源。",
           actionLabel: "预览回退到 启动基线",
           rollbackTargetId: "startup-baseline"
@@ -152,7 +164,7 @@ export function createSearchToggleState(
         lastEvent: {
           module: "search",
           detail: payload.enabled
-            ? `用户在高级设置中开启了联网搜索，provider=${nextProvider}。`
+            ? `用户在搜索工作台中开启了联网搜索，effectiveProvider=${effectiveProvider}。`
             : "用户在高级设置中关闭了联网搜索。",
           timestamp: "已执行",
           source: "search_toggle"
@@ -171,11 +183,26 @@ export function createSearchProviderConfigState(
   state: WorkbenchState,
   payload: {
     providerLabel: string;
+    baseUrl?: string;
+    apiKey?: string;
+    suppressFallbackNotice?: boolean;
+    clearFallbackNotice?: boolean;
   }
 ): WorkbenchState {
-  const nextProviderLabel = payload.providerLabel.trim() || "Tavily";
+  const nextProviderLabel = payload.providerLabel.trim();
+  const nextBaseUrl = payload.baseUrl?.trim() ?? state.search.customBaseUrl;
+  const nextApiKey = payload.apiKey?.trim() ?? state.search.customApiKey;
+  const nextEffectiveProvider = nextProviderLabel || "OpenCow 默认搜索";
+  const nextSuppressFallbackNotice = payload.suppressFallbackNotice ?? state.search.suppressFallbackNotice;
+  const shouldClearFallbackNotice = payload.clearFallbackNotice ?? false;
 
-  if (state.search.providerLabel === nextProviderLabel) {
+  if (
+    state.search.customProviderLabel === nextProviderLabel
+    && state.search.customBaseUrl === nextBaseUrl
+    && state.search.customApiKey === nextApiKey
+    && state.search.suppressFallbackNotice === nextSuppressFallbackNotice
+    && (!shouldClearFallbackNotice || state.search.lastFallbackReason === null)
+  ) {
     return state;
   }
 
@@ -184,23 +211,33 @@ export function createSearchProviderConfigState(
       ...state,
       search: {
         ...state.search,
-        providerLabel: nextProviderLabel
+        providerLabel: nextEffectiveProvider,
+        customProviderLabel: nextProviderLabel,
+        customBaseUrl: nextBaseUrl,
+        customApiKey: nextApiKey,
+        effectiveProvider: nextEffectiveProvider,
+        suppressFallbackNotice: nextSuppressFallbackNotice,
+        lastFallbackReason: shouldClearFallbackNotice ? null : state.search.lastFallbackReason
       },
       conversation: {
         entries: prependConversationEntry(state.conversation.entries, {
           id: `search-provider-config-${state.rollback.entries.length}`,
           kind: "system",
-          title: "已更新联网搜索提供方",
-          summary: `联网搜索将优先使用 ${nextProviderLabel}，仍会保留来源记录与审计追踪。`,
+          title: "已更新联网搜索配置",
+          summary: shouldClearFallbackNotice
+            ? (nextSuppressFallbackNotice ? "已关闭回退提示，后续仍会自动回退默认搜索。" : "已清除本次回退提示。")
+            : nextProviderLabel
+              ? `已保存自定义搜索配置，联网搜索将优先使用 ${nextProviderLabel}。`
+              : "已清空自定义搜索配置，联网搜索将回到 OpenCow 默认搜索。",
           actionLabel: "预览回退到 启动基线",
           rollbackTargetId: "startup-baseline"
         })
       },
       audit: {
-        summary: "已更新联网搜索提供方",
+        summary: "已更新联网搜索配置",
         lastEvent: {
           module: "search",
-          detail: `provider=${nextProviderLabel}`,
+          detail: `customProvider=${nextProviderLabel || "未填写"} baseUrl=${nextBaseUrl || "未填写"} apiKey=${nextApiKey ? "已填写" : "未填写"} effectiveProvider=${nextEffectiveProvider} suppressFallbackNotice=${nextSuppressFallbackNotice ? "true" : "false"} clearFallbackNotice=${shouldClearFallbackNotice ? "true" : "false"}`,
           timestamp: "已执行",
           source: "search_provider_config"
         }
@@ -208,8 +245,8 @@ export function createSearchProviderConfigState(
       error: null
     },
     `search-provider-config-${state.rollback.entries.length}`,
-    "联网搜索 provider 更新",
-    "已保存联网搜索的 provider 配置。",
+    "联网搜索配置更新",
+    "已保存联网搜索的默认/自定义提供方配置。",
     "session"
   );
 }

@@ -5,14 +5,20 @@
 - `Tauri + React + TypeScript`
 - `assistant-ui` 作为聊天交互骨架
 - 参考 `cdesktop` 的工作台式信息架构，但视觉风格以白色、浅色、简洁为主
-- 桌面端是主目标，Web 预览只用于开发调试，不作为正式产品形态
+- 桌面端是主目标，Windows 和 macOS 共用同一条正式产品主线
+- Web 预览只用于已有调试与回归基线，当前阶段不继续扩展新功能
 
 ## 2. 视觉方向
 
 - 主色调必须为白色和浅色，避免厚重后台感
 - 风格参考 `Codex / 文心一言 / 豆包` 的简洁对话界面
-- 首页优先强调 `Ollama 本地优先`
+- 默认界面减少明显卡片边界，优先使用无边界留白、浅灰分割线、左右侧栏透明渐变
+- 默认模型链路仍为 `Ollama 本地优先`，但不要在主对话常驻展示模型说明卡片
 - 远程 API、Base URL、外部模型入口保留，但折叠进高级设置
+- 新建对话的主对话区默认保持空白，只保留输入框
+- 点击新建对话时，旧会话中尚未处理的权限升级、高风险确认和回退预览必须清掉，避免在空白新会话里误批准旧操作；清理动作必须保留审计记录
+- 只有已有真实会话内容后，主对话顶部才显示当前对话标题和一条轻量概览；模型、权限、Provider、日志等运行元信息不铺在主对话区
+- 只有未检测到 Ollama 服务或可用本地模型时，输入区上方才显示一条极简模型配置引导，并提供跳转到 `Ollama 设置` 或 `大模型 API 设置` 的动作；主对话区仍保持空白或只显示真实会话内容
 - 保留 Figma 重构优化入口，组件命名、样式变量、布局层级都要便于后续设计映射
 
 ## 3. 布局结构
@@ -34,6 +40,9 @@ Left Sidebar | Main Conversation | Right Inspector
 
 中间：
 - 会话流
+- 新建对话默认空白，不展示欢迎卡片、能力说明卡片或模型状态卡片
+- 新建对话不得继承旧会话的待提权、待高风险确认或待回退预览；正在排队或运行的任务仍保持可见，避免隐藏安全链路
+- 有真实会话内容后，顶部显示当前对话标题与轻量概览
 - 工具调用状态
 - 计划与修复提示
 - 错误与恢复信息
@@ -42,20 +51,24 @@ Left Sidebar | Main Conversation | Right Inspector
 底部：
 - 输入框
 - 附件
-- 当前模型
-- 当前权限
-- 联网搜索状态
+- 一行短状态，例如 `本地优先 · 只读 · 回退 10/20`
+- 未检测到 Ollama 服务或可用本地模型时，在输入区上方显示一行轻提示和两个设置入口
+- 当前模型、权限说明、联网搜索 Provider 等细节默认收纳到设置或记录展开区
 - `发送 / 停止任务`
 
 右侧：
 - 输出产物摘要
-- 来源
+- 默认空状态不显示 `输出 / 暂无产物` 占位，只保留 `配置与记录` 折叠入口，减少右侧常驻信息密度
+- 只有存在真实输出、取消反馈、重复任务反馈、错误恢复、任务队列、工具结果或待确认事项时，右侧才直接展示对应摘要和动作
+- 来源摘要、模型状态、权限、Provider、来源 URL、日志、普通回退历史默认收纳到 `配置与记录`
+- 远程 API、联网搜索、回退上限、本地清理等配置控件统一进入左侧 `设置` 对应页面，不在右侧展开
 - 本地任务队列
 - 工具结果
 - 日志摘要
-- 错误追踪
+- 权限确认、危险操作确认和错误追踪只在存在待处理事项时显示；无待处理空状态默认不占用界面
+- 本地任务队列和工具结果只在有任务或真实结果时显示；无任务、无工具结果时不展示空占位
 - 回退面板
-- 高级设置
+- 一旦进入待确认回退预览，回退目标、影响范围、确认和取消操作必须直接可见；展开 `配置与记录` 时不能重复渲染第二份回退预览
 
 ## 4. 本地任务交互
 
@@ -63,10 +76,19 @@ Left Sidebar | Main Conversation | Right Inspector
 - 运行中的任务要同时支持两种停止入口：
 - 输入区主按钮切换为 `停止任务`
 - 右侧 `本地任务` 队列中的运行项直接显示 `停止任务`
+- 输入区只在真实 `running` 任务存在时禁用，不能因为失效的 `activeTaskId` 误锁住输入
+- 用户点击 `停止任务` 时，如果当前 `activeTaskId` 已失效，也必须清理 stale slot 并恢复输入区
+- 如果失效的 `activeTaskId` 指向已完成、已失败或已取消的历史任务，停止操作只能清理 active slot，不能把历史任务误改成 `cancelled`
 - 失败任务要同时支持两种恢复入口：
 - 错误面板显示 `重试本地任务`
 - 右侧 `本地任务` 队列中的失败项直接显示 `重试本地任务`
 - 队列交互必须可追踪、可中断、不可卡死
+- 如果异常状态留下失效的 `activeTaskId`，调度层必须清理这个 stale slot；有排队任务时继续启动下一条任务，没有排队任务时解锁输入区，并在输出与审计中留下恢复痕迹
+- 右侧任务列表默认只展示状态、摘要、尝试次数和可执行动作；上一轮失败来源、详情与恢复建议默认收纳，用户展开后查看
+- 右侧任务列表视觉上按分割线列表处理，避免把每条任务做成强卡片
+- 权限升级取消、高风险确认取消、能力变更取消后，主对话和右侧默认输出都只显示一条中文短说明；英文 recovery trace、queued execution、provider/configuration 等细节保留在日志、回退或展开面板
+- 重复提交相同本地任务被跳过后，主对话和右侧默认输出只显示一条中文短说明；已有任务状态、执行 kind、上一轮失败详情和恢复 trace 保留在日志、回退或展开面板
+- 无待处理事项时，右侧默认不铺开来源、日志和回退历史，只保留 `配置与记录` 折叠入口；展开后仍可追踪来源、日志和回退记录，配置控件从 `设置` 页面进入
 
 ## 5. 回退交互
 
@@ -74,6 +96,7 @@ Left Sidebar | Main Conversation | Right Inspector
 - 默认保留 10 段回退点，高级设置最多提高到 20
 - 点击后先预览影响范围，再确认回退
 - 回退必须恢复到该操作执行前状态，并写入审计日志
+- 右侧回退历史默认只展示摘要与展开入口；一旦进入待确认回退预览，目标、影响范围、确认与取消操作必须保持可见
 
 ## 6. 错误交互
 
@@ -88,7 +111,7 @@ Left Sidebar | Main Conversation | Right Inspector
 
 ## 7. 高级设置
 
-- 默认折叠
+- 从左侧 `设置` 进入，默认不铺在主对话或右侧 Inspector
 - 默认关闭远程 API
 - 保留 `baseUrl / API Key / 外部模型` 配置入口
 - 保留联网搜索、Skills 下载、MCP 等能力开关
@@ -113,6 +136,7 @@ apps/desktop/src/features/workbench/
   workbenchText.ts
   workbenchState.ts
   workbenchState.types.ts
+  workbenchState.conversation.ts
   workbenchState.shared.ts
   workbenchState.initial.ts
   workbenchState.ollama.ts
@@ -128,6 +152,7 @@ apps/desktop/src/features/workbench/
 
 - `workbenchState.ts` 仅作为统一导出入口，保持调用方稳定。
 - `workbenchState.types.ts` 只放状态类型与共享结构。
+- `workbenchState.conversation.ts` 只放新建空白对话等会话级状态重置逻辑，不处理任务执行、权限审批或 shell 安全链。
 - `workbenchState.shared.ts` 只放无副作用的展示与事件 ID 工具函数。
 - `workbenchState.rollback.ts` 只放回退记录、快照、裁剪等核心逻辑。
 - `workbenchState.rollbackFlow.ts` 只放“预览回退 / 应用回退 / 取消回退”状态流转。
@@ -171,6 +196,10 @@ Rules:
 - do not queue the same local assistant task repeatedly while an identical task is already queued or running
 - prefer deduplication at the state transition layer instead of stacking UI-only guards
 - when a duplicate submit is skipped, keep the response short and explicit instead of silently dropping the action
+- when a duplicate local task submit is skipped, the main conversation and default inspector output should show one short Chinese explanation; existing task status, execution kind, previous failure detail, and recovery trace stay in audit, rollback, or expanded inspector surfaces
+- when a duplicate pending approval or confirmation request is skipped, the main conversation should show one short Chinese explanation plus rollback access; queued execution trace, module/source labels, and audit details stay in audit, rollback, or expanded inspector surfaces
+- when local Ollama is unreachable or has no usable model, the composer area should show only a short setup prompt with Ollama/API settings actions while the main conversation stays blank or limited to real conversation content; raw connection diagnostics stay in settings, audit, or expanded records
+- the default right inspector should not surface Ollama connection diagnostics as a prominent error block; model setup details remain reachable from settings and traceable records
 - avoid multiplying repetitive queue entries, repeated audit spam, or repeated conversation boilerplate when adding new assistant capability slices
 - when long desktop conversations exceed the bounded local history window, compress older context into one system summary entry instead of letting raw history grow without limit
 - compression should stay lightweight and local-first: preserve recent working context, keep one cumulative compressed summary, and avoid introducing a heavy memory subsystem in the v1.0 mainline

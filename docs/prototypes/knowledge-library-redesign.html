@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>opencow 知识库重构原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f7f8;
+      --panel: #ffffff;
+      --panel-strong: #f0f3f6;
+      --ink: #1f252c;
+      --muted: #687481;
+      --line: #dce2e8;
+      --line-strong: #c7d0d9;
+      --accent: #147d64;
+      --accent-soft: #e3f3ee;
+      --danger: #b64235;
+      --warning: #9a6a00;
+      --shadow: 0 18px 48px rgba(25, 34, 45, 0.08);
+      --radius: 14px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(246, 247, 248, 0.96)),
+        repeating-linear-gradient(90deg, rgba(31, 37, 44, 0.03) 0 1px, transparent 1px 84px);
+      color: var(--ink);
+    }
+
+    button,
+    input,
+    textarea,
+    select {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 264px minmax(520px, 1fr) 340px;
+      gap: 18px;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .rail,
+    .workspace,
+    .inspector {
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    .rail {
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      overflow: hidden;
+    }
+
+    .inspector {
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+    }
+
+    .title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: grid;
+      gap: 4px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .brand p,
+    .muted,
+    .meta {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .brand p,
+    .meta {
+      font-size: 13px;
+    }
+
+    .icon-button,
+    .text-button,
+    .primary-button,
+    .ghost-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      border-radius: 9px;
+      white-space: nowrap;
+    }
+
+    .icon-button {
+      width: 36px;
+      color: var(--ink);
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      font-size: 20px;
+    }
+
+    .text-button,
+    .ghost-button {
+      padding: 0 12px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .primary-button {
+      padding: 0 13px;
+      background: var(--accent);
+      color: white;
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .library-list {
+      display: grid;
+      gap: 8px;
+      padding: 16px 0;
+    }
+
+    .library-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: transparent;
+      text-align: left;
+      color: var(--ink);
+    }
+
+    .library-item strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .library-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .library-item.active {
+      border-color: rgba(20, 125, 100, 0.35);
+      background: var(--accent-soft);
+    }
+
+    .badge {
+      align-self: start;
+      min-width: 26px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .drop-library {
+      margin-top: auto;
+      padding: 14px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff, #f5f7f8);
+    }
+
+    .drop-library strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 13px;
+    }
+
+    .workspace-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      padding: 22px 24px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .workspace-header h2 {
+      margin: 0 0 8px;
+      font-size: 34px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(250, 251, 252, 0.8);
+    }
+
+    .tab {
+      padding: 8px 11px;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tab.active {
+      background: var(--ink);
+      color: white;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 0;
+      min-height: 0;
+    }
+
+    .library-detail,
+    .file-pool {
+      min-width: 0;
+      overflow: auto;
+      padding: 22px 24px;
+    }
+
+    .file-pool {
+      border-left: 1px solid var(--line);
+      background: rgba(247, 249, 250, 0.72);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .section-title h3 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .metric {
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.58);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 18px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .drop-zone {
+      display: grid;
+      place-items: center;
+      min-height: 130px;
+      margin-bottom: 18px;
+      padding: 18px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(227, 243, 238, 0.7), rgba(255, 255, 255, 0.86));
+      text-align: center;
+    }
+
+    .drop-zone strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .file-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .file-row {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 11px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .file-icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .file-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .file-meta {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pill {
+      padding: 5px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .pill.ready {
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: rgba(20, 125, 100, 0.24);
+    }
+
+    .pill.warning {
+      color: var(--warning);
+      background: #fff7df;
+      border-color: #ead79c;
+    }
+
+    .pool-row {
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+      cursor: grab;
+    }
+
+    .pool-row.dragging {
+      opacity: 0.55;
+    }
+
+    .drag-grip {
+      color: var(--line-strong);
+      font-size: 15px;
+      line-height: 1;
+    }
+
+    .inspector h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+    }
+
+    .inspector-section {
+      padding: 16px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .inspector-section:last-child {
+      border-bottom: 0;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .field input,
+    .field textarea,
+    .field select {
+      width: 100%;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      padding: 9px 10px;
+      background: white;
+      color: var(--ink);
+    }
+
+    .field textarea {
+      min-height: 82px;
+      resize: vertical;
+    }
+
+    .npc-row {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .npc-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: var(--ink);
+      color: white;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(-4px);
+    }
+
+    @media (max-width: 1180px) {
+      .app {
+        grid-template-columns: 220px minmax(0, 1fr);
+      }
+
+      .inspector {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .app,
+      .content,
+      .workspace-header,
+      .status-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .app {
+        padding: 12px;
+      }
+
+      .file-pool {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="rail" aria-label="知识库列表">
+      <div class="title-row">
+        <div class="brand">
+          <h1>知识库</h1>
+          <p>多库管理</p>
+        </div>
+        <button class="icon-button" id="createLibrary" type="button" title="创建知识库">+</button>
+      </div>
+
+      <div class="library-list" id="libraryList"></div>
+
+      <div class="drop-library" id="railDrop">
+        <strong>拖入当前知识库</strong>
+        <p class="meta">从右侧文件池拖一个文件到这里，加入当前选中的知识库。</p>
+      </div>
+    </aside>
+
+    <section class="workspace" aria-label="知识库工作区">
+      <header class="workspace-header">
+        <div>
+          <h2 id="activeTitle">产品文档库</h2>
+          <p class="muted" id="activeSummary">面向产品、需求和交互说明的默认检索库。</p>
+        </div>
+        <div class="toolbar">
+          <button class="ghost-button" id="renameLibrary" type="button">重命名</button>
+          <button class="ghost-button" id="duplicateLibrary" type="button">复制结构</button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="知识库视图">
+        <button class="tab active" type="button">库内容</button>
+        <button class="tab" type="button">处理队列</button>
+        <button class="tab" type="button">引用记录</button>
+      </nav>
+
+      <div class="content">
+        <section class="library-detail">
+          <div class="status-grid">
+            <div class="metric">
+              <strong id="metricFiles">3</strong>
+              <span>文件</span>
+            </div>
+            <div class="metric">
+              <strong id="metricChunks">128</strong>
+              <span>索引片段</span>
+            </div>
+            <div class="metric">
+              <strong id="metricNpc">2</strong>
+              <span>使用中的 NPC</span>
+            </div>
+          </div>
+
+          <div class="drop-zone" id="mainDrop">
+            <div>
+              <strong>把文件拖到这里加入当前知识库</strong>
+              <p class="meta">可以从右侧文件库拖入，也可以直接拖入 Finder 文件。文件先进入文件库，再挂到当前知识库。</p>
+            </div>
+          </div>
+
+          <div class="section-title">
+            <h3>当前知识库文件</h3>
+            <button class="text-button" id="removeSelected" type="button">移出选中</button>
+          </div>
+          <div class="file-list" id="libraryFiles"></div>
+        </section>
+
+        <aside class="file-pool" aria-label="文件库">
+          <div class="section-title">
+            <h3>文件库</h3>
+            <button class="icon-button" id="uploadButton" type="button" title="上传文件">+</button>
+          </div>
+          <input id="fileInput" type="file" multiple hidden />
+          <div class="drop-zone" id="uploadDrop">
+            <div>
+              <strong>上传或拖入文件</strong>
+              <p class="meta">文件先保存为资产。拖到左侧知识库即可加入。</p>
+            </div>
+          </div>
+          <div id="filePool"></div>
+        </aside>
+      </div>
+    </section>
+
+    <aside class="inspector" aria-label="知识库详情">
+      <div class="title-row">
+        <div>
+          <h2>库设置</h2>
+          <p class="meta">当前选中知识库</p>
+        </div>
+      </div>
+
+      <section class="inspector-section">
+        <div class="field">
+          <label for="libraryName">名称</label>
+          <input id="libraryName" value="产品文档库" />
+        </div>
+        <div class="field">
+          <label for="libraryDescription">描述</label>
+          <textarea id="libraryDescription">面向产品、需求和交互说明的默认检索库。</textarea>
+        </div>
+        <button class="primary-button" id="saveLibrary" type="button">保存设置</button>
+      </section>
+
+      <section class="inspector-section">
+        <div class="section-title">
+          <h3>NPC 使用情况</h3>
+        </div>
+        <p class="meta">知识库不主动绑定 NPC。NPC 在自己的配置里选择要加载的知识库。</p>
+        <div class="npc-row" id="npcBindings"></div>
+      </section>
+
+      <section class="inspector-section">
+        <div class="section-title">
+          <h3>处理策略</h3>
+        </div>
+        <div class="field">
+          <label for="chunkMode">分块方式</label>
+          <select id="chunkMode">
+            <option>自动识别文档结构</option>
+            <option>按标题层级</option>
+            <option>按固定长度</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="refreshMode">更新方式</label>
+          <select id="refreshMode">
+            <option>文件变化后手动重建</option>
+            <option>文件变化后自动重建</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="inspector-section">
+        <button class="ghost-button" id="deleteLibrary" type="button">删除知识库</button>
+      </section>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const libraries = [
+      {
+        id: "product",
+        name: "产品文档库",
+        summary: "面向产品、需求和交互说明的默认检索库。",
+        fileIds: ["prd", "ux", "roadmap"],
+        npc: ["产品 NPC", "审计 NPC"],
+        chunks: 128
+      },
+      {
+        id: "code",
+        name: "代码规范库",
+        summary: "团队代码约定、接口说明和架构决策。",
+        fileIds: ["api", "style"],
+        npc: ["代码 NPC"],
+        chunks: 84
+      },
+      {
+        id: "support",
+        name: "客服话术库",
+        summary: "常见问题、产品问答和人工处理边界。",
+        fileIds: ["faq"],
+        npc: ["客服 NPC"],
+        chunks: 46
+      }
+    ];
+
+    const files = [
+      { id: "prd", name: "v1.0 产品需求.md", type: "MD", size: "84 KB", status: "ready" },
+      { id: "ux", name: "对话交互规范.txt", type: "TXT", size: "31 KB", status: "ready" },
+      { id: "roadmap", name: "桌面端路线图.md", type: "MD", size: "42 KB", status: "ready" },
+      { id: "api", name: "本地 API 清单.md", type: "MD", size: "63 KB", status: "ready" },
+      { id: "style", name: "代码风格.md", type: "MD", size: "18 KB", status: "ready" },
+      { id: "faq", name: "常见问题.txt", type: "TXT", size: "22 KB", status: "ready" },
+      { id: "audit", name: "审计日志字段.md", type: "MD", size: "27 KB", status: "processing" }
+    ];
+
+    let activeLibraryId = "product";
+    let draggedFileId = null;
+
+    const libraryList = document.querySelector("#libraryList");
+    const libraryFiles = document.querySelector("#libraryFiles");
+    const filePool = document.querySelector("#filePool");
+    const toast = document.querySelector("#toast");
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 1700);
+    }
+
+    function activeLibrary() {
+      return libraries.find((library) => library.id === activeLibraryId);
+    }
+
+    function renderLibraries() {
+      libraryList.innerHTML = libraries.map((library) => `
+        <button class="library-item ${library.id === activeLibraryId ? "active" : ""}" type="button" data-library="${library.id}">
+          <span>
+            <strong>${library.name}</strong>
+            <span>${library.summary}</span>
+          </span>
+          <span class="badge">${library.fileIds.length}</span>
+        </button>
+      `).join("");
+
+      libraryList.querySelectorAll("[data-library]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeLibraryId = button.dataset.library;
+          render();
+        });
+      });
+    }
+
+    function renderActiveHeader() {
+      const library = activeLibrary();
+      document.querySelector("#activeTitle").textContent = library.name;
+      document.querySelector("#activeSummary").textContent = library.summary;
+      document.querySelector("#libraryName").value = library.name;
+      document.querySelector("#libraryDescription").value = library.summary;
+      document.querySelector("#metricFiles").textContent = library.fileIds.length;
+      document.querySelector("#metricChunks").textContent = library.chunks;
+      document.querySelector("#metricNpc").textContent = library.npc.length;
+    }
+
+    function renderLibraryFiles() {
+      const library = activeLibrary();
+      const rows = library.fileIds
+        .map((fileId) => files.find((file) => file.id === fileId))
+        .filter(Boolean)
+        .map((file) => `
+          <div class="file-row">
+            <span class="file-icon">${file.type}</span>
+            <span>
+              <span class="file-name">${file.name}</span>
+              <span class="file-meta">${file.size} · ${file.status === "ready" ? "已索引" : "处理中"}</span>
+            </span>
+            <button class="text-button" type="button" data-remove="${file.id}">移出</button>
+          </div>
+        `).join("");
+
+      libraryFiles.innerHTML = rows || `<p class="muted">这个知识库还没有文件。把右侧文件拖进来，或点击加入。</p>`;
+      libraryFiles.querySelectorAll("[data-remove]").forEach((button) => {
+        button.addEventListener("click", () => {
+          activeLibrary().fileIds = activeLibrary().fileIds.filter((id) => id !== button.dataset.remove);
+          showToast("已从当前知识库移出文件");
+          render();
+        });
+      });
+    }
+
+    function renderFilePool() {
+      const library = activeLibrary();
+      filePool.innerHTML = files.map((file) => {
+        const added = library.fileIds.includes(file.id);
+        return `
+          <div class="pool-row ${added ? "dragging" : ""}" draggable="true" data-file="${file.id}">
+            <span class="drag-grip">⋮⋮</span>
+            <span>
+              <span class="file-name">${file.name}</span>
+              <span class="file-meta">${file.size}</span>
+            </span>
+            <span class="pill ${added ? "ready" : ""}">${added ? "已在库中" : "可拖入"}</span>
+          </div>
+        `;
+      }).join("");
+      filePool.querySelectorAll("[draggable]").forEach((card) => {
+        card.addEventListener("dragstart", () => {
+          draggedFileId = card.dataset.file;
+          card.classList.add("dragging");
+        });
+        card.addEventListener("dragend", () => {
+          draggedFileId = null;
+          card.classList.remove("dragging");
+        });
+      });
+    }
+
+    function renderNpcBindings() {
+      document.querySelector("#npcBindings").innerHTML = activeLibrary().npc.map((name) => `
+        <div class="npc-item">
+          <span>${name}</span>
+          <span class="pill ready">已使用</span>
+        </div>
+      `).join("");
+    }
+
+    function addFileToActiveLibrary(fileId) {
+      const library = activeLibrary();
+      if (!fileId || library.fileIds.includes(fileId)) {
+        return;
+      }
+      library.fileIds.push(fileId);
+      library.chunks += 12;
+      showToast("已加入当前知识库，等待索引完成");
+      render();
+    }
+
+    function wireDrops() {
+      ["#mainDrop", "#railDrop"].forEach((selector) => {
+        const target = document.querySelector(selector);
+        target.addEventListener("dragover", (event) => event.preventDefault());
+        target.addEventListener("drop", (event) => {
+          event.preventDefault();
+          if (draggedFileId) {
+            addFileToActiveLibrary(draggedFileId);
+          } else if (event.dataTransfer.files.length > 0) {
+            importNativeFiles(event.dataTransfer.files, true);
+          }
+        });
+      });
+
+      const uploadDrop = document.querySelector("#uploadDrop");
+      uploadDrop.addEventListener("dragover", (event) => event.preventDefault());
+      uploadDrop.addEventListener("drop", (event) => {
+        event.preventDefault();
+        importNativeFiles(event.dataTransfer.files, false);
+      });
+    }
+
+    function importNativeFiles(nativeFiles, addToLibrary) {
+      Array.from(nativeFiles).forEach((nativeFile) => {
+        const id = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const extension = nativeFile.name.split(".").pop().toUpperCase().slice(0, 4) || "?";
+        files.unshift({
+          id,
+          name: nativeFile.name,
+          type: extension,
+          size: `${Math.max(1, Math.round(nativeFile.size / 1024))} KB`,
+          status: "processing"
+        });
+        if (addToLibrary) {
+          activeLibrary().fileIds.push(id);
+        }
+      });
+      showToast(addToLibrary ? "文件已上传并加入当前知识库" : "文件已上传到文件库");
+      render();
+    }
+
+    function render() {
+      renderLibraries();
+      renderActiveHeader();
+      renderLibraryFiles();
+      renderFilePool();
+      renderNpcBindings();
+    }
+
+    document.querySelector("#createLibrary").addEventListener("click", () => {
+      const name = window.prompt("新知识库名称", "新知识库");
+      if (!name) {
+        return;
+      }
+      const id = `library-${Date.now()}`;
+      libraries.push({
+        id,
+        name,
+        summary: "新的空知识库。",
+        fileIds: [],
+        npc: [],
+        chunks: 0
+      });
+      activeLibraryId = id;
+      showToast("已创建知识库");
+      render();
+    });
+
+    document.querySelector("#renameLibrary").addEventListener("click", () => {
+      const library = activeLibrary();
+      const nextName = window.prompt("重命名知识库", library.name);
+      if (!nextName) {
+        return;
+      }
+      library.name = nextName;
+      showToast("已重命名知识库");
+      render();
+    });
+
+    document.querySelector("#saveLibrary").addEventListener("click", () => {
+      const library = activeLibrary();
+      library.name = document.querySelector("#libraryName").value.trim() || library.name;
+      library.summary = document.querySelector("#libraryDescription").value.trim() || library.summary;
+      showToast("知识库设置已保存");
+      render();
+    });
+
+    document.querySelector("#duplicateLibrary").addEventListener("click", () => {
+      const source = activeLibrary();
+      const id = `library-${Date.now()}`;
+      libraries.push({
+        ...source,
+        id,
+        name: `${source.name} 副本`,
+        npc: [],
+        chunks: source.chunks
+      });
+      activeLibraryId = id;
+      showToast("已复制知识库结构");
+      render();
+    });
+
+    document.querySelector("#deleteLibrary").addEventListener("click", () => {
+      if (libraries.length <= 1) {
+        showToast("至少保留一个知识库");
+        return;
+      }
+      const index = libraries.findIndex((library) => library.id === activeLibraryId);
+      libraries.splice(index, 1);
+      activeLibraryId = libraries[0].id;
+      showToast("已删除知识库");
+      render();
+    });
+
+    document.querySelector("#uploadButton").addEventListener("click", () => {
+      document.querySelector("#fileInput").click();
+    });
+    document.querySelector("#fileInput").addEventListener("change", (event) => {
+      importNativeFiles(event.target.files, false);
+      event.target.value = "";
+    });
+
+    wireDrops();
+    render();
+  </script>
+</body>
+</html>

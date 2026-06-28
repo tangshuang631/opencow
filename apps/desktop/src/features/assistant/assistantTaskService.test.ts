@@ -45,8 +45,18 @@ describe("assistantTaskService", () => {
       auditDetail: "Readonly workspace overview task."
     });
 
-    expect(result.resultTitle).toBe("Workspace overview");
+    expect(result.resultTitle).toBe("工作区概览");
     expect(result.resultSummary).toContain("openclaw-adapter");
-    expect(result.resultSummary).toContain("3 local packages");
+    expect(result.resultSummary).toContain("3 个本地包");
+  });
+
+  it("rejects legacy fixed assistant help overview tasks so user questions go through the model", async () => {
+    await expect(executeAssistantTask({
+      kind: "assistant-help-overview",
+      title: "Assistant help overview",
+      summary: "Summarize the assistant's current core local capabilities in direct user-facing language.",
+      auditSummary: "Local assistant planned a user-facing help overview.",
+      auditDetail: "User-facing assistant help overview task."
+    } as never)).rejects.toThrow(/Unsupported assistant task execution plan: assistant-help-overview/i);
   });
 });

@@ -25,14 +25,19 @@ export function createInitialWorkbenchState(): WorkbenchState {
       pending: null
     },
     conversation: {
-      entries: [
-        {
-          id: "assistant-welcome",
-          kind: "assistant",
-          title: "Ollama 本地优先",
-          summary: "默认使用本地 Ollama，并优先展示可追溯、可回退、可确认的桌面工作流。"
-        }
-      ]
+      id: "draft-conversation-1",
+      entries: [],
+      npcId: null,
+      mode: "blank",
+      restoredFromConversationId: null
+    },
+    composer: {
+      draftAttachments: []
+    },
+    history: {
+      lastNonEmptyConversationEntries: [],
+      draftConversations: [],
+      archivedConversations: []
     },
     rollback: {
       ...createRollbackJournal({
@@ -48,7 +53,35 @@ export function createInitialWorkbenchState(): WorkbenchState {
     },
     search: {
       enabled: false,
-      providerLabel: ""
+      defaultProviderEnabled: true,
+      providerLabel: "OpenCow 默认搜索",
+      customProviderLabel: "",
+      customBaseUrl: "",
+      customApiKey: "",
+      effectiveProvider: "OpenCow 默认搜索",
+      lastFallbackReason: null,
+      suppressFallbackNotice: false
+    },
+    knowledge: {
+      importedFiles: [],
+      availableFiles: [],
+      activeLibraryId: "default-library",
+      activeLibraryLabel: "默认知识库",
+      libraries: [
+        {
+          id: "default-library",
+          label: "默认知识库"
+        }
+      ]
+    },
+    npcWorkspace: {
+      items: [],
+      selectedNpcId: null,
+      activeSection: "overview",
+      selectedSkillName: null,
+      selectedSkillPreview: null,
+      selectedKnowledgeLibraryId: null,
+      saveStatus: null
     },
     sources: {
       items: []
@@ -66,12 +99,20 @@ export function createInitialWorkbenchState(): WorkbenchState {
       summary: "等待工具执行结果或本地产物摘要。"
     },
     settings: {
+      ollama: {
+        longAnswerNumPredict: 8192,
+        autoContinuationLimit: 5,
+        continuationTailLimit: 2400
+      },
       remoteApi: {
         collapsed: true,
         enabled: false,
         baseUrl: "",
         providerLabel: "",
         apiKey: ""
+      },
+      npc: {
+        localModel: ""
       }
     },
     storage: {

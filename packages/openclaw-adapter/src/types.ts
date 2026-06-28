@@ -20,6 +20,18 @@ export interface OpenClawCapabilities {
   readonly toolCallRepair: OpenClawCapability;
 }
 
+export type OpenClawCapabilityFamily = "rag" | "skills" | "npc" | "mcp";
+
+export interface OpenClawCapabilityFamilyReadiness {
+  readonly capabilityId: OpenClawCapabilityFamily;
+  readonly title: string;
+  readonly status: "ready-foundation" | "partial-foundation";
+  readonly requiredPackageCount: number;
+  readonly availablePackageCount: number;
+  readonly availablePackages: OpenClawCapability[];
+  readonly missingPackages: OpenClawCapability[];
+}
+
 export interface OpenClawWorkspacePackage {
   readonly directoryName: string;
   readonly packageName: string;
@@ -33,9 +45,15 @@ export interface LocalAssistantTaskRequest {
   readonly permissionMode: ControlledPermissionMode;
 }
 
+export interface OpenclawSelfRepairTargetDescriptor {
+  readonly label: "enabled skills registry" | "workspace project runtime registry" | null;
+  readonly path: string | null;
+  readonly continueRequest: string | null;
+}
+
 export type LocalAssistantTaskPlan =
   | {
-      readonly kind: "assistant-help-overview";
+      readonly kind: "local-model-chat";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -70,6 +88,27 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "opencow-self-repair-target-guidance";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "opencow-self-repair-enabled-skills-registry";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "opencow-self-repair-workspace-project-runtime-registry";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "capability-rag-overview";
       readonly title: string;
       readonly summary: string;
@@ -92,6 +131,13 @@ export type LocalAssistantTaskPlan =
     }
   | {
       readonly kind: "skills-local-inspect";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "skills-local-ollama-description";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -238,6 +284,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "npc-template-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "npc-local-project-showcase-preview";
       readonly title: string;
       readonly summary: string;
@@ -245,7 +298,49 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "npc-local-project-run";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "npc-local-project-screenshot-capture";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "npc-local-project-showcase-site-write";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "npc-local-project-showcase-publish-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "npc-local-project-showcase-git-confirmation-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "npc-local-shell-plan-preview";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "npc-config-write";
       readonly title: string;
       readonly summary: string;
       readonly auditSummary: string;
@@ -301,6 +396,13 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "network-search-guidance";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "readonly-shell-git-status";
       readonly title: string;
       readonly summary: string;
@@ -336,6 +438,20 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
     }
   | {
+      readonly kind: "workspace-project-status";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
+      readonly kind: "workspace-project-stop";
+      readonly title: string;
+      readonly summary: string;
+      readonly auditSummary: string;
+      readonly auditDetail: string;
+    }
+  | {
       readonly kind: "controlled-full-remove-temp-output";
       readonly title: string;
       readonly summary: string;
@@ -351,15 +467,19 @@ export type LocalAssistantTaskPlan =
       readonly auditDetail: string;
       readonly queuedExecutionKind?: Extract<
         LocalAssistantTaskPlan["kind"],
-        | "assistant-help-overview"
+        | "local-model-chat"
         | "workspace-overview"
         | "packages-overview"
         | "workspace-config-overview"
         | "opencow-self-repair-preview"
+        | "opencow-self-repair-target-guidance"
+        | "opencow-self-repair-enabled-skills-registry"
+        | "opencow-self-repair-workspace-project-runtime-registry"
         | "capability-rag-overview"
         | "capability-skills-overview"
         | "skills-local-scan"
         | "skills-local-inspect"
+        | "skills-local-ollama-description"
         | "skills-local-install"
         | "skills-local-enable"
         | "skills-local-disable"
@@ -375,11 +495,18 @@ export type LocalAssistantTaskPlan =
         | "rag-local-shell-handoff-preview"
         | "skills-local-enabled-rag-shell-handoff-preview"
         | "npc-local-enabled-rag-shell-handoff-preview"
+        | "npc-local-project-run"
+        | "npc-local-project-screenshot-capture"
+        | "npc-local-project-showcase-site-write"
+        | "npc-local-project-showcase-publish-preview"
+        | "npc-local-project-showcase-git-confirmation-preview"
+        | "npc-config-write"
         | "rag-local-shell-create-temp-output"
         | "rag-local-shell-remove-temp-output"
         | "skills-local-enabled-rag-shell-create-temp-output"
         | "skills-local-enabled-rag-shell-remove-temp-output"
         | "npc-local-collaboration-preview"
+        | "npc-template-preview"
         | "npc-local-project-showcase-preview"
         | "npc-local-shell-plan-preview"
         | "capability-npc-overview"
@@ -394,6 +521,8 @@ export type LocalAssistantTaskPlan =
         | "readonly-shell-packages-dir"
         | "workspace-write-create-temp-output"
         | "workspace-project-run"
+        | "workspace-project-status"
+        | "workspace-project-stop"
         | "controlled-full-remove-temp-output"
         | "mcp-local-plugin-start"
       >;

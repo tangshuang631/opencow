@@ -1,8 +1,9 @@
-import { planLocalAssistantTask } from "@opencow/openclaw-adapter/browser";
+import { planLocalAssistantTask, resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { createPermissionEscalationRequest } from "@opencow/permission-engine";
 import { guardExecutionPlan } from "@opencow/safety-engine";
 import { planControlledCommand } from "@opencow/shell-runtime";
 import type { LocalTaskExecutionKind, PermissionMode } from "../workbench/workbenchState";
+import { getShellDialogRecoveryNarrative } from "../workbench/shellCapability";
 import {
   disableLocalSkill,
   installLocalSkill,
@@ -16,20 +17,30 @@ import {
   startLocalMcpPlugin,
   inspectLocalSkill,
   scanLocalSkills,
+  searchNetwork,
   searchLocalKnowledge,
   loadWorkspaceConfigOverview,
   loadWorkspaceOverview,
   loadWorkspacePackagesOverview,
   loadWorkspaceProjectRunPreview,
+  getWorkspaceProjectStatus,
   runWorkspaceProject,
+  captureNpcLocalProjectScreenshot,
+  writeNpcLocalProjectShowcaseSite,
+  loadNpcLocalProjectShowcasePublishPreview,
+  loadNpcLocalProjectShowcaseGitConfirmationPreview,
+  stopWorkspaceProject,
   runControlledFullShellCommand,
   runReadonlyShellCommand,
-  runWorkspaceWriteShellCommand
+  runWorkspaceWriteShellCommand,
+  repairOpencowEnabledSkillsRegistry,
+  repairOpencowWorkspaceProjectRuntimeRegistry
 } from "./localAssistantService";
+import type { RollbackContext } from "./localAssistantService";
 
 type ReadonlyAssistantTaskPlan =
   | {
-      kind: "assistant-help-overview";
+      kind: "local-model-chat";
       title: string;
       summary: string;
       auditSummary: string;
@@ -64,6 +75,27 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "opencow-self-repair-target-guidance";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "opencow-self-repair-enabled-skills-registry";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "opencow-self-repair-workspace-project-runtime-registry";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "capability-rag-overview";
       title: string;
       summary: string;
@@ -86,6 +118,13 @@ type ReadonlyAssistantTaskPlan =
     }
   | {
       kind: "skills-local-inspect";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "skills-local-ollama-description";
       title: string;
       summary: string;
       auditSummary: string;
@@ -232,6 +271,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "npc-template-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "npc-local-project-showcase-preview";
       title: string;
       summary: string;
@@ -239,7 +285,49 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "npc-local-project-run";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "npc-local-project-screenshot-capture";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "npc-local-project-showcase-site-write";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "npc-local-project-showcase-publish-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "npc-local-project-showcase-git-confirmation-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "npc-local-shell-plan-preview";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "npc-config-write";
       title: string;
       summary: string;
       auditSummary: string;
@@ -295,6 +383,13 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     }
   | {
+      kind: "network-search-guidance";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
       kind: "readonly-shell-git-status";
       title: string;
       summary: string;
@@ -324,6 +419,20 @@ type ReadonlyAssistantTaskPlan =
     }
   | {
       kind: "workspace-project-run";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "workspace-project-status";
+      title: string;
+      summary: string;
+      auditSummary: string;
+      auditDetail: string;
+    }
+  | {
+      kind: "workspace-project-stop";
       title: string;
       summary: string;
       auditSummary: string;
@@ -372,7 +481,77 @@ export type AssistantTaskPlanResult =
 export type AssistantTaskExecutionResult = {
   resultTitle: string;
   resultSummary: string;
+  auditDetailLines?: string[];
+  auditOnlyDetailLines?: string[];
+  searchSources?: Array<{
+    title: string;
+    url: string;
+    provider: string;
+    query: string;
+    summary: string;
+    usedFallback?: boolean;
+  }>;
+  searchStatePatch?: {
+    effectiveProvider?: string;
+    lastFallbackReason?: string | null;
+    suppressFallbackNotice?: boolean;
+  };
+  searchFallbackNotice?: {
+    visible: boolean;
+    summary: string;
+  };
 };
+
+export type AssistantTaskExecutionContext = {
+  snapshotAvailable?: boolean;
+  signal?: AbortSignal;
+  rollbackContext?: RollbackContext;
+  searchConfig?: {
+    enabled: boolean;
+    customProviderLabel: string;
+    customBaseUrl: string;
+    customApiKey: string;
+    suppressFallbackNotice: boolean;
+  };
+};
+
+function throwIfExecutionAborted(context: AssistantTaskExecutionContext): void {
+  if (context.signal?.aborted) {
+    throw new Error("Assistant task execution aborted.");
+  }
+}
+
+async function awaitAbortable<T>(
+  promise: Promise<T>,
+  context: AssistantTaskExecutionContext
+): Promise<T> {
+  throwIfExecutionAborted(context);
+
+  if (!context.signal) {
+    return promise;
+  }
+
+  const signal = context.signal;
+
+  return new Promise<T>((resolve, reject) => {
+    const abortHandler = () => {
+      signal.removeEventListener("abort", abortHandler);
+      reject(new Error("Assistant task execution aborted."));
+    };
+
+    signal.addEventListener("abort", abortHandler, { once: true });
+    void promise.then(
+      (value) => {
+        signal.removeEventListener("abort", abortHandler);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abortHandler);
+        reject(error);
+      }
+    );
+  });
+}
 
 export function planAssistantTask(message: string, permissionMode: PermissionMode): AssistantTaskPlanResult {
   return planLocalAssistantTask({
@@ -381,843 +560,1613 @@ export function planAssistantTask(message: string, permissionMode: PermissionMod
   });
 }
 
-export async function executeAssistantTask(plan: AssistantTaskPlanResult): Promise<AssistantTaskExecutionResult> {
-  if (plan.kind === "assistant-help-overview") {
-    return {
-      resultTitle: "本地助手能力说明",
-      resultSummary:
-        "我目前可以先稳定帮你做这几类事：1. 使用本地 Ollama 进行基础对话与任务处理；2. 查看工作区、配置、包信息；3. 在你同意后执行受控 shell 操作；4. 检索本地规则和文档；5. 读取本地 Skills、NPC、MCP 的当前可用状态。当前更适合先做对话、项目检查、规则检索和受控本地操作，后续再继续补强更深的自动执行链。"
-    };
-  }
+export async function executeAssistantTask(
+  plan: AssistantTaskPlanResult,
+  context: AssistantTaskExecutionContext = {}
+): Promise<AssistantTaskExecutionResult> {
+  throwIfExecutionAborted(context);
 
   if (plan.kind === "workspace-overview") {
-    const overview = await loadWorkspaceOverview();
+    const overview = await awaitAbortable(loadWorkspaceOverview(), context);
     const highlightedPackages = overview.package_names.slice(0, 5).join(", ");
     const packageLine =
       overview.package_count > 0
-        ? ` Detected ${overview.package_count} local packages, including ${highlightedPackages}.`
-        : " No local packages were detected.";
+        ? ` 已检测到 ${overview.package_count} 个本地包，包括 ${highlightedPackages}。`
+        : " 未检测到本地包。";
 
     return {
-      resultTitle: "Workspace overview",
+      resultTitle: "工作区概览",
       resultSummary: `${overview.summary}${packageLine}`
     };
   }
 
   if (plan.kind === "packages-overview") {
-    const overview = await loadWorkspacePackagesOverview();
+    const overview = await awaitAbortable(loadWorkspacePackagesOverview(), context);
     const highlightedPackages = overview.package_names.slice(0, 5).join(", ");
     const highlightedScriptPackages = overview.packages_with_scripts.slice(0, 5).join(", ");
     const scriptCoverageLine =
       overview.packages_with_scripts.length > 0
-        ? ` Script coverage includes ${highlightedScriptPackages}.`
-        : " No workspace package scripts were detected.";
+        ? ` 脚本覆盖包包括 ${highlightedScriptPackages}。`
+        : " 未检测到工作区包脚本。";
 
     return {
-      resultTitle: "Workspace packages overview",
-      resultSummary: `${overview.summary} Key packages: ${highlightedPackages}.${scriptCoverageLine}`
+      resultTitle: "工作区包概览",
+      resultSummary: `${overview.summary} 重点包：${highlightedPackages}。${scriptCoverageLine}`
     };
   }
 
   if (plan.kind === "workspace-config-overview") {
-    const overview = await loadWorkspaceConfigOverview();
+    const overview = await awaitAbortable(loadWorkspaceConfigOverview(), context);
     const highlightedConfigs = overview.config_files.slice(0, 5).join(", ");
     const highlightedScripts = overview.root_script_names.slice(0, 5).join(", ");
 
     return {
-      resultTitle: "Workspace config overview",
-      resultSummary: `${overview.summary} Key config files: ${highlightedConfigs}. Root scripts: ${highlightedScripts}.`
+      resultTitle: "工作区配置概览",
+      resultSummary: `${overview.summary} 关键配置文件：${highlightedConfigs}。根脚本：${highlightedScripts}。`
     };
   }
 
   if (plan.kind === "opencow-self-repair-preview") {
-    return executeOpencowSelfRepairPreviewPlan(plan.title, plan.summary);
+    return executeOpencowSelfRepairPreviewPlan(plan.title, deriveTaskQuery(plan), context);
+  }
+
+  if (plan.kind === "opencow-self-repair-target-guidance") {
+    return executeOpencowSelfRepairTargetGuidancePlan(plan.title, context);
+  }
+
+  if (plan.kind === "opencow-self-repair-enabled-skills-registry") {
+    return executeOpencowEnabledSkillsRegistryRepairPlan(plan.title, deriveTaskQuery(plan), context);
+  }
+
+  if (plan.kind === "opencow-self-repair-workspace-project-runtime-registry") {
+    return executeOpencowWorkspaceProjectRuntimeRegistryRepairPlan(plan.title, deriveTaskQuery(plan), context);
   }
 
   if (plan.kind === "capability-rag-overview") {
-    return executeCapabilityOverviewPlan("rag");
+    return executeCapabilityOverviewPlan("rag", context);
   }
 
   if (plan.kind === "capability-skills-overview") {
-    return executeCapabilityOverviewPlan("skills");
+    return executeCapabilityOverviewPlan("skills", context);
   }
 
   if (plan.kind === "skills-local-scan") {
-    return executeLocalSkillsScanPlan(plan.title);
+    return executeLocalSkillsScanPlan(plan.title, context);
   }
 
   if (plan.kind === "skills-local-inspect") {
-    return executeLocalSkillInspectPlan(plan.title, plan.summary);
+    return executeLocalSkillInspectPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-install") {
-    return executeLocalSkillInstallPlan(plan.title, plan.summary);
+    return executeLocalSkillInstallPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enable") {
-    return executeLocalSkillEnablePlan(plan.title, plan.summary);
+    return executeLocalSkillEnablePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-disable") {
-    return executeLocalSkillDisablePlan(plan.title, plan.summary);
+    return executeLocalSkillDisablePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-list") {
-    return executeEnabledLocalSkillsListPlan(plan.title);
+    return executeEnabledLocalSkillsListPlan(plan.title, context);
   }
 
   if (plan.kind === "skills-local-enabled-match") {
-    return executeEnabledLocalSkillsMatchPlan(plan.title, plan.summary);
+    return executeEnabledLocalSkillsMatchPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-shell-create-temp-output") {
-    return executeSkillAssistedWorkspaceWritePlan(plan.title, plan.summary);
+    return executeSkillAssistedWorkspaceWritePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-shell-remove-temp-output") {
-    return executeSkillAssistedControlledFullPlan(plan.title, plan.summary);
+    return executeSkillAssistedControlledFullPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-shell-create-temp-output") {
-    return executeNpcAssistedWorkspaceWritePlan(plan.title, plan.summary);
+    return executeNpcAssistedWorkspaceWritePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-shell-remove-temp-output") {
-    return executeNpcAssistedControlledFullPlan(plan.title, plan.summary);
+    return executeNpcAssistedControlledFullPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-rag-shell-create-temp-output") {
-    return executeNpcAssistedRagShellCreatePlan(plan.title, plan.summary);
+    return executeNpcAssistedRagShellCreatePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-rag-shell-remove-temp-output") {
-    return executeNpcAssistedRagShellRemovePlan(plan.title, plan.summary);
+    return executeNpcAssistedRagShellRemovePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-rag-doc-search") {
-    return executeSkillAssistedLocalRagSearchPlan(plan.title, plan.summary);
+    return executeSkillAssistedLocalRagSearchPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "rag-local-shell-handoff-preview") {
-    return executeLocalRagShellHandoffPreviewPlan(plan.title, plan.summary);
+    return executeLocalRagShellHandoffPreviewPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-rag-shell-handoff-preview") {
-    return executeSkillAssistedRagShellHandoffPreviewPlan(plan.title, plan.summary);
+    return executeSkillAssistedRagShellHandoffPreviewPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-enabled-rag-shell-handoff-preview") {
-    return executeNpcAssistedRagShellHandoffPreviewPlan(plan.title, plan.summary);
+    return executeNpcAssistedRagShellHandoffPreviewPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "rag-local-shell-create-temp-output") {
-    return executeLocalRagShellCreatePlan(plan.title, plan.summary);
+    return executeLocalRagShellCreatePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "rag-local-shell-remove-temp-output") {
-    return executeLocalRagShellRemovePlan(plan.title, plan.summary);
+    return executeLocalRagShellRemovePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-rag-shell-create-temp-output") {
-    return executeSkillAssistedRagShellCreatePlan(plan.title, plan.summary);
+    return executeSkillAssistedRagShellCreatePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "skills-local-enabled-rag-shell-remove-temp-output") {
-    return executeSkillAssistedRagShellRemovePlan(plan.title, plan.summary);
+    return executeSkillAssistedRagShellRemovePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-collaboration-preview") {
-    return executeNpcCollaborationPreviewPlan(plan.title, plan.summary);
+    return executeNpcCollaborationPreviewPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "npc-template-preview") {
+    return executeNpcTemplatePreviewPlan(plan.summary, context);
   }
 
   if (plan.kind === "npc-local-project-showcase-preview") {
-    return executeNpcProjectShowcasePreviewPlan(plan.title, plan.summary);
+    return executeNpcProjectShowcasePreviewPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "npc-local-project-run") {
+    return executeNpcLocalProjectRunPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "npc-local-project-screenshot-capture") {
+    return executeNpcLocalProjectScreenshotCapturePlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "npc-local-project-showcase-site-write") {
+    return executeNpcLocalProjectShowcaseSiteWritePlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "npc-local-project-showcase-publish-preview") {
+    return executeNpcLocalProjectShowcasePublishPreviewPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "npc-local-project-showcase-git-confirmation-preview") {
+    return executeNpcLocalProjectShowcaseGitConfirmationPreviewPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "npc-local-shell-plan-preview") {
-    return executeNpcShellPlanPreview(plan.title, plan.summary);
+    return executeNpcShellPlanPreview(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "capability-npc-overview") {
-    return executeCapabilityOverviewPlan("npc");
+    return executeCapabilityOverviewPlan("npc", context);
   }
 
   if (plan.kind === "capability-mcp-overview") {
-    return executeCapabilityOverviewPlan("mcp");
+    return executeCapabilityOverviewPlan("mcp", context);
   }
 
   if (plan.kind === "mcp-local-plugin-scan") {
-    return executeLocalMcpPluginScanPlan(plan.title);
+    return executeLocalMcpPluginScanPlan(plan.title, context);
   }
 
   if (plan.kind === "mcp-local-plugin-inspect") {
-    return executeLocalMcpPluginInspectPlan(plan.title, plan.summary);
+    return executeLocalMcpPluginInspectPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "mcp-local-plugin-start-preview") {
-    return executeLocalMcpPluginStartPreviewPlan(plan.title, plan.summary);
+    return executeLocalMcpPluginStartPreviewPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "mcp-local-plugin-start") {
-    return executeLocalMcpPluginStartPlan(plan.title, plan.summary);
+    return executeLocalMcpPluginStartPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "rag-local-doc-search") {
-    return executeLocalRagSearchPlan(plan.title, plan.summary);
+    return executeLocalRagSearchPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "network-search-guidance") {
+    return executeNetworkSearchGuidancePlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "readonly-shell-git-status") {
-    return executeReadonlyShellPlan(plan.title, "git-status");
+    return executeReadonlyShellPlan(plan.title, "git-status", context);
   }
 
   if (plan.kind === "readonly-shell-workspace-root") {
-    return executeReadonlyShellPlan(plan.title, "workspace-root-list");
+    return executeReadonlyShellPlan(plan.title, "workspace-root-list", context);
   }
 
   if (plan.kind === "readonly-shell-packages-dir") {
-    return executeReadonlyShellPlan(plan.title, "packages-dir-list");
+    return executeReadonlyShellPlan(plan.title, "packages-dir-list", context);
   }
 
   if (plan.kind === "workspace-write-create-temp-output") {
-    return executeWorkspaceWriteShellPlan(plan.title, "create-temp-output-dir");
+    return executeWorkspaceWriteShellPlan(plan.title, "create-temp-output-dir", context);
   }
 
   if (plan.kind === "workspace-project-run") {
-    return executeWorkspaceProjectRunPlan(plan.title, plan.summary);
+    return executeWorkspaceProjectRunPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "workspace-project-status") {
+    return executeWorkspaceProjectStatusPlan(plan.title, plan.summary, context);
+  }
+
+  if (plan.kind === "workspace-project-stop") {
+    return executeWorkspaceProjectStopPlan(plan.title, plan.summary, context);
   }
 
   if (plan.kind === "controlled-full-remove-temp-output") {
-    return executeControlledFullShellPlan(plan.title, "remove-temp-output-dir");
+    return executeControlledFullShellPlan(plan.title, "remove-temp-output-dir", context);
   }
 
   throw new Error(`Unsupported assistant task execution plan: ${plan.kind}`);
 }
 
-async function executeReadonlyShellPlan(
+async function executeNetworkSearchGuidancePlan(
   resultTitle: string,
-  commandId: "git-status" | "workspace-root-list" | "packages-dir-list"
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runReadonlyShellCommand(commandId);
+  throwIfExecutionAborted(context);
+  const searchConfig = context.searchConfig ?? {
+    enabled: true,
+    customProviderLabel: "",
+    customBaseUrl: "",
+    customApiKey: "",
+    suppressFallbackNotice: false
+  };
+  const result = await awaitAbortable(
+    searchNetwork(query, {
+      providerLabel: searchConfig.customProviderLabel,
+      baseUrl: searchConfig.customBaseUrl,
+      apiKey: searchConfig.customApiKey,
+      suppressFallbackNotice: searchConfig.suppressFallbackNotice
+    }),
+    context
+  );
+
+  if (result.items.length === 0) {
+    return {
+      resultTitle: "联网搜索失败",
+      resultSummary: [
+        "本轮联网搜索没有返回可用来源。",
+        `请求：${query}。`,
+        "请检查自定义搜索配置是否可用，或稍后重试 OpenCow 默认搜索。"
+      ].join(" "),
+      searchStatePatch: {
+        effectiveProvider: result.effective_provider,
+        lastFallbackReason: result.fallback_reason ?? null
+      }
+    };
+  }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    resultTitle: "联网搜索结果",
+    resultSummary: [
+      `已参考 ${result.items.length} 条联网资料。`,
+      result.used_fallback
+        ? `自定义搜索失败后已自动回退。${result.fallback_reason ?? ""}`.trim()
+        : "已结合当前联网结果整理答案。",
+      `请求：${query}。`
+    ].join(" "),
+    auditDetailLines: [
+      `Search provider: ${result.provider}`,
+      `Effective provider: ${result.effective_provider}`,
+      `Search fallback: ${result.used_fallback ? "used" : "not-used"}`
+    ],
+    searchSources: result.items.map((item) => ({
+      title: item.title,
+      url: item.url,
+      provider: result.effective_provider,
+      sourceLabel: item.source_label ?? result.effective_provider,
+      query,
+      summary: item.summary,
+      factSnippets: item.fact_snippets,
+      usedFallback: result.used_fallback
+    })),
+    searchStatePatch: {
+      effectiveProvider: result.effective_provider,
+      lastFallbackReason: result.fallback_reason ?? null,
+      suppressFallbackNotice: searchConfig.suppressFallbackNotice
+    },
+    searchFallbackNotice: result.used_fallback
+      ? {
+          visible: !searchConfig.suppressFallbackNotice,
+          summary: result.fallback_reason ?? "自定义搜索失败，已自动回退到 OpenCow 默认搜索。"
+        }
+      : undefined
   };
 }
 
-async function executeCapabilityOverviewPlan(
-  capabilityId: "rag" | "skills" | "npc" | "mcp"
+async function executeReadonlyShellPlan(
+  resultTitle: string,
+  commandId: "git-status" | "workspace-root-list" | "packages-dir-list",
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const overview = await loadOpenClawCapabilityOverview(capabilityId);
-  const availableLine = overview.available_packages.join(", ");
-  const missingLine =
-    overview.missing_packages.length > 0 ? ` Missing: ${overview.missing_packages.join(", ")}.` : " Missing: none.";
+  const result = await runReadonlyShellCommandWithDiagnostics(commandId, context);
+  const resultSummary = resultTitle.toLowerCase().includes("diagnostics")
+    ? createReadonlyShellSelfCheckReport(result)
+    : `${result.summary} 命令：${result.command_label}。输出预览：${result.stdout_preview}`;
 
   return {
-    resultTitle: overview.title,
-    resultSummary: `${overview.summary} Status: ${overview.status}. Available: ${availableLine}.${missingLine}`
+    resultTitle,
+    resultSummary
   };
+}
+
+function createReadonlyShellSelfCheckReport(result: Awaited<ReturnType<typeof runReadonlyShellCommand>>): string {
+  return [
+    "只读 Shell 自检报告：",
+    "Shell 桥接可用",
+    "工作区根目录可访问",
+    `命令白名单已接受 ${result.command_id}`,
+    "审计链路已保留只读 Shell 诊断",
+    `${result.summary} 命令：${result.command_label}。输出预览：${result.stdout_preview}`
+  ].join(" ");
+}
+
+async function executeCapabilityOverviewPlan(
+  capabilityId: "rag" | "skills" | "npc" | "mcp",
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const overview = await awaitAbortable(loadOpenClawCapabilityOverview(capabilityId), context);
+  const availableLine = overview.available_packages.join(", ");
+  const missingLine =
+    overview.missing_packages.length > 0 ? overview.missing_packages.join(", ") : "无";
+
+  return {
+    resultTitle: createCapabilityOverviewTitle(capabilityId, overview.title),
+    resultSummary: `${overview.summary} 状态：${overview.status}。可用包：${availableLine}。缺失包：${missingLine}。`
+  };
+}
+
+function createCapabilityOverviewTitle(
+  capabilityId: "rag" | "skills" | "npc" | "mcp",
+  fallbackTitle: string
+): string {
+  const labels: Record<typeof capabilityId, string> = {
+    rag: "RAG",
+    skills: "Skills",
+    npc: "NPC",
+    mcp: "MCP"
+  };
+
+  return labels[capabilityId] ? `OpenClaw ${labels[capabilityId]} 能力概览` : fallbackTitle;
 }
 
 async function executeOpencowSelfRepairPreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [workspaceOverview, configOverview, ragResult] = await Promise.all([
-    loadWorkspaceOverview(),
-    loadWorkspaceConfigOverview(),
-    searchLocalKnowledge(query)
-  ]);
+  const [workspaceOverview, configOverview, ragResult] = await awaitAbortable(
+    Promise.all([
+      loadWorkspaceOverview(),
+      loadWorkspaceConfigOverview(),
+      searchLocalKnowledgeWithDiagnostics(query, context)
+    ]),
+    context
+  );
   const topPaths = ragResult.items.slice(0, 3).map((item) => item.title).join(", ") || "none";
   const topConfigs = configOverview.config_files.slice(0, 3).join(", ") || "none";
   const topScripts = configOverview.root_script_names.slice(0, 3).join(", ") || "none";
+  const repairTargetPreview = resolveSelfRepairTargetPreview(query);
 
   return {
     resultTitle,
     resultSummary:
       `Readonly self-repair preview for ${workspaceOverview.root_name}. Key config files: ${topConfigs}. ` +
-      `Root scripts: ${topScripts}. Relevant local docs: ${topPaths}. ` +
+      `Root scripts: ${topScripts}. Relevant local docs: ${topPaths}. ${repairTargetPreview.summary} ` +
       `Next recommended flow: inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility.`
   };
 }
 
+async function executeOpencowSelfRepairTargetGuidancePlan(
+  resultTitle: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  throwIfExecutionAborted(context);
+  return {
+    resultTitle,
+    resultSummary:
+      "Opencow self-repair stopped before continuing because no specific repair target was confirmed. " +
+      "Ask to continue repairing either the enabled skills registry at .opencow/skills/enabled-skills.json " +
+      "or the workspace project runtime registry at .opencow/runtime/workspace-project-runs.json. " +
+      "Example next requests: `diagnose opencow and continue repairing its enabled skills registry` or " +
+      "`diagnose opencow and continue repairing its workspace project runtime registry`. " +
+      "This keeps the repair chain explicit, permission-scoped, and helps avoid retry loops."
+  };
+}
+
+function resolveSelfRepairTargetPreview(query: string): {
+  summary: string;
+} {
+  const descriptor = resolveOpencowSelfRepairTargetDescriptor(query);
+
+  if (descriptor.label && descriptor.path && descriptor.continueRequest) {
+    return {
+      summary:
+        `Likely target: ${descriptor.label} at ${descriptor.path}. ` +
+        `Check ${descriptor.path} first. ` +
+        "Workspace write permission would be required before opencow can continue that controlled repair. " +
+        `Suggested next request: \`${descriptor.continueRequest}\`.`
+    };
+  }
+
+  return {
+    summary:
+      "No specific controlled repair target has been confirmed yet. If a mutation is needed, workspace write permission would still be required before opencow can continue. " +
+      "Suggested next requests: `diagnose opencow and preview repairing its enabled skills registry` or " +
+      "`diagnose opencow and preview repairing its workspace project runtime registry`."
+  };
+}
+
+async function executeOpencowEnabledSkillsRegistryRepairPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await repairOpencowEnabledSkillsRegistryWithDiagnostics(query, context);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      "已将 enabled skills 注册表恢复为已验证的默认 schema。",
+      `修复路径：${result.repaired_path}。`,
+      `保留条目：${result.preserved_entry_count}。`,
+      `已验证 schema 版本：${result.verified_version}。`,
+      `已验证启用条目：${result.verified_entry_count}。`,
+      "验证已在受控自修复链路内完成，结果保持审计可见和回退可见。"
+    ].join(" ")
+  };
+}
+
+async function repairOpencowEnabledSkillsRegistryWithDiagnostics(
+  query: string,
+  context: AssistantTaskExecutionContext
+) {
+  try {
+    return await awaitAbortable(repairOpencowEnabledSkillsRegistry(query), context);
+  } catch (error: unknown) {
+    throw createOpencowSelfRepairDiagnosticError({
+      target: "enabled skills registry",
+      targetPath: ".opencow/skills/enabled-skills.json",
+      requiredPermission: "workspace-write",
+      recoveryStep:
+        "inspect .opencow/skills/enabled-skills.json, narrow the repair request, or fix the file manually before retrying with explicit workspace-write approval",
+      error
+    });
+  }
+}
+
+async function executeOpencowWorkspaceProjectRuntimeRegistryRepairPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await repairOpencowWorkspaceProjectRuntimeRegistryWithDiagnostics(query, context);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      "已将工作区项目运行注册表恢复为已验证的默认 schema。",
+      `修复路径：${result.repaired_path}。`,
+      `保留运行记录：${result.preserved_entry_count}。`,
+      `已验证 schema 版本：${result.verified_version}。`,
+      `已验证运行记录：${result.verified_run_count}。`,
+      "验证已在受控自修复链路内完成，结果保持审计可见和回退可见。"
+    ].join(" ")
+  };
+}
+
+async function repairOpencowWorkspaceProjectRuntimeRegistryWithDiagnostics(
+  query: string,
+  context: AssistantTaskExecutionContext
+) {
+  try {
+    return await awaitAbortable(repairOpencowWorkspaceProjectRuntimeRegistry(query), context);
+  } catch (error: unknown) {
+    throw createOpencowSelfRepairDiagnosticError({
+      target: "workspace project runtime registry",
+      targetPath: ".opencow/runtime/workspace-project-runs.json",
+      requiredPermission: "workspace-write",
+      recoveryStep:
+        "inspect .opencow/runtime/workspace-project-runs.json, narrow the repair request, or fix the file manually before retrying with explicit workspace-write approval",
+      error
+    });
+  }
+}
+
 async function executeLocalRagSearchPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await searchLocalKnowledge(query);
-  const topPaths = result.items.slice(0, 2).map((item) => item.title).join(", ");
+  const result = await searchLocalKnowledgeWithDiagnostics(query, context);
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Top matches: ${topPaths}. Query: ${result.query}. Indexed documents: ${result.indexed_document_count}`
+    resultTitle: "本地 RAG 文档检索",
+    resultSummary: createLocalRagSearchResultSummary(result)
   };
 }
 
-async function executeLocalSkillsScanPlan(resultTitle: string): Promise<AssistantTaskExecutionResult> {
-  const result = await scanLocalSkills();
-  const topSkills = result.items.slice(0, 3).map((item) => item.name).join(", ");
-  const enabledSkills = result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join(", ");
-  const enabledLine = enabledSkills.length > 0 ? ` Enabled: ${enabledSkills}.` : " Enabled: none.";
+function createLocalRagSearchResultSummary(result: Awaited<ReturnType<typeof searchLocalKnowledge>>) {
+  return createLocalRagSummaryLines(result).join(" ");
+}
+
+function createLocalRagSummaryLines(result: LocalRagSearchDiagnostics) {
+  const topPaths = result.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+
+  return [
+    `找到 ${result.match_count} 条匹配片段，已索引 ${result.indexed_document_count} 个文档。`,
+    `检索方式：${formatLocalRagProvider(result)}。`,
+    `主要来源：${topPaths}。`,
+    `检索问题：${result.query}。`
+  ];
+}
+
+function formatLocalRagProvider(result: Pick<LocalRagSearchDiagnostics, "provider">) {
+  if (result.provider === "ollama-embedding") {
+    return "Ollama Embedding";
+  }
+
+  return "关键词 fallback";
+}
+
+async function executeLocalSkillsScanPlan(
+  resultTitle: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(scanLocalSkills(), context);
+  const topSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无可展示样例";
+  const enabledSkills = result.items.filter((item) => item.enabled).map((item) => item.name).slice(0, 3).join("、") || "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Sample skills: ${topSkills}. Scanned roots: ${result.scanned_root_count}.${enabledLine}`
+    resultTitle: "本地 Skills 扫描",
+    resultSummary: [
+      `扫描到 ${result.total_count} 个本地 Skills，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `样例 Skills：${topSkills}。`,
+      `已启用项：${enabledSkills}。`
+    ].join(" ")
   };
 }
 
-async function executeLocalMcpPluginScanPlan(resultTitle: string): Promise<AssistantTaskExecutionResult> {
-  const result = await scanLocalMcpPlugins();
-  const topPlugins = result.items.slice(0, 3).map((item) => item.id).join(", ");
-  const pluginLine = topPlugins.length > 0 ? topPlugins : "none";
+async function executeLocalMcpPluginScanPlan(
+  resultTitle: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(scanLocalMcpPlugins(), context);
+  const topPlugins = result.items.slice(0, 3).map((item) => item.id).join("、") || "暂无可展示插件";
+  const activationLine = result.items
+    .slice(0, 3)
+    .map((item) => `${item.id}=${item.activation}`)
+    .join("、") || "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Sample plugins: ${pluginLine}. Scanned roots: ${result.scanned_root_count}.`
+    resultTitle: "本地 MCP 插件扫描",
+    resultSummary: [
+      `扫描到 ${result.total_count} 个本地 MCP 插件入口，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `样例插件：${topPlugins}。`,
+      `激活方式：${activationLine}。`
+    ].join(" ")
   };
 }
 
 async function executeLocalMcpPluginInspectPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await inspectLocalMcpPlugin(query);
+  const result = await awaitAbortable(inspectLocalMcpPlugin(query), context);
   const topMatch = result.items[0];
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Query: ${result.query}.`
+      resultTitle: "本地 MCP 插件详情",
+      resultSummary: `未找到匹配 MCP 插件。检索问题：${result.query}。`
     };
   }
 
-  const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join(", ") : "none";
-  const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join(", ") : "none";
+  const toolsLine = topMatch.tool_names.length > 0 ? topMatch.tool_names.join("、") : "暂无";
+  const skillsLine = topMatch.skill_paths.length > 0 ? topMatch.skill_paths.join("、") : "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Match: ${topMatch.id}. Activation: ${topMatch.activation}. Tools: ${toolsLine}. Skills: ${skillsLine}. Description: ${topMatch.description}`
+    resultTitle: "本地 MCP 插件详情",
+    resultSummary: [
+      `找到 ${result.match_count} 个匹配 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `匹配项：${topMatch.id}。`,
+      `激活方式：${topMatch.activation}。`,
+      `工具：${toolsLine}。`,
+      `Skills 路径：${skillsLine}。`,
+      `说明：${topMatch.description}`
+    ].join(" ")
   };
 }
 
 async function executeLocalMcpPluginStartPreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await previewLocalMcpPluginStart(query);
+  const result = await awaitAbortable(previewLocalMcpPluginStart(query), context);
   const topMatch = result.items[0];
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Query: ${result.query}.`
+      resultTitle: "本地 MCP 插件启动预览",
+      resultSummary: `未找到可预览启动的 MCP 插件。检索问题：${result.query}。`
     };
   }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Match: ${topMatch.id}. Activation: ${topMatch.activation}. Startup allowed: ${topMatch.startup_allowed ? "yes" : "no"}. Working directory: ${topMatch.working_directory}. Command preview: ${topMatch.command_preview}. Config: ${topMatch.config_hint}. ${topMatch.risk_summary}`
+    resultTitle: "本地 MCP 插件启动预览",
+    resultSummary: [
+      `找到 ${result.match_count} 个可预览 MCP 插件，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `匹配项：${topMatch.id}。`,
+      `激活方式：${topMatch.activation}。`,
+      `允许启动：${topMatch.startup_allowed ? "是" : "否"}。`,
+      `工作目录：${topMatch.working_directory}。`,
+      `命令预览：${localizeMcpPluginStartPreviewText(topMatch.command_preview)}。`,
+      `配置提示：${localizeMcpPluginStartPreviewText(topMatch.config_hint)}。`,
+      `风险说明：${localizeMcpPluginStartPreviewText(topMatch.risk_summary)}。`,
+      ...createLocalMcpSafetyBoundaryLines("preview")
+    ].join(" ")
   };
 }
 
 async function executeLocalMcpPluginStartPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await startLocalMcpPlugin(query);
+  const result = await awaitAbortable(startLocalMcpPlugin(query), context);
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Plugin: ${result.plugin_id}. Command: ${result.command_label}. Working directory: ${result.working_directory}. Preview: ${result.stdout_preview}`
+    resultTitle: "本地 MCP 插件启动结果",
+    resultSummary: [
+      `插件：${result.plugin_id}。`,
+      `命令：${localizeMcpPluginStartPreviewText(result.command_label)}。`,
+      `工作目录：${result.working_directory}。`,
+      `状态：${createLocalMcpPluginStartStatus(result)}。`,
+      `输出行数：${result.line_count}。`,
+      `执行预览：${localizeMcpPluginStartOutputPreview(result.stdout_preview)}。`,
+      ...createLocalMcpSafetyBoundaryLines("start")
+    ].join(" ")
   };
+}
+
+function createLocalMcpSafetyBoundaryLines(stage: "preview" | "start"): string[] {
+  const stageLine = stage === "preview"
+    ? "启动预览保持只读，不会启动真实 MCP 进程。"
+    : "启动必须由用户手动确认。";
+
+  return [
+    "MCP 默认关闭。",
+    stageLine,
+    "所需权限：controlled-full。",
+    "工具调用仍需经过 permission-engine。",
+    "启动、失败和工具列表变化都会写入日志。"
+  ];
+}
+
+function localizeMcpPluginStartPreviewText(text: string): string {
+  if (/no resolved executable launcher/i.test(text)) {
+    return "当前桌面端尚未实现已验证的 MCP 插件启动器";
+  }
+
+  if (/no required config schema fields were detected/i.test(text)) {
+    return "未检测到必填配置项";
+  }
+
+  if (/preview only/i.test(text) && /does not yet resolve or launch a real local mcp plugin process/i.test(text)) {
+    return "仅预览插件 manifest，不会启动真实 MCP 进程";
+  }
+
+  return text;
+}
+
+function localizeMcpPluginStartOutputPreview(text: string): string {
+  if (/execution blocked/i.test(text) && /does not yet know how to launch a real plugin host/i.test(text)) {
+    return "已拦截启动请求：插件 manifest 存在，但当前桌面端还没有已验证的本地 MCP 插件宿主启动器";
+  }
+
+  return text;
+}
+
+function createLocalMcpPluginStartStatus(result: Awaited<ReturnType<typeof startLocalMcpPlugin>>): string {
+  if (
+    /no resolved executable launcher/i.test(result.command_label)
+    || /not executed/i.test(result.summary)
+    || /execution blocked/i.test(result.stdout_preview)
+  ) {
+    return "未执行，缺少已验证启动器";
+  }
+
+  return "已交给受控启动链处理";
 }
 
 async function executeLocalSkillInspectPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await inspectLocalSkill(query);
+  const result = await awaitAbortable(inspectLocalSkill(query), context);
   const topMatch = result.items[0];
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Query: ${result.query}.`
+      resultTitle: "本地 Skill 详情",
+      resultSummary: `未找到匹配 Skill。检索问题：${result.query}。`
     };
   }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Match: ${topMatch.name}. Enabled: ${topMatch.enabled ? "yes" : "no"}. Description: ${topMatch.description}. Preview: ${topMatch.content_preview}`
+    resultTitle: "本地 Skill 详情",
+    resultSummary: [
+      `找到 ${result.match_count} 个匹配 Skill，覆盖 ${result.scanned_root_count} 个扫描根目录。`,
+      `匹配项：${topMatch.name}。`,
+      `启用状态：${topMatch.enabled ? "已启用" : "未启用"}。`,
+      `说明：${topMatch.description}。`,
+      `内容预览：${topMatch.content_preview}`
+    ].join(" ")
   };
 }
 
 async function executeLocalSkillEnablePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await enableLocalSkill(query);
+  const result = await awaitAbortable(enableLocalSkill(query), context);
 
   return {
-    resultTitle,
-      resultSummary: `${result.summary} Skill: ${result.enabled_skill_name}. Registry: ${result.registry_path}. Status: ${result.status}.`
+    resultTitle: "本地 Skill 启用结果",
+    resultSummary: [
+      `目标 Skill：${result.enabled_skill_name}。`,
+      `注册表：${result.registry_path}。`,
+      `状态：${result.status}。`
+    ].join(" ")
   };
 }
 
 async function executeLocalSkillInstallPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await installLocalSkill(query);
+  const result = await awaitAbortable(installLocalSkill(query), context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${result.summary} Skill: ${result.installed_skill_name}. Installed path: ${result.installed_skill_path}. ` +
-      `Source: ${result.source_skill_path}. Status: ${result.status}.`
+    resultTitle: "本地 Skill 安装结果",
+    resultSummary: [
+      `目标 Skill：${result.installed_skill_name}。`,
+      `安装路径：${result.installed_skill_path}。`,
+      `来源：${result.source_skill_path}。`,
+      `状态：${result.status}。`
+    ].join(" ")
   };
 }
 
 async function executeLocalSkillDisablePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await disableLocalSkill(query);
+  const result = await awaitAbortable(disableLocalSkill(query), context);
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Skill: ${result.disabled_skill_name}. Registry: ${result.registry_path}. Status: ${result.status}.`
+    resultTitle: "本地 Skill 禁用结果",
+    resultSummary: [
+      `目标 Skill：${result.disabled_skill_name}。`,
+      `注册表：${result.registry_path}。`,
+      `状态：${result.status}。`
+    ].join(" ")
   };
 }
 
+function deriveTaskQuery(
+  plan: { summary: string; auditDetail: string }
+): string {
+  const requestMatch = plan.auditDetail.match(/\brequest=(.+)$/i);
+
+  if (requestMatch?.[1]) {
+    return requestMatch[1].trim();
+  }
+
+  const previewMatch = plan.auditDetail.match(/task:\s*(.+)$/i);
+
+  if (previewMatch?.[1]) {
+    return previewMatch[1].trim();
+  }
+
+  return plan.summary;
+}
+
+type EnabledLocalSkillMatchDiagnostics = Awaited<ReturnType<typeof matchEnabledLocalSkills>>;
+type LocalRagSearchDiagnostics = Awaited<ReturnType<typeof searchLocalKnowledge>>;
+
+function formatTopLocalRagSources(ragResult: LocalRagSearchDiagnostics): string {
+  return ragResult.items.slice(0, 2).map((item) => item.title).join("、") || "暂无匹配来源";
+}
+
+function formatVisibleServiceSummary(summary: string): string {
+  const normalized = summary.replace(/[.。]\s*$/, "");
+  const knownSummaries: Record<string, string> = {
+    "Workspace project run started successfully and returned a live local process handle":
+      "本地项目已启动并返回进程句柄。",
+    "Workspace project status found an active local process handle for the matched project":
+      "已找到匹配项目的本地运行进程。",
+    "Workspace project stop completed successfully and released the local process handle":
+      "本地项目已停止并释放进程句柄。",
+    "Workspace write shell command completed successfully":
+      "工作区写入命令已完成。",
+    "Controlled full shell command completed successfully":
+      "受控高风险命令已完成。",
+    "NPC foundation packages are available for local collaboration preview":
+      "NPC 本地协作基础包可用。",
+    "NPC capability foundation is available locally":
+      "NPC 能力基础已在本地可用。",
+    "NPC local project screenshot capture completed successfully and wrote a workspace-local artifact":
+      "NPC 本地项目截图已完成，并写入工作区本地产物。",
+    "NPC local project showcase-site write completed successfully and returned a changed-file summary":
+      "NPC 本地项目展示站点已写入，并返回变更文件摘要。",
+    "NPC local project showcase publish-preview loaded the latest generated showcase outputs without entering git":
+      "NPC 展示发布预览已读取最新生成产物，未进入 Git 操作。",
+    "NPC local project showcase git confirmation preview summarized the current showcase-related changes without executing git":
+      "NPC 展示 Git 确认预览已汇总当前展示相关变更，未执行 Git。"
+  };
+
+  return knownSummaries[normalized] ?? summary;
+}
+
+function createNoEnabledLocalSkillMatchError(
+  capability: string,
+  skillMatch: EnabledLocalSkillMatchDiagnostics
+): Error {
+  return new Error(
+    `No enabled local skill matched in assistantTaskService. Capability: ${capability}. ` +
+      `Registry: ${skillMatch.registry_path}. Query: ${skillMatch.query}. ` +
+      `Match count: ${skillMatch.match_count} of ${skillMatch.enabled_skill_count} enabled skills. ` +
+      `Next step: inspect ${skillMatch.registry_path}, enable a matching skill, or rewrite the request before retrying.`
+  );
+}
+
+async function searchLocalKnowledgeWithDiagnostics(
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<LocalRagSearchDiagnostics> {
+  try {
+    return await awaitAbortable(searchLocalKnowledge(query), context);
+  } catch (error: unknown) {
+    const detail = (error instanceof Error ? error.message : String(error)).replace(/[.。]\s*$/, "");
+
+    throw new Error(
+      `Local RAG search failed in assistantTaskService. Query: ${query}. ` +
+        `Underlying error: ${detail}. ` +
+        "Next step: verify the local RAG index, document parsers for pptx/docx/md, workspace root discovery, and retry with a narrower document query before continuing."
+    );
+  }
+}
+
 async function executeEnabledLocalSkillsListPlan(
-  resultTitle: string
+  resultTitle: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await listEnabledLocalSkills();
-  const topSkills = result.items.slice(0, 3).map((item) => item.name).join(", ");
-  const listedSkills = topSkills.length > 0 ? topSkills : "none";
+  const result = await awaitAbortable(listEnabledLocalSkills(), context);
+  const listedSkills = result.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Registry: ${result.registry_path}. Enabled skills: ${listedSkills}.`
+    resultTitle: "已启用本地 Skills",
+    resultSummary: [
+      `当前启用 ${result.total_count} 个本地 Skill。`,
+      `注册表：${result.registry_path}。`,
+      `已启用项：${listedSkills}。`
+    ].join(" ")
   };
 }
 
 async function executeEnabledLocalSkillsMatchPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await matchEnabledLocalSkills(query);
+  const result = await awaitAbortable(matchEnabledLocalSkills(query), context);
   const topMatch = result.items[0];
 
   if (!topMatch) {
     return {
-      resultTitle,
-      resultSummary: `${result.summary} Registry: ${result.registry_path}. Query: ${result.query}.`
+      resultTitle: "已启用 Skill 推荐",
+      resultSummary: [
+        `从 ${result.enabled_skill_count} 个已启用 Skills 中没有找到推荐项。`,
+        `注册表：${result.registry_path}。`,
+        `检索问题：${result.query}。`
+      ].join(" ")
     };
   }
 
   return {
-    resultTitle,
-    resultSummary: `${result.summary} Recommended: ${topMatch.name}. Registry: ${result.registry_path}. Description: ${topMatch.description}. Preview: ${topMatch.content_preview}`
+    resultTitle: "已启用 Skill 推荐",
+    resultSummary: [
+      `从 ${result.enabled_skill_count} 个已启用 Skills 中找到 ${result.match_count} 个推荐项。`,
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${result.registry_path}。`,
+      `说明：${topMatch.description}。`,
+      `内容预览：${topMatch.content_preview}`
+    ].join(" ")
   };
 }
 
 async function executeSkillAssistedWorkspaceWritePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const skillMatch = await matchEnabledLocalSkills(query);
+  const skillMatch = await awaitAbortable(matchEnabledLocalSkills(query), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted shell request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultTitle: "Skill 辅助创建结果",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeSkillAssistedControlledFullPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const skillMatch = await matchEnabledLocalSkills(query);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted destructive shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted destructive shell request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultTitle: "Skill 辅助清理结果",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeNpcAssistedWorkspaceWritePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const skillMatch = await matchEnabledLocalSkills(query);
+  const skillMatch = await awaitAbortable(matchEnabledLocalSkills(query), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted shell request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeNpcAssistedControlledFullPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
   const skillMatch = await matchEnabledLocalSkills(query);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted destructive shell request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted destructive shell request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
 
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `Command: ${shellResult.command_label}. Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeSkillAssistedLocalRagSearchPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const skillMatch = await matchEnabledLocalSkills(query);
+  const skillMatch = await awaitAbortable(matchEnabledLocalSkills(query), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted local RAG request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted local RAG request", skillMatch);
   }
 
-  const ragResult = await searchLocalKnowledge(query);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ");
+  const ragResult = await searchSkillAssistedLocalKnowledgeWithDiagnostics(query, skillMatch, topMatch.name, context);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Query: ${ragResult.query}. Indexed documents: ${ragResult.indexed_document_count}`
+    resultTitle: "Skill 辅助本地 RAG 检索",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult)
+    ].join(" ")
   };
+}
+
+async function searchSkillAssistedLocalKnowledgeWithDiagnostics(
+  query: string,
+  skillMatch: EnabledLocalSkillMatchDiagnostics,
+  recommendedSkillName: string,
+  context: AssistantTaskExecutionContext
+): Promise<LocalRagSearchDiagnostics> {
+  try {
+    return await searchLocalKnowledgeWithDiagnostics(query, context);
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
+
+    throw new Error(
+      `Skill-assisted local RAG search failed in assistantTaskService. Recommended skill: ${recommendedSkillName}. ` +
+        `Registry: ${skillMatch.registry_path}. Underlying RAG failure: ${detail} ` +
+        "Next step: verify the matched skill, local RAG index, document parsers, workspace root discovery, and retry with a narrower document query before continuing."
+    );
+  }
 }
 
 async function executeLocalRagShellHandoffPreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const ragResult = await searchLocalKnowledge(query);
-  const shellPreview = createReadonlyShellNextStepPreview(query);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const [ragResult, workspaceOverview] = await awaitAbortable(Promise.all([
+    searchLocalKnowledgeWithDiagnostics(query, context),
+    loadWorkspaceOverview()
+  ]), context);
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
   return {
     resultTitle,
-    resultSummary:
-      `${ragResult.summary} Top matches: ${topPaths}. Command preview: ${shellPreview.command}. ` +
-      `Next step: ${shellPreview.nextStep}. Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultSummary: [
+      ...createLocalRagSummaryLines(ragResult),
+      `命令预览：${shellPreview.command}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
 async function executeSkillAssistedRagShellHandoffPreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [skillMatch, ragResult] = await Promise.all([
+  const [skillMatch, ragResult] = await awaitAbortable(Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted RAG shell handoff preview request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted RAG shell handoff preview request", skillMatch);
   }
 
-  const shellPreview = createReadonlyShellNextStepPreview(query);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
+  return {
+    resultTitle: "Skill 辅助 RAG Shell 交接预览",
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult),
+      `命令预览：${shellPreview.command}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
+  };
+}
+
+function inferNpcTemplateName(query: string) {
+  if (/课程|学习|作业|课堂/.test(query)) {
+    return "课程助手";
+  }
+
+  if (/文档|资料|报告|知识库|rag/i.test(query)) {
+    return "文档处理助手";
+  }
+
+  if (/代码|开发|工程|repo|仓库/i.test(query)) {
+    return "开发协作助手";
+  }
+
+  return "通用工作助手";
+}
+
+async function executeNpcTemplatePreviewPlan(
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  throwIfExecutionAborted(context);
+
+  const templateName = inferNpcTemplateName(query);
 
   return {
-    resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command preview: ${shellPreview.command}. ` +
-      `Next step: ${shellPreview.nextStep}. Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultTitle: "NPC 默认模板预览",
+    resultSummary: [
+      `名称：${templateName}。`,
+      "系统提示词：你是 opencow 的本地协作 NPC，先检索项目规则和知识库，再给出简洁、可执行、可审计的建议。",
+      "默认模型：跟随当前已选 Ollama 模型。",
+      "默认工具：本地 RAG 检索、已启用 Skills 匹配、只读工作区检查。",
+      "默认知识库：当前工作区知识库。",
+      "风险策略：默认只读；写文件、启动服务、Shell 执行前必须进入权限确认链路。",
+      "输出风格：中文优先，先给结论，再列关键依据和下一步。",
+      "这是只读模板预览，保存前仍需 workspace-write 权限。"
+    ].join(" ")
   };
 }
 
 async function executeNpcAssistedRagShellHandoffPreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [npcOverview, skillMatch, ragResult] = await Promise.all([
+  const [npcOverview, skillMatch, ragResult] = await awaitAbortable(Promise.all([
     loadOpenClawCapabilityOverview("npc"),
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted RAG shell handoff preview request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted RAG shell handoff preview request", skillMatch);
   }
 
-  const shellPreview = createReadonlyShellNextStepPreview(query);
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const workspaceOverview = await awaitAbortable(loadWorkspaceOverview(), context);
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Recommended skill: ${topMatch.name}. ` +
-      `Registry: ${skillMatch.registry_path}. ${ragResult.summary} Top matches: ${topPaths}. ` +
-      `Command preview: ${shellPreview.command}. Next step: ${shellPreview.nextStep}. ` +
-      `Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultSummary: [
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
+      `状态：${npcOverview.status}。`,
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult),
+      `命令预览：${shellPreview.command}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
 async function executeLocalRagShellCreatePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const ragResult = await searchLocalKnowledge(query);
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const ragResult = await searchLocalKnowledgeWithDiagnostics(query, context);
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
   return {
     resultTitle,
-    resultSummary:
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      ...createLocalRagSummaryLines(ragResult),
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeLocalRagShellRemovePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const ragResult = await searchLocalKnowledge(query);
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const ragResult = await searchLocalKnowledgeWithDiagnostics(query, context);
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
   return {
     resultTitle,
-    resultSummary:
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      ...createLocalRagSummaryLines(ragResult),
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeSkillAssistedRagShellCreatePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [skillMatch, ragResult] = await Promise.all([
+  const [skillMatch, ragResult] = await awaitAbortable(Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted RAG handoff shell creation request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted RAG handoff shell creation request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult),
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeSkillAssistedRagShellRemovePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [skillMatch, ragResult] = await Promise.all([
+  const [skillMatch, ragResult] = await awaitAbortable(Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the skill-assisted RAG handoff shell removal request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("skill-assisted RAG handoff shell removal request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult),
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeNpcAssistedRagShellCreatePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [skillMatch, ragResult] = await Promise.all([
+  const [skillMatch, ragResult] = await awaitAbortable(Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted RAG handoff shell creation request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted RAG handoff shell creation request", skillMatch);
   }
 
-  const shellResult = await runWorkspaceWriteShellCommand("create-temp-output-dir");
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const shellResult = await runWorkspaceWriteShellCommandWithDiagnostics("create-temp-output-dir", context);
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult),
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeNpcAssistedRagShellRemovePlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [skillMatch, ragResult] = await Promise.all([
+  const [skillMatch, ragResult] = await awaitAbortable(Promise.all([
     matchEnabledLocalSkills(query),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC-assisted RAG handoff shell removal request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC-assisted RAG handoff shell removal request", skillMatch);
   }
 
-  const shellResult = await runControlledFullShellCommand("remove-temp-output-dir");
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
-
+  const shellResult = await runControlledFullShellCommandWithDiagnostics("remove-temp-output-dir", context);
   return {
     resultTitle,
-    resultSummary:
-      `${skillMatch.summary} Recommended skill: ${topMatch.name}. Registry: ${skillMatch.registry_path}. ` +
-      `${ragResult.summary} Top matches: ${topPaths}. Command: ${shellResult.command_label}. ` +
-      `Preview: ${shellResult.stdout_preview}. ${shellResult.summary}`
+    resultSummary: [
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      ...createLocalRagSummaryLines(ragResult),
+      `命令：${shellResult.command_label}。`,
+      `输出预览：${shellResult.stdout_preview}。`,
+      `执行摘要：${formatVisibleServiceSummary(shellResult.summary)}`
+    ].join(" ")
   };
 }
 
 async function executeNpcCollaborationPreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [npcOverview, enabledSkills, ragResult] = await Promise.all([
+  const [npcOverview, enabledSkills, ragResult] = await awaitAbortable(Promise.all([
     loadOpenClawCapabilityOverview("npc"),
     listEnabledLocalSkills(),
-    searchLocalKnowledge(query)
-  ]);
+    searchLocalKnowledgeWithDiagnostics(query, context)
+  ]), context);
 
-  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join(", ") || "none";
-  const topPaths = ragResult.items.slice(0, 2).map((item) => item.title).join(", ") || "none";
+  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+  const topPaths = formatTopLocalRagSources(ragResult);
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Enabled skills: ${skillNames}. ` +
-      `Registry: ${enabledSkills.registry_path}. Local context: ${topPaths}. Indexed documents: ${ragResult.indexed_document_count}.`
+    resultSummary: [
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
+      `状态：${npcOverview.status}。`,
+      `已启用 Skills：${skillNames}。`,
+      `注册表：${enabledSkills.registry_path}。`,
+      `本地上下文：${topPaths}。`,
+      `检索方式：${formatLocalRagProvider(ragResult)}。`,
+      `已索引文档：${ragResult.indexed_document_count}。`
+    ].join(" ")
   };
 }
 
 async function executeNpcProjectShowcasePreviewPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [npcOverview, enabledSkills, workspaceOverview, runPreview] = await Promise.all([
+  const [npcOverview, enabledSkills, workspaceOverview, runPreview] = await awaitAbortable(Promise.all([
     loadOpenClawCapabilityOverview("npc"),
     listEnabledLocalSkills(),
     loadWorkspaceOverview(),
     loadWorkspaceProjectRunPreview(query)
-  ]);
+  ]), context);
 
-  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join(", ") || "none";
-  const likelyProject = /\bcattle\b/i.test(query) ? "cattle" : "target local project";
-  const packageNames = workspaceOverview.package_names.slice(0, 4).join(", ") || "none detected";
+  const skillNames = enabledSkills.items.slice(0, 3).map((item) => item.name).join("、") || "暂无";
+  const likelyProject = /\bcattle\b/i.test(query) ? "cattle" : "目标本地项目";
+  const packageNames = workspaceOverview.package_names.slice(0, 4).join("、") || "未检测到";
   const matchedProject = runPreview.matched_project_name ?? likelyProject;
-  const preferredCommand = runPreview.preferred_command ?? "not detected";
-  const expectedUrl = runPreview.expected_url ?? "not inferred";
+  const preferredCommand = runPreview.preferred_command ?? "未检测到";
+  const expectedUrl = runPreview.expected_url ?? "未推断";
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Enabled skills: ${skillNames}. ` +
-      `Workspace root: ${workspaceOverview.root_name}. Visible packages: ${packageNames}. ` +
-      `Run preview matched ${matchedProject} at ${runPreview.matched_project_path ?? "unknown path"} from ${runPreview.matched_project_source ?? "unknown source"}. ` +
-      `Preferred launch command: ${preferredCommand}. Expected URL: ${expectedUrl}. ` +
-      `Next required permission for actual launch: ${runPreview.next_required_permission}. ${runPreview.risk_summary} ` +
-      `Planned stages for ${likelyProject}: project inspection -> run preview -> permission-backed local launch -> ` +
-      `permission-backed screenshot capture -> permission-backed showcase site generation -> changed-files preview -> separately confirmable git push. ` +
-      `This preview stays readonly and keeps every privileged step explicit before execution.`
+    resultSummary: [
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
+      `状态：${npcOverview.status}。`,
+      `已启用 Skills：${skillNames}。`,
+      `工作区：${workspaceOverview.root_name}。`,
+      `可见包：${packageNames}。`,
+      `运行预览匹配：${matchedProject}，路径 ${runPreview.matched_project_path ?? "未知路径"}，来源 ${runPreview.matched_project_source ?? "未知来源"}。`,
+      `推荐启动命令：${preferredCommand}。`,
+      `预期 URL：${expectedUrl}。`,
+      `实际启动下一步所需权限：${runPreview.next_required_permission}。`,
+      `${runPreview.risk_summary}`,
+      `规划阶段（${likelyProject}）：project inspection -> run preview -> permission-backed local launch -> permission-backed screenshot capture -> permission-backed showcase site generation -> changed-files preview -> separately confirmable git push。`,
+      "此预览保持只读，并在执行前明确每个需要权限的步骤。"
+    ].join(" ")
   };
 }
 
-const desktopWorkspaceRoot = "E:\\2026\\opencow";
+async function executeNpcLocalProjectRunPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(runWorkspaceProject(query), context);
+  const executionLabel = result.preview_only
+    ? "浏览器预览保持只读，未启动真实本地进程。"
+    : "这是 NPC 展示链路中的首次执行阶段。";
+  const pidLabel = result.preview_only ? "浏览器预览未执行" : String(result.pid);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `PID：${pidLabel}。`,
+      `输出预览：${result.stdout_preview}。`,
+      executionLabel
+    ].join(" ")
+  };
+}
+
+async function executeNpcLocalProjectScreenshotCapturePlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(captureNpcLocalProjectScreenshot(query), context);
+  const executionLabel = result.preview_only
+    ? "浏览器预览保持只读，未捕获真实截图产物。"
+    : "这是 NPC 展示链路中的截图阶段。";
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `捕获目标：${result.capture_target}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `产物路径：${result.artifact_path}。`,
+      `产物目录：${result.artifact_directory}。`,
+      executionLabel
+    ].join(" ")
+  };
+}
+
+async function executeNpcLocalProjectShowcaseSiteWritePlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(writeNpcLocalProjectShowcaseSite(query), context);
+  const executionLabel = result.preview_only
+    ? "浏览器预览保持只读，未写入真实展示站点文件。"
+    : "这是 NPC 展示链路中的展示站点写入阶段。";
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `站点根目录：${result.site_root}。`,
+      `入口文件：${result.entry_file}。`,
+      `变更路径：${result.changed_paths.join("、")}。`,
+      `来源截图：${result.source_screenshot_path}。`,
+      executionLabel
+    ].join(" ")
+  };
+}
+
+async function executeNpcLocalProjectShowcasePublishPreviewPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(loadNpcLocalProjectShowcasePublishPreview(query), context);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `站点根目录：${result.site_root}。`,
+      `入口文件：${result.entry_file}。`,
+      `变更路径：${result.changed_paths.join("、")}。`,
+      `来源截图：${result.source_screenshot_path}。`,
+      `下一步 Git：${result.next_git_step}`,
+      "这是 NPC 展示链路中的只读发布预览阶段。"
+    ].join(" ")
+  };
+}
+
+async function executeNpcLocalProjectShowcaseGitConfirmationPreviewPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(loadNpcLocalProjectShowcaseGitConfirmationPreview(query), context);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `匹配项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `站点根目录：${result.site_root}。`,
+      `入口文件：${result.entry_file}。`,
+      `变更路径：${result.changed_paths.join("、")}。`,
+      `来源截图：${result.source_screenshot_path}。`,
+      `推荐 Git 操作：${result.recommended_git_action}。`,
+      `${result.required_confirmation_stage}`,
+      "这是 NPC 展示链路中的只读 Git 确认预览阶段。"
+    ].join(" ")
+  };
+}
 
 async function executeNpcShellPlanPreview(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const [npcOverview, skillMatch] = await Promise.all([
+  const [npcOverview, skillMatch, workspaceOverview] = await awaitAbortable(Promise.all([
     loadOpenClawCapabilityOverview("npc"),
-    matchEnabledLocalSkills(query)
-  ]);
+    matchEnabledLocalSkills(query),
+    loadWorkspaceOverview()
+  ]), context);
 
   const topMatch = skillMatch.items[0];
 
   if (!topMatch) {
-    throw new Error(`No enabled local skill matched the NPC shell preview request: ${query}`);
+    throw createNoEnabledLocalSkillMatchError("NPC shell preview request", skillMatch);
   }
 
-  const shellPreview = createReadonlyShellNextStepPreview(query);
+  const shellPreview = createReadonlyShellNextStepPreview(query, workspaceOverview.root_path);
 
   return {
     resultTitle,
-    resultSummary:
-      `${npcOverview.summary} Status: ${npcOverview.status}. Recommended skill: ${topMatch.name}. ` +
-      `Registry: ${skillMatch.registry_path}. Command preview: ${shellPreview.command}. Next step: ${shellPreview.nextStep}. ` +
-      `Required permission: ${shellPreview.requiredPermission}. Safety: ${shellPreview.safetyStatus}.`
+    resultSummary: [
+      `${formatVisibleServiceSummary(npcOverview.summary)}`,
+      `状态：${npcOverview.status}。`,
+      `推荐 Skill：${topMatch.name}。`,
+      `注册表：${skillMatch.registry_path}。`,
+      `命令预览：${shellPreview.command}。`,
+      `下一步：${shellPreview.nextStep}。`,
+      `工作区根目录：${shellPreview.workspaceRoot}。`,
+      `所需权限：${shellPreview.requiredPermission}。`,
+      `安全状态：${shellPreview.safetyStatus}。`
+    ].join(" ")
   };
 }
 
-function createReadonlyShellNextStepPreview(query: string): {
+function createReadonlyShellNextStepPreview(query: string, workspaceRoot: string): {
   command: string;
+  workspaceRoot: string;
   nextStep: string;
   requiredPermission: string;
   safetyStatus: string;
@@ -1228,8 +2177,8 @@ function createReadonlyShellNextStepPreview(query: string): {
 
   const plan = planControlledCommand({
     command,
-    cwd: desktopWorkspaceRoot,
-    allowedRoots: [desktopWorkspaceRoot],
+    cwd: workspaceRoot,
+    allowedRoots: [workspaceRoot],
     permissionMode: "readonly",
     timeoutMs: 20_000
   });
@@ -1243,6 +2192,7 @@ function createReadonlyShellNextStepPreview(query: string): {
 
   return {
     command,
+    workspaceRoot,
     nextStep,
     requiredPermission: plan.requiredPermission,
     safetyStatus: safety.status
@@ -1251,39 +2201,200 @@ function createReadonlyShellNextStepPreview(query: string): {
 
 async function executeWorkspaceWriteShellPlan(
   resultTitle: string,
-  commandId: "create-temp-output-dir"
+  commandId: "create-temp-output-dir",
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runWorkspaceWriteShellCommand(commandId);
+  const result = await runWorkspaceWriteShellCommandWithDiagnostics(commandId, context);
 
   return {
     resultTitle,
-    resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `命令：${result.command_label}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 
 async function executeWorkspaceProjectRunPlan(
   resultTitle: string,
-  query: string
+  query: string,
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runWorkspaceProject(query);
+  const result = await awaitAbortable(runWorkspaceProject(query), context);
+  const pidLabel = result.preview_only ? "not executed in browser preview" : String(result.pid);
 
   return {
     resultTitle,
-    resultSummary:
-      `${result.summary} Project: ${result.project_name}. Path: ${result.project_path}. ` +
-      `Command: ${result.command_label}. Working directory: ${result.working_directory}. ` +
-      `Expected URL: ${result.expected_url ?? "not inferred"}. PID: ${result.pid}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `PID：${pidLabel}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
+  };
+}
+
+async function executeWorkspaceProjectStatusPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(getWorkspaceProjectStatus(query), context);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `预期 URL：${result.expected_url ?? "未推断"}。`,
+      `PID：${result.pid ?? "无"}。`,
+      `状态：${result.status}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
+  };
+}
+
+async function executeWorkspaceProjectStopPlan(
+  resultTitle: string,
+  query: string,
+  context: AssistantTaskExecutionContext
+): Promise<AssistantTaskExecutionResult> {
+  const result = await awaitAbortable(stopWorkspaceProject(query), context);
+  const pidLabel = result.preview_only ? "not executed in browser preview" : String(result.pid);
+
+  return {
+    resultTitle,
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `项目：${result.project_name}。`,
+      `路径：${result.project_path}。`,
+      `命令：${result.command_label}。`,
+      `工作目录：${result.working_directory}。`,
+      `PID：${pidLabel}。`,
+      `状态：${result.status}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
 }
 
 async function executeControlledFullShellPlan(
   resultTitle: string,
-  commandId: "remove-temp-output-dir"
+  commandId: "remove-temp-output-dir",
+  context: AssistantTaskExecutionContext
 ): Promise<AssistantTaskExecutionResult> {
-  const result = await runControlledFullShellCommand(commandId);
+  const result = await runControlledFullShellCommandWithDiagnostics(commandId, context);
 
   return {
     resultTitle,
-    resultSummary: `${result.summary} Command: ${result.command_label}. Preview: ${result.stdout_preview}`
+    resultSummary: [
+      `${formatVisibleServiceSummary(result.summary)}`,
+      `命令：${result.command_label}。`,
+      `输出预览：${result.stdout_preview}`
+    ].join(" ")
   };
+}
+
+async function runReadonlyShellCommandWithDiagnostics(
+  commandId: "git-status" | "workspace-root-list" | "packages-dir-list",
+  context: AssistantTaskExecutionContext
+) {
+  try {
+    return await awaitAbortable(runReadonlyShellCommand(commandId), context);
+  } catch (error: unknown) {
+    throw createShellExecutionDiagnosticError({
+      commandId,
+      requiredPermission: "readonly",
+      recoveryStep: "verify the readonly shell bridge, workspace root, command whitelist, and audit trail before retrying",
+      error
+    });
+  }
+}
+
+async function runWorkspaceWriteShellCommandWithDiagnostics(
+  commandId: "create-temp-output-dir",
+  context: AssistantTaskExecutionContext
+) {
+  try {
+    return await awaitAbortable(runWorkspaceWriteShellCommand(commandId, context.rollbackContext), context);
+  } catch (error: unknown) {
+    throw createShellExecutionDiagnosticError({
+      commandId,
+      requiredPermission: "workspace-write",
+      recoveryStep: "verify the permission approval, workspace root, command whitelist, and audit trail before retrying",
+      error
+    });
+  }
+}
+
+async function runControlledFullShellCommandWithDiagnostics(
+  commandId: "remove-temp-output-dir",
+  context: AssistantTaskExecutionContext
+) {
+  assertControlledFullCommandSafety(commandId, context);
+
+  try {
+    return await runControlledFullShellCommand(commandId, context.rollbackContext);
+  } catch (error: unknown) {
+    throw createShellExecutionDiagnosticError({
+      commandId,
+      requiredPermission: "controlled-full",
+      recoveryStep:
+        "verify the dangerous confirmation, rollback snapshot availability, workspace root, command whitelist, and audit trail before retrying",
+      error
+    });
+  }
+}
+
+function assertControlledFullCommandSafety(
+  commandId: "remove-temp-output-dir",
+  context: AssistantTaskExecutionContext
+) {
+  if (context.snapshotAvailable === false) {
+    throw new Error(
+      `Shell execution blocked in assistantTaskService. Command id: ${commandId}. ` +
+        "Required permission: controlled-full. Reason: rollback snapshot unavailable. " +
+        "Next step: restore snapshot capability or run a readonly preview before retrying destructive execution."
+    );
+  }
+}
+
+function createShellExecutionDiagnosticError(payload: {
+  commandId: string;
+  requiredPermission: PermissionMode;
+  recoveryStep: string;
+  error: unknown;
+}): Error {
+  const detail = (payload.error instanceof Error ? payload.error.message : String(payload.error)).replace(/[.。]\s*$/, "");
+  const recoveryNarrative = getShellDialogRecoveryNarrative();
+
+  return new Error(
+    `Shell execution failed in assistantTaskService. Command id: ${payload.commandId}. ` +
+      `Required permission: ${payload.requiredPermission}. Underlying error: ${detail}. ` +
+      `Next step: ${payload.recoveryStep}. ${recoveryNarrative}`
+  );
+}
+
+function createOpencowSelfRepairDiagnosticError(payload: {
+  target: string;
+  targetPath: string;
+  requiredPermission: PermissionMode;
+  recoveryStep: string;
+  error: unknown;
+}): Error {
+  const detail = (payload.error instanceof Error ? payload.error.message : String(payload.error)).replace(/[.。]\s*$/, "");
+  const recoveryNarrative = getShellDialogRecoveryNarrative();
+
+  return new Error(
+    `Opencow self-repair failed in assistantTaskService. Target: ${payload.target}. ` +
+      `Target path: ${payload.targetPath}. Required permission: ${payload.requiredPermission}. ` +
+      `Underlying error: ${detail}. Next step: ${payload.recoveryStep}. ${recoveryNarrative}`
+  );
 }

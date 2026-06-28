@@ -47,17 +47,84 @@ export type ConversationEntry = {
   kind: "assistant" | "system" | "user";
   title: string;
   summary: string;
+  attachments?: ChatAttachment[];
   detailLines?: string[];
   actionLabel?: string;
   rollbackTargetId?: string;
 };
 
+export type ConversationMode = "blank" | "history" | "restored";
+export type RollbackLimit = 5 | 10 | 20;
+
 export type SearchSourceItem = {
   title: string;
   url: string;
   provider: string;
+  sourceLabel?: string;
   query: string;
   summary: string;
+  factSnippets?: string[];
+  usedFallback?: boolean;
+};
+
+export type KnowledgeFileStatus = "ready" | "missing";
+
+export type ImportedKnowledgeFile = {
+  path: string;
+  title: string;
+  status: KnowledgeFileStatus;
+};
+
+export type ChatAttachmentSource = "picker" | "drop" | "paste";
+
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: "image" | "file";
+  filePath?: string;
+  previewUrl?: string;
+  base64Data?: string;
+  source: ChatAttachmentSource;
+};
+
+export type AvailableKnowledgeFile = {
+  path: string;
+  title: string;
+};
+
+export type KnowledgeLibraryRecord = {
+  id: string;
+  label: string;
+  description?: string;
+  documentCount?: number;
+};
+
+export type NpcWorkspaceSection = "overview" | "persona" | "skills" | "knowledge";
+
+export type NpcWorkspaceRecord = {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel: string;
+  personaTitle?: string;
+  personaPrompt: string;
+  outputStyle: string;
+  agentDraft: string;
+  rulesDraft: string;
+  enabledSkillNames: string[];
+  knowledgeLibraryIds: string[];
+  updatedAt?: string;
+};
+
+export type RecentConversationRecord = {
+  id: string;
+  title: string;
+  summary: string;
+  entries: ConversationEntry[];
+  npcId?: string | null;
+  archivedAt?: string | null;
 };
 
 export type ToolExecutionResult = {
@@ -67,15 +134,19 @@ export type ToolExecutionResult = {
 };
 
 export type LocalTaskExecutionKind =
-  | "assistant-help-overview"
+  | "local-model-chat"
   | "workspace-overview"
   | "packages-overview"
   | "workspace-config-overview"
   | "opencow-self-repair-preview"
+  | "opencow-self-repair-target-guidance"
+  | "opencow-self-repair-enabled-skills-registry"
+  | "opencow-self-repair-workspace-project-runtime-registry"
   | "capability-rag-overview"
   | "capability-skills-overview"
   | "skills-local-scan"
   | "skills-local-inspect"
+  | "skills-local-ollama-description"
   | "skills-local-install"
   | "skills-local-enable"
   | "skills-local-disable"
@@ -97,7 +168,14 @@ export type LocalTaskExecutionKind =
   | "skills-local-enabled-rag-shell-remove-temp-output"
   | "npc-local-collaboration-preview"
   | "npc-local-project-showcase-preview"
+  | "npc-local-project-run"
+  | "npc-local-project-screenshot-capture"
+  | "npc-local-project-showcase-site-write"
+  | "npc-local-project-showcase-publish-preview"
+  | "npc-local-project-showcase-git-confirmation-preview"
   | "npc-local-shell-plan-preview"
+  | "npc-template-preview"
+  | "npc-config-write"
   | "capability-npc-overview"
   | "capability-mcp-overview"
   | "mcp-local-plugin-scan"
@@ -105,24 +183,35 @@ export type LocalTaskExecutionKind =
   | "mcp-local-plugin-start-preview"
   | "mcp-local-plugin-start"
   | "rag-local-doc-search"
+  | "network-search-guidance"
   | "readonly-shell-git-status"
   | "readonly-shell-workspace-root"
   | "readonly-shell-packages-dir"
   | "workspace-write-create-temp-output"
   | "workspace-project-run"
+  | "workspace-project-status"
+  | "workspace-project-stop"
   | "controlled-full-remove-temp-output";
 
 export type LocalTaskItem = {
   id: string;
   source: "composer";
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
   summary: string;
+  attachments?: ChatAttachment[];
+  executionMessage?: string;
   attemptCount: number;
   executionKind?: LocalTaskExecutionKind;
   executionTitle?: string;
   executionAuditSummary?: string;
   executionAuditDetail?: string;
   continuationMessage?: string;
+  progressSummary?: string;
+  streamingSummary?: string;
+  lastFailureSource?: string;
+  lastFailureSummary?: string;
+  lastFailureDetail?: string;
+  lastFailureActionLabel?: string;
 };
 
 export type StorageCleanupTarget = "conversation" | "logs" | "cache" | "snapshots" | "knowledge";
@@ -138,6 +227,7 @@ export type WorkbenchState = {
     availableModels: Array<{
       name: string;
       sizeLabel: string;
+      capabilities?: string[];
     }>;
   };
   permission: {
@@ -153,7 +243,19 @@ export type WorkbenchState = {
     pending: PendingConfirmation | null;
   };
   conversation: {
+    id?: string;
     entries: ConversationEntry[];
+    npcId?: string | null;
+    mode?: ConversationMode;
+    restoredFromConversationId?: string | null;
+  };
+  composer: {
+    draftAttachments: ChatAttachment[];
+  };
+  history: {
+    lastNonEmptyConversationEntries: ConversationEntry[];
+    draftConversations: RecentConversationRecord[];
+    archivedConversations: RecentConversationRecord[];
   };
   rollback: {
     defaultLimit: number;
@@ -166,7 +268,36 @@ export type WorkbenchState = {
   };
   search: {
     enabled: boolean;
+    defaultProviderEnabled: boolean;
     providerLabel: string;
+    customProviderLabel: string;
+    customBaseUrl: string;
+    customApiKey: string;
+    effectiveProvider: string;
+    lastFallbackReason: string | null;
+    suppressFallbackNotice: boolean;
+  };
+  knowledge: {
+    importedFiles: ImportedKnowledgeFile[];
+    availableFiles: AvailableKnowledgeFile[];
+    activeLibraryId?: string;
+    activeLibraryLabel?: string;
+    libraries?: KnowledgeLibraryRecord[];
+  };
+  npcWorkspace: {
+    items: NpcWorkspaceRecord[];
+    selectedNpcId: string | null;
+    activeSection: NpcWorkspaceSection;
+    selectedSkillName: string | null;
+    selectedSkillPreview: {
+      name: string;
+      description: string;
+      contentPreview: string;
+      path: string;
+      source: string;
+    } | null;
+    selectedKnowledgeLibraryId: string | null;
+    saveStatus: string | null;
   };
   sources: {
     items: SearchSourceItem[];
@@ -184,12 +315,20 @@ export type WorkbenchState = {
     summary: string;
   };
   settings: {
+    ollama: {
+      longAnswerNumPredict: number;
+      autoContinuationLimit: number;
+      continuationTailLimit: number;
+    };
     remoteApi: {
       collapsed: boolean;
       enabled: boolean;
       baseUrl: string;
       providerLabel: string;
       apiKey: string;
+    };
+    npc: {
+      localModel: string;
     };
   };
   storage: {
@@ -223,7 +362,9 @@ export type RollbackSnapshot = Pick<
   | "model"
   | "permission"
   | "confirmation"
+  | "conversation"
   | "search"
+  | "npcWorkspace"
   | "sources"
   | "tools"
   | "tasks"

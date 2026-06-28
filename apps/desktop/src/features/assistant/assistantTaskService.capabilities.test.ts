@@ -58,10 +58,15 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly capability catalog task: rag"
     } as const);
 
-    expect(result.resultTitle).toBe("OpenClaw RAG capability overview");
+    expect(result.resultTitle).toBe("OpenClaw RAG 能力概览");
     expect(result.resultSummary).toContain("3 of 3 required packages");
     expect(result.resultSummary).toContain("@openclaw/llm-runtime");
-    expect(result.resultSummary).toContain("ready-foundation");
+    expect(result.resultSummary).toContain("状态：ready-foundation");
+    expect(result.resultSummary).toContain("可用包：@openclaw/llm-core");
+    expect(result.resultSummary).toContain("缺失包：无");
+    expect(result.resultSummary).not.toContain("Status:");
+    expect(result.resultSummary).not.toContain("Available:");
+    expect(result.resultSummary).not.toContain("Missing:");
   });
 
   it("plans and executes a readonly local MCP plugin scan through the desktop service", async () => {
@@ -104,10 +109,11 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly local MCP plugin scan task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin scan");
-    expect(result.resultSummary).toContain("2 plugin entries");
+    expect(result.resultTitle).toBe("本地 MCP 插件扫描");
+    expect(result.resultSummary).toContain("扫描到 2 个本地 MCP 插件入口，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("browser");
     expect(result.resultSummary).toContain("codex-supervisor");
+    expect(result.resultSummary).toContain("激活方式：browser=startup、codex-supervisor=manual");
   });
 
   it("plans and executes a readonly local MCP plugin detail lookup through the desktop service", async () => {
@@ -146,11 +152,12 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly local MCP plugin detail task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin detail");
+    expect(result.resultTitle).toBe("本地 MCP 插件详情");
+    expect(result.resultSummary).toContain("找到 1 个匹配 MCP 插件，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("startup");
-    expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("./skills");
+    expect(result.resultSummary).toContain("激活方式：startup");
+    expect(result.resultSummary).toContain("工具：browser");
+    expect(result.resultSummary).toContain("Skills 路径：./skills");
   });
 
   it("plans and executes a readonly local MCP plugin startup preview through the desktop service", async () => {
@@ -172,10 +179,11 @@ describe("assistantTaskService capability catalogs", () => {
           path: "vendor/openclaw/extensions/browser/openclaw.plugin.json",
           source: "vendor-openclaw-extension-plugin",
           activation: "startup",
-          startup_allowed: true,
-          command_preview: "npx openclaw-extension-browser",
+          startup_allowed: false,
+          command_preview: "No resolved executable launcher for this local MCP plugin in the current desktop slice.",
           working_directory: "vendor/openclaw/extensions/browser",
-          risk_summary: "Preview only. Actual MCP plugin launch is not enabled in this slice.",
+          risk_summary:
+            "Preview only. The current desktop slice can inspect this plugin manifest, but it does not yet resolve or launch a real local MCP plugin process.",
           requires_config: false,
           config_hint: "No required config schema fields were detected."
         }
@@ -190,22 +198,26 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Readonly local MCP plugin start preview task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin start preview");
+    expect(result.resultTitle).toBe("本地 MCP 插件启动预览");
+    expect(result.resultSummary).toContain("找到 1 个可预览 MCP 插件，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("npx openclaw-extension-browser");
-    expect(result.resultSummary).toContain("startup");
-    expect(result.resultSummary).toContain("Preview only");
-    expect(result.resultSummary).toContain("No required config schema fields were detected");
+    expect(result.resultSummary).toContain("允许启动：否");
+    expect(result.resultSummary).toContain("命令预览：当前桌面端尚未实现已验证的 MCP 插件启动器");
+    expect(result.resultSummary).toContain("激活方式：startup");
+    expect(result.resultSummary).toContain("风险说明：仅预览插件 manifest，不会启动真实 MCP 进程");
+    expect(result.resultSummary).toContain("配置提示：未检测到必填配置项");
   });
 
   it("executes a real local MCP plugin start task through the desktop service", async () => {
     startLocalMcpPluginMock.mockResolvedValueOnce({
       plugin_id: "browser",
-      command_label: "npx openclaw-extension-browser",
+      command_label: "No resolved executable launcher",
       working_directory: "vendor/openclaw/extensions/browser",
-      stdout_preview: "browser plugin start simulated",
-      line_count: 1,
-      summary: "Local MCP plugin start executed through the controlled desktop runner."
+      stdout_preview:
+        "Execution blocked: the browser MCP plugin manifest exists, but this desktop slice does not yet know how to launch a real plugin host for it.",
+      line_count: 0,
+      summary:
+        "Local MCP plugin start was not executed. The browser plugin is present, but no verified executable launcher has been implemented for it yet."
     });
 
     const result = await executeAssistantTask({
@@ -216,9 +228,11 @@ describe("assistantTaskService capability catalogs", () => {
       auditDetail: "Controlled local MCP plugin start task"
     } as const);
 
-    expect(result.resultTitle).toBe("Local MCP plugin start");
+    expect(result.resultTitle).toBe("本地 MCP 插件启动结果");
     expect(result.resultSummary).toContain("browser");
-    expect(result.resultSummary).toContain("npx openclaw-extension-browser");
-    expect(result.resultSummary).toContain("browser plugin start simulated");
+    expect(result.resultSummary).toContain("命令：当前桌面端尚未实现已验证的 MCP 插件启动器");
+    expect(result.resultSummary).toContain("工作目录：vendor/openclaw/extensions/browser");
+    expect(result.resultSummary).toContain("状态：未执行，缺少已验证启动器。");
+    expect(result.resultSummary).toContain("执行预览：已拦截启动请求");
   });
 });

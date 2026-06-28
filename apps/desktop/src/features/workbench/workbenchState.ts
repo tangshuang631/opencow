@@ -1,10 +1,17 @@
 export type {
+  AvailableKnowledgeFile,
+  ChatAttachment,
+  ChatAttachmentSource,
+  ConversationMode,
   ConversationEntry,
+  ImportedKnowledgeFile,
+  KnowledgeFileStatus,
   LocalTaskExecutionKind,
   LocalTaskItem,
   PendingConfirmation,
   PendingPermissionModeChange,
   PermissionMode,
+  RecentConversationRecord,
   RollbackPreviewState,
   RollbackSnapshot,
   SearchSourceItem,
@@ -13,6 +20,12 @@ export type {
   WorkbenchState
 } from "./workbenchState.types";
 
+export {
+  createArchivedConversationState,
+  createNewConversationState,
+  deleteRecentConversationState,
+  restoreRecentConversationState
+} from "./workbenchState.conversation";
 export { createInitialWorkbenchState } from "./workbenchState.initial";
 export {
   createRemoteApiConfigState,
@@ -20,7 +33,15 @@ export {
   createSearchProviderConfigState,
   createSearchToggleState
 } from "./workbenchState.network";
-export { mergeOllamaOverview, createOllamaLoadErrorState } from "./workbenchState.ollama";
+export {
+  createModelSelectedState,
+  createOllamaSettingsState,
+  createNpcLocalModelSelectedState,
+  getChatCapableOllamaModels,
+  mergeOllamaOverview,
+  createOllamaLoadErrorState,
+  resolveUsableWorkbenchChatModel
+} from "./workbenchState.ollama";
 export {
   approvePendingConfirmationState,
   approvePermissionModeChangeState,
@@ -28,6 +49,7 @@ export {
   cancelPermissionModeChangeState,
   createCapabilityToggleRequestState,
   createCommandPolicyBlockedState,
+  createDuplicatePendingApprovalSkippedState,
   createHighRiskConfirmationState,
   requestPermissionModeChangeState
 } from "./workbenchState.permissions";
@@ -39,12 +61,22 @@ export {
 } from "./workbenchState.rollbackFlow";
 export { createSearchEnabledState } from "./workbenchState.search";
 export { createStorageCleanupState } from "./workbenchState.storage";
-export { createToolExecutionErrorState, createToolExecutionState } from "./workbenchState.tools";
 export {
+  createToolExecutionErrorState,
+  createToolExecutionRecoveredState,
+  createToolExecutionState
+} from "./workbenchState.tools";
+export {
+  createAssistantPlanningFailedState,
+  createDuplicatePlanningFailureSkippedState,
+  createStaleActiveTaskSlotRecoveredState,
+  createTaskMissingExecutionKindFailedState,
   createTaskExecutionCancelledState,
   createTaskExecutionFailedState,
+  createTaskExecutionProgressState,
   createTaskExecutionRetriedState,
   createTaskExecutionStartedState,
+  createTaskExecutionStreamingChunkState,
   createTaskExecutionSucceededState,
   createUserTaskSubmittedState
 } from "./workbenchState.tasks";

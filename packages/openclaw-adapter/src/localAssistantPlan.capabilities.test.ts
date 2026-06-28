@@ -50,6 +50,18 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
+  it("plans a readonly Ollama-generated Chinese skill description request", () => {
+    const plan = planLocalAssistantTask({
+      message: "用 Ollama 给 docs-helper skill 生成中文说明",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "skills-local-ollama-description",
+      title: "Generate local Skill Chinese description"
+    });
+  });
+
   it("requests workspace-write permission before enabling a local skill", () => {
     const plan = planLocalAssistantTask({
       message: "enable the coding-agent skill for this workspace",
@@ -215,6 +227,24 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
+  it("plans Chinese enabled-skill recommendation and skill-assisted RAG lookup requests through the real capability routes", () => {
+    expect(planLocalAssistantTask({
+      message: "推荐一个已启用 skill 来处理 shell 自动化",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-enabled-match",
+      title: "Match enabled local skills"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "用已启用 docs skill 搜索本地规则里的 shell permission guidance",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-enabled-rag-doc-search",
+      title: "Skill-assisted local RAG document search"
+    });
+  });
+
   it("requests workspace-write permission before a skill-assisted RAG handoff temp-output creation task", () => {
     const plan = planLocalAssistantTask({
       message: "use the enabled docs skill to review local shell permission rules and continue to create a temp-output folder with shell automation",
@@ -266,6 +296,32 @@ describe("local assistant task planner capability catalogs", () => {
     });
   });
 
+  it("requests workspace-write before generating and saving an NPC configuration through the local model", () => {
+    const plan = planLocalAssistantTask({
+      message: "你能帮我配置一个课程助手npc吗",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "permission-request",
+      targetMode: "workspace-write",
+      queuedExecutionKind: "npc-config-write",
+      queuedExecutionTitle: "大模型生成并保存 NPC 配置"
+    });
+  });
+
+  it("plans a generic LLM-generated NPC config write after permission is available", () => {
+    const plan = planLocalAssistantTask({
+      message: "你能帮我配置一个文档处理npc吗",
+      permissionMode: "workspace-write"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-config-write",
+      title: "大模型生成并保存 NPC 配置"
+    });
+  });
+
   it("plans a readonly npc collaboration preview for explicit npc planning requests", () => {
     const plan = planLocalAssistantTask({
       message: "preview an npc collaboration plan for local shell permission rules",
@@ -275,6 +331,18 @@ describe("local assistant task planner capability catalogs", () => {
     expect(plan).toMatchObject({
       kind: "npc-local-collaboration-preview",
       title: "NPC collaboration preview"
+    });
+  });
+
+  it("plans a readonly NPC template preview for Chinese default template requests", () => {
+    const plan = planLocalAssistantTask({
+      message: "先给我课程助手 NPC 的默认模板",
+      permissionMode: "readonly"
+    });
+
+    expect(plan).toMatchObject({
+      kind: "npc-template-preview",
+      title: "NPC default template preview"
     });
   });
 
@@ -452,6 +520,98 @@ describe("local assistant task planner capability catalogs", () => {
       kind: "confirmation",
       queuedExecutionKind: "mcp-local-plugin-start",
       queuedExecutionTitle: "Local MCP plugin start"
+    });
+  });
+
+  it("plans key capability and local tool flows from Chinese requests", () => {
+    expect(planLocalAssistantTask({
+      message: "查看 skills 能力概览",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "capability-skills-overview",
+      title: "OpenClaw Skills capability overview"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "扫描本地 skills",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-scan",
+      title: "Local Skills scan"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "查看已启用 skills",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "skills-local-enabled-list",
+      title: "Enabled local skills"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "查看 browser mcp 插件详情",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "mcp-local-plugin-inspect",
+      title: "Local MCP plugin detail"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "搜索本地知识库里的 browser history",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "rag-local-doc-search",
+      title: "Local RAG document search"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "预览一个 npc 协作方案，用来检查本地 shell 权限规则",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "npc-local-collaboration-preview",
+      title: "NPC collaboration preview"
+    });
+  });
+
+  it("plans more Chinese write and preview requests through the real capability routes", () => {
+    expect(planLocalAssistantTask({
+      message: "安装 gpt-taste skill 到当前工作区",
+      permissionMode: "workspace-write"
+    })).toMatchObject({
+      kind: "skills-local-install",
+      title: "Install local skill"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "启用 coding-agent skill",
+      permissionMode: "workspace-write"
+    })).toMatchObject({
+      kind: "skills-local-enable",
+      title: "Enable local skill"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "禁用 coding-agent skill",
+      permissionMode: "workspace-write"
+    })).toMatchObject({
+      kind: "skills-local-disable",
+      title: "Disable local skill"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "预览启动 browser mcp 插件 locally",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "mcp-local-plugin-start-preview",
+      title: "Local MCP plugin start preview"
+    });
+
+    expect(planLocalAssistantTask({
+      message: "预览一个 npc shell 计划来删除 temp-output",
+      permissionMode: "readonly"
+    })).toMatchObject({
+      kind: "npc-local-shell-plan-preview",
+      title: "NPC shell plan preview"
     });
   });
 });

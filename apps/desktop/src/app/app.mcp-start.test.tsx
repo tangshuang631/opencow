@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -11,12 +12,21 @@ vi.mock("../features/ollama/ollamaService", () => ({
 }));
 
 const INSPECTOR_PANEL_NAME = "\u53f3\u4fa7\u9762\u677f";
-const PERMISSION_HEADING_NAME = "\u6743\u9650\u786e\u8ba4";
-const APPROVE_PERMISSION_NAME = "\u6279\u51c6\u63d0\u6743";
-const APPROVE_DANGER_NAME = "\u6279\u51c6\u9ad8\u98ce\u9669\u64cd\u4f5c";
+const SELECTED_LOCAL_MODEL_NAME = "\u9009\u62e9\u6a21\u578b\uff1aqwen2.5-coder:7b";
+
+async function waitForSelectedLocalModel() {
+  await screen.findByRole("button", { name: SELECTED_LOCAL_MODEL_NAME });
+}
+
+function setupUser() {
+  return typeof vi.isFakeTimers === "function" && vi.isFakeTimers()
+    ? userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    : userEvent.setup();
+}
 
 describe("App MCP start flow", () => {
   it("runs the controlled MCP browser plugin start chain through permission and dangerous confirmation", async () => {
+    const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValue({
       reachable: true,
       endpoint: "http://127.0.0.1:11434",
@@ -27,7 +37,7 @@ describe("App MCP start flow", () => {
 
     const { container } = render(<App />);
 
-    await screen.findAllByText("qwen2.5-coder:7b");
+    await waitForSelectedLocalModel();
 
     const composerInput = container.querySelector("textarea");
     const sendButton = container.querySelector("button.send-button");
@@ -41,27 +51,29 @@ describe("App MCP start flow", () => {
     fireEvent.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const permissionSection = within(inspectorPanel).getByRole("heading", { name: PERMISSION_HEADING_NAME }).closest("section");
+    const permissionSection = within(inspectorPanel).getAllByText("等待权限确认")[0]?.closest("section");
 
     expect(permissionSection).not.toBeNull();
-    expect(within(permissionSection as HTMLElement).getByText(/controlled-full/i)).toBeInTheDocument();
+    expect(within(permissionSection as HTMLElement).getAllByText(/受控完全访问/i).length).toBeGreaterThan(0);
 
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: APPROVE_PERMISSION_NAME
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    await user.click(approvePermissionButton);
+
+    const dangerSection = await waitFor(() => {
+      const section = within(inspectorPanel).getAllByText("等待高风险确认")[0]?.closest("section");
+      expect(section).not.toBeNull();
+      return section as HTMLElement;
     });
-    fireEvent.click(approvePermissionButton);
+    const approveDangerButton = await within(dangerSection).findByRole("button", { name: "批准" });
+    expect(screen.queryByText(/no verified executable launcher has been implemented/i)).not.toBeInTheDocument();
 
-    const approveDangerButton = await within(permissionSection as HTMLElement).findByRole("button", {
-      name: APPROVE_DANGER_NAME
-    });
-    expect(screen.queryByText(/browser plugin start simulated/i)).not.toBeInTheDocument();
-
-    fireEvent.click(approveDangerButton);
+    await user.click(approveDangerButton);
 
     await waitFor(() => {
       expect(
-        screen.getAllByText(/Local MCP plugin start|npx openclaw-extension-browser|browser plugin start simulated/i).length
+        screen.getAllByText(/本地 MCP 插件启动结果|当前桌面端尚未实现已验证的 MCP 插件启动器|未执行，缺少已验证启动器/i).length
       ).toBeGreaterThan(0);
     });
-  });
+    expect(screen.queryByText(/No resolved executable launcher|not executed/i)).not.toBeInTheDocument();
+  }, 15_000);
 });

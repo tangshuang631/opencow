@@ -65,6 +65,12 @@ v1.0 字段：
 - 提供默认模板。
 - 不要求用户手写复杂配置。
 
+当前落地：
+
+- `npc-template-preview` 提供只读默认模板预览，不写文件、不请求模型、不绕过权限。
+- 模板预览返回名称、系统提示词、默认模型、默认工具、默认知识库、风险策略、输出风格。
+- 保存或生成真实 NPC 配置仍必须走 `npc-config-write` 的 `workspace-write` 权限链路。
+
 ## 5. MCP
 
 MCP 作为高级能力保留。
@@ -136,11 +142,13 @@ Current behavior:
 - desktop execution stays local-first and readonly
 - Tauri scans the current local rule and v1.0 documentation files
 - results are ranked by simple deterministic query matching
+- every RAG result explicitly reports the active retrieval provider; the current stable path reports `keyword-fallback`
 - top passages are returned through the assistant task result surface
 
 Current scope is intentionally limited:
 
 - no embedding dependency yet
+- Ollama Embedding remains the preferred target path, but until it is wired into the local index the product must show keyword fallback instead of silently pretending embedding ran
 - no remote retrieval
 - no write path
 - no arbitrary filesystem crawl
@@ -754,6 +762,14 @@ Local-model-first requirement:
 - prompts, planner branches, previews, and repair suggestions should be narrower and more deterministic than the upstream openclaw default
 - opencow should raise the practical quality floor on local models through stronger boundaries, better defaults, and better execution scaffolding rather than assuming the model alone will compensate
 
+Current NPC config generation guardrail:
+
+- NPC config creation still asks the selected local model to generate the configuration after workspace-write approval.
+- If the model returns a valid JSON object, opencow saves that generated object.
+- If the model returns prose or malformed JSON, opencow saves a reviewable safety wrapper that keeps the original model output in `unparsed_model_output` instead of losing it.
+- The main conversation must explicitly tell the user that the saved config was wrapped and needs review, rather than presenting the result as a clean structured generation.
+- The audit detail records the NPC config parse status so later repair or regeneration can distinguish `parsed` from `wrapped` output.
+
 ## 6.16 Desktop continuity improvement: continue from latest RAG shell preview
 
 The desktop mainline now carries forward the latest previewable RAG-to-shell intent so the user can continue without repeating the full original request text.
@@ -913,6 +929,7 @@ This is the first real execution slice for MCP in the desktop-first chain:
 - planner routes them through `controlled-full` permission and explicit dangerous confirmation
 - desktop assistant execution calls a tightly scoped Tauri command
 - current real execution scope remains intentionally narrow to a fixed browser plugin candidate path
+- start preview and start result both surface the product safety boundary: MCP is default-off, start is manual, `controlled-full` is required, tool calls still go through `permission-engine`, and start/failure/tool-list changes are logged
 
 Safety boundary remains intentionally narrow:
 
@@ -962,3 +979,64 @@ Current result includes:
   inspect failure -> preview repair -> request permission for any mutation -> verify -> keep audit and rollback visibility
 
 This slice gives opencow a safer first self-repair foothold while keeping the same permission, audit, and rollback discipline required for later writable repair actions.
+
+## 6.22a First permission-backed opencow self-repair mutation landing
+
+The next desktop-first self-repair slice is a narrow permission-backed mutation, not a broad autonomous fixer.
+
+Current task kind:
+
+- `opencow-self-repair-enabled-skills-registry`
+
+Current behavior:
+
+- after a readonly self-repair preview, an explicit continuation request can continue into the enabled-skills registry repair path
+- in `readonly`, the planner returns `workspace-write` permission instead of mutating immediately
+- after approval, desktop executes one fixed repair action against `.opencow/skills/enabled-skills.json`
+- Tauri recreates the registry with the verified default schema and preserves any readable enabled entries
+- the final assistant result stays audit-visible and rollback-visible in the same local task chain
+
+Current scope is intentionally limited:
+
+- no arbitrary file mutation
+- no config rewrite outside `.opencow/skills/enabled-skills.json`
+- no process restart
+- no broad guessed repair plan
+
+This slice is intentionally small, but it establishes the first real self-repair mutation mainline:
+
+- inspect
+- preview
+- explicit continue
+- permission
+- controlled fix
+- verify
+- audit / rollback visibility
+
+## 6.22b Current self-repair mutation boundary after the first landing
+
+The current desktop-first self-repair chain is no longer preview-only, but it is still intentionally narrow.
+
+Current landed state:
+
+- readonly self-repair preview is available through `opencow-self-repair-preview`
+- the first permission-backed mutation is available through `opencow-self-repair-enabled-skills-registry`
+- the second permission-backed mutation is available through `opencow-self-repair-workspace-project-runtime-registry`
+- app-level conversation coverage now proves both:
+  - readonly preview from composer submit to final preview result
+  - preview -> explicit continue -> permission approval -> final repaired result for both narrow registry targets
+
+Current remaining gap:
+
+- opencow still does not expose a broader assistant-owned config repair path
+- destructive or higher-impact self-repair actions still do not exist and must not be implied by these narrow registry repairs
+
+Recommended rule for the next self-repair slice:
+
+- do not expand from the first registry repair into a broad guessed fixer
+- only land another mutation slice if it is:
+  - explicit in user wording
+  - narrow in target path or state surface
+  - permission-backed or confirmation-backed at the correct level
+  - verification-oriented
+  - audit-visible and rollback-visible in the same desktop task chain

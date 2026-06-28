@@ -12,16 +12,23 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "opencow",
+        "create": false,
         "width": 1320,
         "height": 860,
         "minWidth": 980,
-        "minHeight": 680
+        "minHeight": 680,
+        "dataDirectory": "dev-webview"
       }
     ]
   },
   "bundle": {
-    "active": false,
-    "targets": "all"
+    "active": true,
+    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
+    "targets": ["app"],
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
   }
 }

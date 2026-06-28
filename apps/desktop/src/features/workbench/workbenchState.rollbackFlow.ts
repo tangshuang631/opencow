@@ -13,16 +13,6 @@ export function requestRollbackPreviewState(state: WorkbenchState, targetEntryId
 
   return {
     ...state,
-    conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
-        id: `rollback-preview-${targetEntryId}`,
-        kind: "system",
-        title: "等待确认回退",
-        summary: `准备回退到 ${targetEntry.label}，将撤销 ${preview.willRevertCount} 个后续状态。`,
-        actionLabel: `预览回退到 ${targetEntry.label}`,
-        rollbackTargetId: targetEntryId
-      })
-    },
     rollback: {
       ...state.rollback,
       pendingPreview: {
@@ -63,20 +53,27 @@ export function applyPendingRollbackState(state: WorkbenchState): WorkbenchState
   }
 
   const restoredJournal = applyRollback(state.rollback, pendingPreview.targetEntryId);
+  const shouldPreserveUserEntryOnly = pendingPreview.targetLabel === "会话输入";
+  const restoredTasks = shouldPreserveUserEntryOnly
+    ? {
+        pendingCount: 0,
+        activeTaskId: null,
+        items: []
+      }
+    : snapshot.tasks;
+  const restoredOutput = shouldPreserveUserEntryOnly
+    ? {
+        title: "暂无产物",
+        summary: "等待工具执行结果或本地产物摘要。"
+      }
+    : snapshot.output;
 
   return {
     ...state,
     ...snapshot,
-    conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
-        id: `rollback-applied-${pendingPreview.targetEntryId}`,
-        kind: "system",
-        title: `已回退到 ${pendingPreview.targetLabel}`,
-        summary: `已恢复目标快照，并撤销 ${pendingPreview.willRevertCount} 个后续状态。`,
-        actionLabel: `预览回退到 ${pendingPreview.targetLabel}`,
-        rollbackTargetId: pendingPreview.targetEntryId
-      })
-    },
+    tasks: restoredTasks,
+    output: restoredOutput,
+    error: shouldPreserveUserEntryOnly ? null : snapshot.error,
     rollback: {
       ...restoredJournal,
       snapshots: pruneRollbackSnapshots(state.rollback.snapshots, restoredJournal.entries),
@@ -103,16 +100,6 @@ export function cancelPendingRollbackState(state: WorkbenchState): WorkbenchStat
 
   return {
     ...state,
-    conversation: {
-      entries: prependConversationEntry(state.conversation.entries, {
-        id: `rollback-cancelled-${pendingPreview.targetEntryId}`,
-        kind: "system",
-        title: "已取消回退",
-        summary: `已取消回退到 ${pendingPreview.targetLabel}。`,
-        actionLabel: `预览回退到 ${pendingPreview.targetLabel}`,
-        rollbackTargetId: pendingPreview.targetEntryId
-      })
-    },
     rollback: {
       ...state.rollback,
       pendingPreview: null

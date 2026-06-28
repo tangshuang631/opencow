@@ -33,9 +33,10 @@ describe("assistantTaskService packages overview", () => {
       auditDetail: "Readonly workspace packages overview task."
     });
 
-    expect(result.resultTitle).toBe("Workspace packages overview");
+    expect(result.resultTitle).toBe("工作区包概览");
     expect(result.resultSummary).toContain("3 packages");
     expect(result.resultSummary).toContain("9 npm scripts");
+    expect(result.resultSummary).toContain("重点包");
     expect(result.resultSummary).toContain("openclaw-adapter");
   });
 

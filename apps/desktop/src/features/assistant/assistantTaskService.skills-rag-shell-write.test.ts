@@ -89,10 +89,21 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
 
     expect(result.resultTitle).toBe("Skill-assisted RAG handoff temp-output creation");
     expect(result.resultSummary).toContain("docs-helper");
+    expect(result.resultSummary).toContain("推荐 Skill：docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("命令：New-Item -ItemType Directory -Force temp-output");
+    expect(result.resultSummary).toContain("输出预览：temp-output");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：工作区写入命令已完成。");
+    expect(result.resultSummary).not.toContain("Workspace write shell command completed successfully");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 
   it("executes a skill-assisted RAG handoff temp-output removal task through skill match, docs retrieval, and confirmed shell execution", async () => {
@@ -150,10 +161,21 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
 
     expect(result.resultTitle).toBe("Skill-assisted RAG handoff temp-output removal");
     expect(result.resultSummary).toContain("docs-helper");
+    expect(result.resultSummary).toContain("推荐 Skill：docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("命令：Remove-Item -LiteralPath temp-output -Recurse -Force");
+    expect(result.resultSummary).toContain("输出预览：temp-output removed");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：受控高风险命令已完成。");
+    expect(result.resultSummary).not.toContain("Controlled full shell command completed successfully");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 
   it("executes an npc-assisted RAG handoff temp-output creation task through skill match, docs retrieval, and shell execution", async () => {
@@ -211,10 +233,21 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
 
     expect(result.resultTitle).toBe("NPC-assisted RAG handoff temp-output creation");
     expect(result.resultSummary).toContain("docs-helper");
+    expect(result.resultSummary).toContain("推荐 Skill：docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("命令：New-Item -ItemType Directory -Force temp-output");
+    expect(result.resultSummary).toContain("输出预览：temp-output");
     expect(result.resultSummary).toContain("New-Item -ItemType Directory -Force temp-output");
-    expect(result.resultSummary).toContain("Workspace write shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：工作区写入命令已完成。");
+    expect(result.resultSummary).not.toContain("Workspace write shell command completed successfully");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 
   it("executes an npc-assisted RAG handoff temp-output removal task through skill match, docs retrieval, and confirmed shell execution", async () => {
@@ -272,9 +305,20 @@ describe("assistantTaskService skill-assisted rag shell continuation", () => {
 
     expect(result.resultTitle).toBe("NPC-assisted RAG handoff temp-output removal");
     expect(result.resultSummary).toContain("docs-helper");
+    expect(result.resultSummary).toContain("推荐 Skill：docs-helper");
+    expect(result.resultSummary).toContain("注册表：.opencow/skills/enabled-skills.json");
+    expect(result.resultSummary).toContain("主要来源：04-permission-safety-shell.md、OPENCOW_CORE_RULES.md");
     expect(result.resultSummary).toContain("04-permission-safety-shell.md");
     expect(result.resultSummary).toContain("OPENCOW_CORE_RULES.md");
+    expect(result.resultSummary).toContain("命令：Remove-Item -LiteralPath temp-output -Recurse -Force");
+    expect(result.resultSummary).toContain("输出预览：temp-output removed");
     expect(result.resultSummary).toContain("Remove-Item -LiteralPath temp-output -Recurse -Force");
-    expect(result.resultSummary).toContain("Controlled full shell command completed successfully.");
+    expect(result.resultSummary).toContain("执行摘要：受控高风险命令已完成。");
+    expect(result.resultSummary).not.toContain("Controlled full shell command completed successfully");
+    expect(result.resultSummary).not.toContain("Recommended skill:");
+    expect(result.resultSummary).not.toContain("Registry:");
+    expect(result.resultSummary).not.toContain("Top matches:");
+    expect(result.resultSummary).not.toContain("Command:");
+    expect(result.resultSummary).not.toContain("Preview:");
   });
 });

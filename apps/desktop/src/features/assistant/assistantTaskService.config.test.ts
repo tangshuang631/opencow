@@ -33,8 +33,9 @@ describe("assistantTaskService config overview", () => {
       auditDetail: "Readonly workspace config overview task."
     });
 
-    expect(result.resultTitle).toBe("Workspace config overview");
+    expect(result.resultTitle).toBe("工作区配置概览");
     expect(result.resultSummary).toContain("3 key config files");
+    expect(result.resultSummary).toContain("关键配置文件");
     expect(result.resultSummary).toContain("package.json");
     expect(result.resultSummary).toContain("desktop:dev");
   });

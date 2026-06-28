@@ -50,10 +50,11 @@ describe("assistantTaskService local skill inspect", () => {
       auditDetail: "Readonly local skill detail task."
     } as const);
 
-    expect(result.resultTitle).toBe("Local Skill detail");
-    expect(result.resultSummary).toContain("1 matching skill");
+    expect(result.resultTitle).toBe("本地 Skill 详情");
+    expect(result.resultSummary).toContain("找到 1 个匹配 Skill，覆盖 2 个扫描根目录");
     expect(result.resultSummary).toContain("coding-agent");
     expect(result.resultSummary).toContain("OpenClaw coding agent workflow");
-    expect(result.resultSummary).toContain("Enabled: yes");
+    expect(result.resultSummary).toContain("启用状态：已启用");
+    expect(result.resultSummary).toContain("内容预览：Use this skill when implementing focused coding tasks");
   });
 });
