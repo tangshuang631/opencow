@@ -611,7 +611,8 @@ describe("ollamaService", () => {
       return chatWithOllamaModel({
         model: "qwen3.6:35b",
         message: "磁特性综合实验：一、单选题 共 8 小题；二、多选题 共 8 小题。请每题给出题号、答案和简要解释。",
-        requestId: "local-model-chat-earlier-section-length-limit"
+        requestId: "local-model-chat-earlier-section-length-limit",
+        autoContinuationLimit: 3
       });
     });
 
@@ -878,7 +879,7 @@ describe("ollamaService", () => {
       message: "单选题 共 8 小题，请逐题给出答案和简要解释。"
     });
 
-    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).options.num_predict).toBe(4096);
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string).options.num_predict).toBe(8192);
   });
 
   it("passes abort signals to browser-preview Ollama chat fetches", async () => {
@@ -1019,42 +1020,29 @@ describe("ollamaService", () => {
     const continuationBody = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string);
 
     expect(continuationBody.messages[0].content).toContain("上一条回答因为输出长度限制中断");
-    expect(continuationBody.options.num_predict).toBe(4096);
+    expect(continuationBody.options.num_predict).toBe(8192);
   });
 
-  it("continues bounded repeated Ollama length-limit answers without looping forever", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({
+  it("continues repeated Ollama length-limit answers until the model finishes within the raised default budget", async () => {
+    const fetchMock = vi.fn();
+    for (let index = 1; index <= 9; index += 1) {
+      fetchMock.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           model: "qwen3.6:35b",
           done_reason: "length",
-          message: { role: "assistant", content: "第一段。" }
-        })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          model: "qwen3.6:35b",
-          done_reason: "length",
-          message: { role: "assistant", content: "第二段。" }
-        })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          model: "qwen3.6:35b",
-          done_reason: "length",
-          message: { role: "assistant", content: "第三段。" }
-        })
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          model: "qwen3.6:35b",
-          message: { role: "assistant", content: "不应该请求到这一段。" }
+          message: { role: "assistant", content: `第${index}段。` }
         })
       });
+    }
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        model: "qwen3.6:35b",
+        done_reason: "stop",
+        message: { role: "assistant", content: "最终总结。" }
+      })
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     const result = await chatWithOllamaModel({
@@ -1062,11 +1050,45 @@ describe("ollamaService", () => {
       message: "请完整总结这份很长的 Markdown 文档。"
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(result.message).toContain("第一段。");
-    expect(result.message).toContain("第二段。");
-    expect(result.message).toContain("第三段。");
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(result.message).toContain("第1段。");
+    expect(result.message).toContain("第9段。");
+    expect(result.message).toContain("最终总结。");
+    expect(result.doneReason).toBe("stop");
+  });
+
+  it("honors explicit auto continuation limits when Ollama keeps reporting length stops", async () => {
+    const fetchMock = vi.fn();
+    for (let index = 1; index <= 4; index += 1) {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model: "qwen3.6:35b",
+          done_reason: "length",
+          message: { role: "assistant", content: `第${index}段。` }
+        })
+      });
+    }
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        model: "qwen3.6:35b",
+        message: { role: "assistant", content: "不应该请求到这一段。" }
+      })
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatWithOllamaModel({
+      model: "qwen3.6:35b",
+      message: "请完整总结这份很长的 Markdown 文档。",
+      autoContinuationLimit: 4
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(result.message).toContain("第1段。");
+    expect(result.message).toContain("第4段。");
     expect(result.message).not.toContain("不应该请求到这一段。");
+    expect(result.doneReason).toBe("length");
   });
 
   it("splits long quiz requests by section before calling Ollama in browser preview", async () => {

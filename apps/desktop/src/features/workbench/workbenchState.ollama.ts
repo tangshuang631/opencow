@@ -289,7 +289,7 @@ function clampLongAnswerNumPredict(value: number) {
 }
 
 function clampAutoContinuationLimit(value: number) {
-  return Math.min(8, Math.max(1, Math.round(value)));
+  return Math.min(24, Math.max(1, Math.round(value)));
 }
 
 function clampContinuationTailLimit(value: number) {

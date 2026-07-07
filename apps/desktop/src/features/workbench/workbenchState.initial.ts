@@ -101,7 +101,7 @@ export function createInitialWorkbenchState(): WorkbenchState {
     settings: {
       ollama: {
         longAnswerNumPredict: 8192,
-        autoContinuationLimit: 5,
+        autoContinuationLimit: 16,
         continuationTailLimit: 2400
       },
       remoteApi: {

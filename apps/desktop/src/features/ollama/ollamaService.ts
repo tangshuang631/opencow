@@ -4,12 +4,13 @@ import { listen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
 const ollamaEndpoint = "http://127.0.0.1:11434";
 const ollamaTagsPath = `${ollamaEndpoint}/api/tags`;
 const ollamaChatPath = `${ollamaEndpoint}/api/chat`;
-const MAX_OLLAMA_LENGTH_LIMIT_CALLS = 3;
+const MAX_OLLAMA_LENGTH_LIMIT_CALLS = 16;
+const MAX_CONFIGURABLE_OLLAMA_LENGTH_LIMIT_CALLS = 24;
 const MAX_MISSING_QUIZ_REPAIR_ATTEMPTS = 2;
 const NUMBERED_RANGE_SPLIT_SIZE = 8;
 const MIN_NUMBERED_RANGE_SPLIT_COUNT = 10;
 const DEFAULT_OLLAMA_CHAT_NUM_PREDICT = 512;
-const LONG_OLLAMA_CHAT_NUM_PREDICT = 4096;
+const LONG_OLLAMA_CHAT_NUM_PREDICT = 8192;
 const DEFAULT_OLLAMA_CHAT_TIMEOUT_MS = 480_000;
 const LONG_OLLAMA_CHAT_TIMEOUT_MS = 480_000;
 const OLLAMA_OVERVIEW_TIMEOUT_MS = 15_000;
@@ -333,7 +334,7 @@ async function continueOllamaChatResultIfNeeded(payload: {
   let latestModel = payload.initialResult.model;
   let latestDoneReason = payload.initialResult.doneReason;
   const autoContinuationLimit = Math.min(
-    8,
+    MAX_CONFIGURABLE_OLLAMA_LENGTH_LIMIT_CALLS,
     Math.max(1, Math.round(payload.autoContinuationLimit ?? MAX_OLLAMA_LENGTH_LIMIT_CALLS))
   );
 

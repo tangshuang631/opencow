@@ -246,7 +246,7 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
     settings: {
       ollama: {
         longAnswerNumPredict: state.settings?.ollama?.longAnswerNumPredict ?? 8192,
-        autoContinuationLimit: state.settings?.ollama?.autoContinuationLimit ?? 5,
+        autoContinuationLimit: state.settings?.ollama?.autoContinuationLimit ?? 16,
         continuationTailLimit: state.settings?.ollama?.continuationTailLimit ?? 2400
       },
       remoteApi: {

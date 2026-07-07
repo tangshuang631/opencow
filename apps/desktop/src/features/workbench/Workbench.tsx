@@ -1914,7 +1914,7 @@ function SettingsPanel({
               aria-label="自动续写次数上限"
               type="number"
               min={1}
-              max={8}
+              max={24}
               step={1}
               value={autoContinuationLimit}
               onChange={(event) => setAutoContinuationLimit(event.target.value)}
