@@ -40,7 +40,7 @@ function renderInspector(state = createInitialWorkbenchState()) {
 }
 
 describe("Inspector", () => {
-  it("shows only task sheet and changes by default", () => {
+  it("shows only task sheet, changes, and collapsed records entry by default", () => {
     renderInspector();
 
     expect(screen.getByLabelText("右侧面板")).toBeInTheDocument();
@@ -50,7 +50,8 @@ describe("Inspector", () => {
     expect(screen.getByText("暂无变更")).toBeInTheDocument();
     expect(screen.queryByText("当前还没有本地文件变更。")).not.toBeInTheDocument();
     expect(screen.queryByText("输出")).not.toBeInTheDocument();
-    expect(screen.queryByText("配置与记录")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "展开配置与记录" })).toBeInTheDocument();
+    expect(screen.queryByText("日志")).not.toBeInTheDocument();
   });
 
   it("renders a more specific checklist for the active local task", () => {
@@ -93,8 +94,8 @@ describe("Inspector", () => {
     renderInspector(pending);
 
     expect(screen.getAllByText("等待权限确认").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "批准" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批准提权" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消提权" })).toBeInTheDocument();
   });
 
   it("surfaces pending dangerous confirmation inline above the task sheet", () => {
@@ -109,8 +110,8 @@ describe("Inspector", () => {
     renderInspector(pending);
 
     expect(screen.getAllByText("等待高风险确认").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "批准" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批准高风险操作" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消高风险操作" })).toBeInTheDocument();
   });
 
   it("lists file changes extracted from assistant results and expands details", () => {

@@ -113,6 +113,7 @@ def update_web_launcher_icon() -> None:
 
 
 def write_latest_test_launcher_app() -> None:
+    remove_path(LATEST_TEST_APP)
     contents_dir = LATEST_TEST_APP / "Contents"
     macos_dir = contents_dir / "MacOS"
     resources_dir = contents_dir / "Resources"

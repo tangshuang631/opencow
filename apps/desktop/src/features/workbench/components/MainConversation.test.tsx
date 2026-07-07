@@ -350,7 +350,7 @@ describe("MainConversation", () => {
 
     render(<MainConversation state={skipped} onPreviewRollback={onPreviewRollback} onCancelActiveTask={vi.fn()} />);
 
-    expect(screen.getByText("已跳过重复审批请求")).toBeInTheDocument();
+    expect(screen.getByText("重复审批请求已跳过")).toBeInTheDocument();
     expect(screen.queryByText(/Duplicate pending approval request skipped/i)).not.toBeInTheDocument();
     expect(screen.getByText("已有权限审批正在等待处理，已跳过这次重复请求。")).toBeInTheDocument();
     expect(screen.queryByText(/Module: permission/i)).not.toBeInTheDocument();

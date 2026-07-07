@@ -779,14 +779,35 @@ function sourceMentionsTerm(source: WorkbenchState["sources"]["items"][number], 
 
 function extractComparisonSubjects(message: string) {
   const normalized = message.trim();
-  const match = normalized.match(/(.+?)和(.+?)(谁更好|哪个好|区别|差别|对比|比较)/);
+  const match = normalized.match(/(.+?)\s*(?:和|与|跟|同|vs|VS|对比)\s*(.+)$/i);
 
   if (!match) {
     return null;
   }
 
   const left = match[1]?.trim();
-  const right = match[2]?.trim();
+  const rightRaw = match[2]?.trim() ?? "";
+  const rightBoundary = [
+    "哪个",
+    "哪一个",
+    "谁",
+    "哪种",
+    "区别",
+    "差别",
+    "比较",
+    "更好用",
+    "更好",
+    "更久",
+    "更悠久",
+    "更早",
+    "更晚",
+    "更新",
+    "更强"
+  ]
+    .map((marker) => rightRaw.search(new RegExp(`\\s*${marker}`, "i")))
+    .filter((index) => index > 0)
+    .sort((a, b) => a - b)[0];
+  const right = rightRaw.slice(0, rightBoundary ?? rightRaw.length).trim();
 
   if (!left || !right) {
     return null;
@@ -831,20 +852,37 @@ function createEvidenceGuardLines(
     lines.push("当前问题是比较类问题。");
 
     if (leftMatched) {
-      lines.push(`仅找到与「${comparisonSubjects.left}」相关的来源。`);
+      if (rightMatched) {
+        lines.push(`已找到与「${comparisonSubjects.left}」相关的来源。只用这些来源中明确写出的事实比较。不要因为比较对象数量多就直接回答无法确认。`);
+      } else {
+        lines.push(`仅找到与「${comparisonSubjects.left}」相关的来源。`);
+      }
     } else {
       lines.push(`未找到与「${comparisonSubjects.left}」直接相关的来源。`);
     }
 
     if (rightMatched) {
-      lines.push(`仅找到与「${comparisonSubjects.right}」相关的来源。`);
+      if (leftMatched) {
+        lines.push(`已找到与「${comparisonSubjects.right}」相关的来源。只用这些来源中明确写出的事实比较。不要因为比较对象数量多就直接回答无法确认。`);
+      } else {
+        lines.push(`仅找到与「${comparisonSubjects.right}」相关的来源。`);
+      }
     } else {
       lines.push(`未找到与「${comparisonSubjects.right}」直接相关的来源。`);
     }
 
     if (!leftMatched || !rightMatched) {
       lines.push("证据覆盖不完整，不要直接下结论谁更好；请明确说明现有来源不足以完成公平比较。");
+    } else {
+      lines.push("两个比较对象都有来源覆盖时，必须先比较来源中明确出现的事实；只有关键事实仍缺失或互相矛盾时，才说明无法确认。若可以从年份、版本、发布时间、候选名称等明确事实推出结论，应直接给出结论并标注条件。命中来源不是拒答理由。");
+      lines.push("如果来源已经明确给出年份、版本号、发布时间、候选名称或否定关系，请先比较这些明确事实，再给出有条件结论。");
     }
+  }
+
+  if (shouldTreatQuestionAsNetworkFreshnessQuery(message)) {
+    lines.push("当前问题涉及最新信息或时效性判断。");
+    lines.push("如果来源已经明确给出年份、版本号、发布时间、候选名称或否定关系，请先比较这些明确事实，再给出有条件结论。");
+    lines.push("只有来源没有出现可用于判断的候选事实，或来源之间明显互相冲突且无法分辨时，才回答现有来源不足以确认。");
   }
 
   if (looksLikeOwnershipQuestion(message)) {
@@ -2580,7 +2618,13 @@ function isDuplicatePendingPermissionMessage(message: string, state: WorkbenchSt
 }
 
 function isDuplicatePendingConfirmationMessage(message: string, state: WorkbenchState): boolean {
-  const queuedMessage = state.confirmation.pending?.queuedMessage;
+  const pendingConfirmation = state.confirmation.pending;
+
+  if (pendingConfirmation?.requestedFeature) {
+    return false;
+  }
+
+  const queuedMessage = pendingConfirmation?.queuedMessage;
 
   return Boolean(queuedMessage && queuedMessage.trim().toLowerCase() === message.trim().toLowerCase());
 }
@@ -3350,7 +3394,8 @@ export function App() {
         enabled: true,
         source: "conversation_request",
         reason: "用户请求开启联网搜索以补充最新来源。",
-        providerLabel: currentState.search.customProviderLabel
+        providerLabel: currentState.search.customProviderLabel,
+        queuedMessage: normalized
       };
     }
 
@@ -3359,7 +3404,8 @@ export function App() {
         feature: "search" as const,
         enabled: false,
         source: "conversation_request",
-        reason: "用户请求关闭联网搜索并保持本地优先。"
+        reason: "用户请求关闭联网搜索并保持本地优先。",
+        queuedMessage: normalized
       };
     }
 
@@ -3368,7 +3414,8 @@ export function App() {
         feature: "remote-api" as const,
         enabled: true,
         source: "conversation_request",
-        reason: "用户请求开启远程 API 作为高级配置入口。"
+        reason: "用户请求开启远程 API 作为高级配置入口。",
+        queuedMessage: normalized
       };
     }
 
@@ -3377,7 +3424,8 @@ export function App() {
         feature: "remote-api" as const,
         enabled: false,
         source: "conversation_request",
-        reason: "用户请求关闭远程 API 并保持本地 Ollama 优先。"
+        reason: "用户请求关闭远程 API 并保持本地 Ollama 优先。",
+        queuedMessage: normalized
       };
     }
 

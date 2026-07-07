@@ -1,7 +1,10 @@
 import { CheckCircle2, Circle, FileDiff, LoaderCircle, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
+import { RollbackPanel } from "./RollbackPanel";
 import type { StorageCleanupTarget, WorkbenchState } from "../workbenchState";
 import {
+  getVisibleLocalTaskFailureActionLabel,
+  getVisibleLocalTaskFailureDetail,
   getLocalizedPermissionModeLabel,
   getLocalizedPermissionReason,
   getLocalizedPermissionRiskSummary,
@@ -47,6 +50,20 @@ type ChangeStats = {
   addedLines: number | null;
   removedLines: number | null;
 };
+
+const TEXT = {
+  retryTask: "重试本地任务",
+  stopTask: "停止任务",
+  running: "执行中",
+  completed: "已完成",
+  failed: "已失败",
+  queued: "队列中",
+  cancelled: "已取消"
+} as const;
+
+const MAX_VISIBLE_LOCAL_TASK_ATTEMPTS = 3;
+
+type LocalTaskItem = WorkbenchState["tasks"]["items"][number];
 
 function truncateInspectorText(value: string, limit: number) {
   const normalized = normalizeWorkbenchText(value).replace(/\s+/g, " ").trim();
@@ -329,20 +346,80 @@ function StatusIcon({ status }: { status: ChecklistItem["status"] }) {
   return <Circle aria-hidden="true" size={18} className="inspector-checklist-icon" />;
 }
 
+function getTaskStatusLabel(status: WorkbenchState["tasks"]["items"][number]["status"]) {
+  if (status === "running") {
+    return TEXT.running;
+  }
+
+  if (status === "completed") {
+    return TEXT.completed;
+  }
+
+  if (status === "failed") {
+    return TEXT.failed;
+  }
+
+  if (status === "cancelled") {
+    return TEXT.cancelled;
+  }
+
+  return TEXT.queued;
+}
+
+function hasTaskFailureDetail(task: LocalTaskItem) {
+  return Boolean(
+    task.lastFailureSource
+    || task.lastFailureSummary
+    || task.lastFailureDetail
+    || task.lastFailureActionLabel
+  );
+}
+
+function canRetryTask(task: LocalTaskItem) {
+  return task.status === "failed" && task.attemptCount < MAX_VISIBLE_LOCAL_TASK_ATTEMPTS;
+}
+
 export function Inspector({
   state,
   onApproveDangerousAction,
   onCancelDangerousAction,
   onApprovePermissionRequest,
   onCancelPermissionRequest,
-  onCancelActiveTask
+  onRetryOllamaCheck,
+  onRecoverToolError,
+  onPreviewRollback,
+  onApplyRollback,
+  onCancelRollback,
+  onRetryLocalTask,
+  onCancelActiveTask,
+  onUpdateRollbackLimit,
+  onCleanupStorage,
+  onToggleRemoteApi,
+  onToggleSearch,
+  onSaveRemoteApiConfig,
+  onSaveSearchProviderConfig
 }: InspectorProps) {
   const checklistItems = useMemo(() => createChecklistItems(state), [state]);
   const changeItems = useMemo(() => collectChangeItems(state), [state]);
   const [expandedChangeIds, setExpandedChangeIds] = useState<Set<string>>(() => new Set());
   const [isChangeSummaryExpanded, setIsChangeSummaryExpanded] = useState(false);
+  const [isRecordsExpanded, setIsRecordsExpanded] = useState(false);
+  const [isLogDetailExpanded, setIsLogDetailExpanded] = useState(false);
+  const [isRollbackRecordsExpanded, setIsRollbackRecordsExpanded] = useState(false);
+  const [expandedTaskFailureIds, setExpandedTaskFailureIds] = useState<Set<string>>(() => new Set());
+  const [remoteApiBaseUrl, setRemoteApiBaseUrl] = useState(state.settings.remoteApi.baseUrl);
+  const [remoteApiProviderLabel, setRemoteApiProviderLabel] = useState(state.settings.remoteApi.providerLabel);
+  const [remoteApiKey, setRemoteApiKey] = useState(state.settings.remoteApi.apiKey);
+  const [searchProviderLabel, setSearchProviderLabel] = useState(state.search.providerLabel || "Tavily");
   const pendingPermission = state.permission.pendingModeChange;
   const pendingConfirmation = state.confirmation.pending;
+  const capabilityAuditSources = new Set([
+    "capability_toggle_request",
+    "capability_toggle_approved",
+    "capability_toggle_cancelled"
+  ]);
+  const isCapabilityConfirmationContext = Boolean(pendingConfirmation?.requestedFeature)
+    || capabilityAuditSources.has(state.audit.lastEvent.source);
   const activeTask = state.tasks.activeTaskId
     ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId) ?? null
     : null;
@@ -356,6 +433,89 @@ export function Inspector({
   const hasRealLineStats = changeStats.addedLines !== null || changeStats.removedLines !== null;
   const changeSummaryLabel = changedFileCount === 0 ? "暂无变更" : "变更";
   const changeSummaryDetail = changedFileCount === 0 ? null : `${changedFileCount} 个文件`;
+  const visibleSources = state.sources.items.slice(0, 3);
+  const visibleTasks = state.tasks.items
+    .filter((task) =>
+      checklistItems.length > 0
+      || task.status === "failed"
+      || hasTaskFailureDetail(task)
+      || normalizeInspectorRequestSummary(task.summary).length <= 80
+    )
+    .slice(0, 3);
+  const hasModels = state.model.availableModels.length > 0;
+  const hasRetryableTaskError = Boolean(
+    state.error?.module === "tasks"
+    && visibleTasks.some((task) => task.status === "failed" && task.attemptCount < MAX_VISIBLE_LOCAL_TASK_ATTEMPTS)
+  );
+
+  function toggleTaskFailureDetail(taskId: string) {
+    setExpandedTaskFailureIds((current) => {
+      const next = new Set(current);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  }
+
+  function renderTaskQueueItem(task: LocalTaskItem, options: { showControls: boolean }) {
+    const failureExpanded = expandedTaskFailureIds.has(task.id);
+    const hasFailureDetail = hasTaskFailureDetail(task);
+
+    return (
+      <div className="task-queue-item" key={task.id}>
+        <span className="task-queue-status">{getTaskStatusLabel(task.status)}</span>
+        <p className="task-queue-summary">{normalizeWorkbenchText(task.summary)}</p>
+        <p className="muted">Attempt {task.attemptCount} / {MAX_VISIBLE_LOCAL_TASK_ATTEMPTS}</p>
+        {hasFailureDetail ? (
+          <button
+            aria-expanded={failureExpanded}
+            className="action-button"
+            type="button"
+            onClick={() => toggleTaskFailureDetail(task.id)}
+          >
+            {failureExpanded ? "收起失败细节" : "展开失败细节"}
+          </button>
+        ) : null}
+        {failureExpanded ? (
+          <>
+            {task.lastFailureSource ? <p className="muted">来源：{normalizeWorkbenchText(task.lastFailureSource)}</p> : null}
+            {task.lastFailureDetail ? (
+              <p className="muted">
+                详情：{getVisibleLocalTaskFailureDetail(task.lastFailureDetail, task.lastFailureSource)}
+              </p>
+            ) : task.lastFailureSummary ? (
+              <p className="muted">详情：{normalizeWorkbenchText(task.lastFailureSummary)}</p>
+            ) : null}
+            {task.lastFailureActionLabel ? (
+              <p className="muted">建议：{getVisibleLocalTaskFailureActionLabel(task.lastFailureActionLabel)}</p>
+            ) : null}
+          </>
+        ) : null}
+        {options.showControls && task.status === "running" ? (
+          <div className="action-row">
+            <button aria-label={TEXT.stopTask} className="action-button" type="button" onClick={onCancelActiveTask}>
+              {TEXT.stopTask}
+            </button>
+          </div>
+        ) : null}
+        {options.showControls && canRetryTask(task) ? (
+          <div className="action-row">
+            <button
+              aria-label={TEXT.retryTask}
+              className="action-button action-button-primary"
+              type="button"
+              onClick={() => onRetryLocalTask(task.id)}
+            >
+              {TEXT.retryTask}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <aside aria-label="右侧面板" className="inspector glass-gradient-sidebar-right">
@@ -370,10 +530,10 @@ export function Inspector({
           <p className="muted">{getLocalizedPermissionRiskSummary(pendingPermission.riskSummary)}</p>
           <div className="action-row">
             <button type="button" className="action-button action-button-primary" onClick={onApprovePermissionRequest}>
-              批准
+              批准提权
             </button>
             <button type="button" className="action-button" onClick={onCancelPermissionRequest}>
-              取消
+              取消提权
             </button>
           </div>
         </section>
@@ -389,10 +549,10 @@ export function Inspector({
           <p className="muted">所需权限：{getLocalizedPermissionModeLabel(pendingConfirmation.requiredMode)}</p>
           <div className="action-row">
             <button type="button" className="action-button action-button-primary" onClick={onApproveDangerousAction}>
-              批准
+              {isCapabilityConfirmationContext ? "批准能力变更" : "批准高风险操作"}
             </button>
             <button type="button" className="action-button" onClick={onCancelDangerousAction}>
-              取消
+              {isCapabilityConfirmationContext ? "取消能力变更" : "取消高风险操作"}
             </button>
           </div>
         </section>
@@ -413,6 +573,11 @@ export function Inspector({
                 <span>{item.label}</span>
               </div>
             ))}
+          </div>
+        ) : null}
+        {visibleTasks.length > 0 ? (
+          <div className="task-queue-list">
+            {visibleTasks.map((task) => renderTaskQueueItem(task, { showControls: false }))}
           </div>
         ) : null}
       </section>
@@ -501,6 +666,270 @@ export function Inspector({
               })}
             </div>
           )
+        ) : null}
+      </section>
+
+      <section className="inspector-task-sheet">
+        <button
+          aria-expanded={isRecordsExpanded}
+          aria-label={isRecordsExpanded ? "收起配置与记录" : "展开配置与记录"}
+          className="inspector-change-summary"
+          type="button"
+          onClick={() => setIsRecordsExpanded((current) => !current)}
+        >
+          <span className="inspector-change-summary-leading">
+            <span className="inspector-change-summary-title">配置与记录</span>
+          </span>
+          <span className="inspector-change-summary-trailing">
+            <span className="inspector-change-summary-count">
+              {state.tasks.pendingCount > 0 ? `待处理 ${state.tasks.pendingCount} 条` : "折叠"}
+            </span>
+          </span>
+        </button>
+
+        {isRecordsExpanded ? (
+          <div className="inspector-records">
+            <section>
+              <h2>来源</h2>
+              <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
+              {state.search.providerLabel ? <p className="muted">搜索提供方: {state.search.providerLabel}</p> : null}
+              <p className="muted">Ollama: {normalizeWorkbenchText(state.model.status)}</p>
+              <p className="muted">权限: {normalizeWorkbenchText(state.permission.label)}</p>
+              <p className="muted">{normalizeWorkbenchText(state.permission.summary)}</p>
+              {visibleSources.map((item) => (
+                <div key={`${item.provider}-${item.url}`}>
+                  <p className="muted">来源标题: {normalizeWorkbenchText(item.title)}</p>
+                  <p className="muted">来源地址: {item.url}</p>
+                </div>
+              ))}
+            </section>
+
+            <section>
+              <h2>本地任务</h2>
+              <p className="muted">待处理 {state.tasks.pendingCount} 条</p>
+              {visibleTasks.length > 0 ? (
+                <div className="task-queue-list">
+                  {visibleTasks.map((task) => renderTaskQueueItem(task, { showControls: true }))}
+                </div>
+              ) : (
+                <p className="muted">暂无本地任务</p>
+              )}
+            </section>
+
+            <section>
+              <h2>工具</h2>
+              <p className="muted">
+                {state.tools.lastResult
+                  ? `${normalizeWorkbenchText(state.tools.lastResult.toolLabel)}: ${normalizeWorkbenchText(state.tools.lastResult.summary)}`
+                  : hasModels
+                    ? `已检测 ${state.model.availableModels.length} 个本地模型`
+                    : "等待本地模型"}
+              </p>
+            </section>
+
+            <section>
+              <h2>日志</h2>
+              <p className="muted">{normalizeWorkbenchText(state.audit.summary)}</p>
+              <button
+                aria-expanded={isLogDetailExpanded}
+                className="action-button"
+                type="button"
+                onClick={() => setIsLogDetailExpanded((current) => !current)}
+              >
+                {isLogDetailExpanded ? "收起日志细节" : "展开日志细节"}
+              </button>
+              {isLogDetailExpanded ? (
+                <div>
+                  <p className="muted">模块: {normalizeWorkbenchText(state.audit.lastEvent.module)}</p>
+                  <p className="muted">来源: {normalizeWorkbenchText(state.audit.lastEvent.source)}</p>
+                  <p className="muted">时间: {normalizeWorkbenchText(state.audit.lastEvent.timestamp)}</p>
+                  <p className="muted">{normalizeWorkbenchText(state.audit.lastEvent.detail)}</p>
+                  {state.error ? (
+                    <>
+                      <p className="muted">{normalizeWorkbenchText(state.error.summary)}</p>
+                      <p className="muted">模块: {normalizeWorkbenchText(state.error.module)}</p>
+                      <p className="muted">来源: {normalizeWorkbenchText(state.error.source)}</p>
+                      <p className="muted">时间: {normalizeWorkbenchText(state.error.timestamp)}</p>
+                      <p className="muted">{normalizeWorkbenchText(state.error.detail)}</p>
+                      <p className="muted">建议: {normalizeWorkbenchText(state.error.actionLabel)}</p>
+                    </>
+                  ) : (
+                    <p className="muted">当前没有活动错误</p>
+                  )}
+                </div>
+              ) : null}
+              {state.error?.module === "ollama" ? (
+                <div className="action-row">
+                  <button className="action-button action-button-primary" type="button" onClick={onRetryOllamaCheck}>
+                    {normalizeWorkbenchText(state.error.actionLabel)}
+                  </button>
+                </div>
+              ) : null}
+              {state.error?.module === "tools" ? (
+                <div className="action-row">
+                  <button className="action-button action-button-primary" type="button" onClick={onRecoverToolError}>
+                    {normalizeWorkbenchText(state.error.actionLabel)}
+                  </button>
+                </div>
+              ) : null}
+              {hasRetryableTaskError ? (
+                <div className="action-row">
+                  <button className="action-button action-button-primary" type="button" onClick={() => onRetryLocalTask()}>
+                    {TEXT.retryTask}
+                  </button>
+                </div>
+              ) : null}
+            </section>
+
+            <section>
+              <h2>高级设置</h2>
+              <p className="muted">{state.settings.remoteApi.enabled ? "远程 API 已开启" : "远程 API 默认关闭"}</p>
+              <p className="muted">{state.search.enabled ? "联网搜索已开启" : "联网搜索默认关闭"}</p>
+              <div className="action-row" aria-label="网络开关">
+                <button className="action-button" type="button" onClick={() => onToggleRemoteApi(!state.settings.remoteApi.enabled)}>
+                  {state.settings.remoteApi.enabled ? "关闭远程 API" : "开启远程 API"}
+                </button>
+                <button className="action-button" type="button" onClick={() => onToggleSearch(!state.search.enabled)}>
+                  {state.search.enabled ? "关闭联网搜索" : "开启联网搜索"}
+                </button>
+              </div>
+              <div className="action-row">
+                <label>
+                  <span className="muted">联网搜索 Provider</span>
+                  <input
+                    aria-label="联网搜索 Provider"
+                    type="text"
+                    value={searchProviderLabel}
+                    onChange={(event) => setSearchProviderLabel(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="action-row">
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={() => onSaveSearchProviderConfig({ providerLabel: searchProviderLabel })}
+                >
+                  保存联网搜索配置
+                </button>
+              </div>
+              <div className="action-row">
+                <label>
+                  <span className="muted">远程 API Base URL</span>
+                  <input
+                    aria-label="远程 API Base URL"
+                    type="text"
+                    value={remoteApiBaseUrl}
+                    onChange={(event) => setRemoteApiBaseUrl(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="action-row">
+                <label>
+                  <span className="muted">远程 API Provider</span>
+                  <input
+                    aria-label="远程 API Provider"
+                    type="text"
+                    value={remoteApiProviderLabel}
+                    onChange={(event) => setRemoteApiProviderLabel(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="action-row">
+                <label>
+                  <span className="muted">远程 API Key</span>
+                  <input
+                    aria-label="远程 API Key"
+                    type="password"
+                    value={remoteApiKey}
+                    onChange={(event) => setRemoteApiKey(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="action-row">
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={() =>
+                    onSaveRemoteApiConfig({
+                      baseUrl: remoteApiBaseUrl,
+                      providerLabel: remoteApiProviderLabel,
+                      apiKey: remoteApiKey
+                    })
+                  }
+                >
+                  保存远程 API 配置
+                </button>
+              </div>
+              <p className="muted">回退点上限 {state.rollback.activeLimit} / {state.rollback.maxLimit}</p>
+              <div className="action-row" aria-label="回退点上限快捷设置">
+                <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(10)}>
+                  10 段
+                </button>
+                <button className="action-button" type="button" onClick={() => onUpdateRollbackLimit(15)}>
+                  15 段
+                </button>
+                <button className="action-button action-button-primary" type="button" onClick={() => onUpdateRollbackLimit(20)}>
+                  20 段
+                </button>
+              </div>
+              <p className="muted">会话 {state.storage.sessionCount}</p>
+              <p className="muted">日志 {state.storage.logCount}</p>
+              <p className="muted">缓存条目 {state.storage.cacheCount}</p>
+              <p className="muted">快照 {state.storage.snapshotCount}</p>
+              <p className="muted">知识库索引 {state.storage.knowledgeCount}</p>
+              <div className="action-row" aria-label="本地清理入口">
+                <button className="action-button" type="button" onClick={() => onCleanupStorage("conversation")}>
+                  清空会话
+                </button>
+                <button className="action-button" type="button" onClick={() => onCleanupStorage("logs")}>
+                  清空日志
+                </button>
+              </div>
+              <div className="action-row">
+                <button className="action-button" type="button" onClick={() => onCleanupStorage("cache")}>
+                  清空缓存
+                </button>
+                <button className="action-button" type="button" onClick={() => onCleanupStorage("snapshots")}>
+                  清空快照
+                </button>
+              </div>
+              <div className="action-row">
+                <button className="action-button" type="button" onClick={() => onCleanupStorage("knowledge")}>
+                  清空知识库索引
+                </button>
+              </div>
+            </section>
+
+            {state.rollback.entries.length > 0 || state.rollback.pendingPreview ? (
+              <section>
+                <button
+                  aria-expanded={isRollbackRecordsExpanded}
+                  className="action-button"
+                  type="button"
+                  onClick={() => setIsRollbackRecordsExpanded((current) => !current)}
+                >
+                  {isRollbackRecordsExpanded ? "收起回退记录" : "展开回退记录"}
+                </button>
+                {isRollbackRecordsExpanded ? (
+                  <div>
+                    {state.rollback.entries.slice(0, state.rollback.activeLimit).map((entry) => (
+                      <p className="muted" key={entry.id}>
+                        {normalizeWorkbenchText(entry.label)}：{normalizeWorkbenchText(entry.summary)}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
+            <RollbackPanel
+              state={state}
+              onPreviewRollback={onPreviewRollback}
+              onApplyRollback={onApplyRollback}
+              onCancelRollback={onCancelRollback}
+            />
+          </div>
         ) : null}
       </section>
     </aside>

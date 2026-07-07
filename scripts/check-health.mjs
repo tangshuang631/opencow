@@ -49,12 +49,63 @@ const generatedSourcePairs = [
   }
 ];
 
+const macDesktopBinary =
+  "apps/desktop/src-tauri/target/release/bundle/macos/opencow.app/Contents/MacOS/opencow-desktop";
+const desktopInstallBinary = "/Users/apple/Desktop/OpenCow桌面端.app/Contents/MacOS/opencow-desktop";
+const latestLauncherBinary = "/Users/apple/Desktop/opencow最新测试版.app/Contents/MacOS/opencow-latest-launcher";
+
+const macFreshnessPairs = [
+  {
+    source: "apps/desktop/src/app/App.tsx",
+    target: macDesktopBinary,
+    command: "npm run desktop:sync:mac"
+  },
+  {
+    source: "apps/desktop/src-tauri/tauri.conf.json",
+    target: macDesktopBinary,
+    command: "npm run desktop:sync:mac"
+  },
+  {
+    source: "package-lock.json",
+    target: macDesktopBinary,
+    command: "npm run desktop:sync:mac"
+  },
+  {
+    source: macDesktopBinary,
+    target: desktopInstallBinary,
+    command: "npm run desktop:sync:mac"
+  },
+  {
+    source: "scripts/start-opencow-latest-desktop-mac.command",
+    target: latestLauncherBinary,
+    command: "npm run desktop:sync:mac"
+  },
+  {
+    source: "scripts/sync-opencow-mac-apps.py",
+    target: latestLauncherBinary,
+    command: "npm run desktop:sync:mac"
+  }
+];
+
 export function findStaleGeneratedFiles(pairs, statFile = statSync) {
   return pairs.filter(({ source, generated }) => {
     const sourceMtime = statFile(source).mtimeMs;
     const generatedMtime = statFile(generated).mtimeMs;
 
     return generatedMtime + 1000 < sourceMtime;
+  });
+}
+
+export function findStaleTargets(pairs, existsPath = existsSync, statFile = statSync) {
+  return pairs.filter(({ source, target }) => {
+    if (!existsPath(source) || !existsPath(target)) {
+      return false;
+    }
+
+    const sourceMtime = statFile(source).mtimeMs;
+    const targetMtime = statFile(target).mtimeMs;
+
+    return targetMtime + 1000 < sourceMtime;
   });
 }
 
@@ -66,6 +117,13 @@ export function formatStaleGeneratedFilesError(staleGeneratedFiles) {
     ...details,
     "Run: npm --workspace packages/openclaw-adapter run build"
   ].join(" ");
+}
+
+export function formatStaleTargetsError(title, staleTargets) {
+  const details = staleTargets.map(({ source, target }) => `${target} is older than ${source}`);
+  const commands = [...new Set(staleTargets.map(({ command }) => command).filter(Boolean))];
+
+  return [title, ...details, ...commands.map((command) => `Run: ${command}`)].join(" ");
 }
 
 export function runHealthCheck({
@@ -104,6 +162,12 @@ export function runHealthCheck({
 
   if (staleGeneratedFiles.length > 0) {
     throw new Error(formatStaleGeneratedFilesError(staleGeneratedFiles));
+  }
+
+  const staleMacTargets = findStaleTargets(macFreshnessPairs, existsPath, statFile);
+
+  if (staleMacTargets.length > 0) {
+    throw new Error(formatStaleTargetsError("Mac desktop release/install is stale.", staleMacTargets));
   }
 }
 

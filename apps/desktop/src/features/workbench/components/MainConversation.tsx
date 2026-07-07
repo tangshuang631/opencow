@@ -53,6 +53,7 @@ const LONG_TEXT_LIMIT = 220;
 const LONG_TITLE_LIMIT = 80;
 const COMPRESSED_CONVERSATION_ENTRY_ID = "conversation-auto-summary";
 const TAURI_INTERNALS_KEY = "__TAURI_INTERNALS__";
+const MAX_VISIBLE_LOCAL_TASK_ATTEMPTS = 3;
 const SUCCESS_TRACE_PREFIXES = [
   "Input summary:",
   "Execution kind:",
@@ -404,7 +405,7 @@ function getVisibleTitle(entry: WorkbenchState["conversation"]["entries"][number
   }
 
   if (isDuplicatePendingApprovalSkippedEntry(entry)) {
-    return "已跳过重复审批请求";
+    return "重复审批请求已跳过";
   }
 
   if (isDuplicatePlanningFailureSkippedEntry(entry)) {
@@ -1195,6 +1196,9 @@ export function MainConversation({
   const [expandedKnowledgeEntryIds, setExpandedKnowledgeEntryIds] = useState<Set<string>>(() => new Set());
   const pendingTask = getPendingTaskLike(state);
   const latestFailedTask = getLatestFailedTask(state);
+  const canRetryLatestFailedTask = Boolean(
+    latestFailedTask && latestFailedTask.attemptCount < MAX_VISIBLE_LOCAL_TASK_ATTEMPTS
+  );
   const hasPendingTask = pendingTask !== null;
   const isLocalModelPending = isLocalModelPendingTask(pendingTask?.executionKind);
   const entries = state.conversation.entries.slice().reverse();
@@ -1360,6 +1364,7 @@ export function MainConversation({
               ) : null}
               {state.error
                 && latestFailedTask
+                && canRetryLatestFailedTask
                 && state.error.module === "tasks"
                 && onRetryLocalTask ? (
                   <div className="action-row">
