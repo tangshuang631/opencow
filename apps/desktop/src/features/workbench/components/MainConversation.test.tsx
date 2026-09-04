@@ -33,6 +33,17 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: invokeMock
 }));
 
+function flushAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+
+    resolve();
+  });
+}
+
 describe("MainConversation", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -203,9 +214,10 @@ describe("MainConversation", () => {
     );
   });
 
-  it("auto-scrolls to the newest message when conversation content changes", () => {
+  it("auto-scrolls to the newest message when conversation content changes", async () => {
     const scrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
     const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
     let latestScrollTop = 0;
 
     Object.defineProperty(HTMLElement.prototype, "scrollTop", {
@@ -218,6 +230,12 @@ describe("MainConversation", () => {
       }
     });
     Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return 480;
+      }
+    });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", {
       configurable: true,
       get() {
         return 480;
@@ -236,6 +254,7 @@ describe("MainConversation", () => {
       <MainConversation state={submitted} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />
     );
 
+    await flushAnimationFrame();
     expect(latestScrollTop).toBe(480);
 
     const completed = createTaskExecutionSucceededState(createTaskExecutionStartedState(submitted), {
@@ -246,6 +265,7 @@ describe("MainConversation", () => {
     latestScrollTop = 0;
     rerender(<MainConversation state={completed} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
 
+    await flushAnimationFrame();
     expect(latestScrollTop).toBe(480);
 
     if (scrollTopDescriptor) {
@@ -255,6 +275,42 @@ describe("MainConversation", () => {
     if (scrollHeightDescriptor) {
       Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
     }
+
+    if (clientHeightDescriptor) {
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeightDescriptor);
+    }
+  });
+
+  it("keeps a reader's scroll position while streaming when they are away from the bottom", async () => {
+    const scrollTopDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
+    const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    const clientHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    let currentScrollTop = 100;
+
+    Object.defineProperty(HTMLElement.prototype, "scrollTop", {
+      configurable: true,
+      get: () => currentScrollTop,
+      set: (value) => { currentScrollTop = value; }
+    });
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true, get: () => 480 });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, get: () => 240 });
+
+    const submitted = createUserTaskSubmittedState(createInitialWorkbenchState(), {
+      message: "保留阅读位置",
+      executionKind: "local-model-chat",
+      executionTitle: "本地模型对话",
+      executionAuditSummary: "Local assistant planned an ordinary local model chat response.",
+      executionAuditDetail: "Local model chat task: 保留阅读位置"
+    });
+
+    render(<MainConversation state={submitted} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />);
+
+    await flushAnimationFrame();
+    expect(currentScrollTop).toBe(100);
+
+    if (scrollTopDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollTop", scrollTopDescriptor);
+    if (scrollHeightDescriptor) Object.defineProperty(HTMLElement.prototype, "scrollHeight", scrollHeightDescriptor);
+    if (clientHeightDescriptor) Object.defineProperty(HTMLElement.prototype, "clientHeight", clientHeightDescriptor);
   });
 
   it("surfaces capability cancellation recovery in the main conversation", () => {

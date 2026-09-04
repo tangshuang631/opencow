@@ -47,7 +47,7 @@ describe("loadOllamaNativeProfile", () => {
 
     const result = await loadOllamaNativeProfile({
       model: "chat:latest",
-      cloudPolicy: "disabled-confirmed",
+      lifecycle: { mode: "managed", noCloudEnv: "1" },
       featureFlags: { cowcoreFastLane: true, ollamaNativeProfile: true, ollamaLocalOnly: true },
       fetch: fetchMock,
       runtime: {

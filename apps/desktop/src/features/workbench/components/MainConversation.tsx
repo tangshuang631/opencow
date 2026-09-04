@@ -1253,7 +1253,23 @@ export function MainConversation({
       return;
     }
 
-    container.scrollTop = container.scrollHeight;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    if (distanceFromBottom > 96) {
+      return;
+    }
+
+    const scrollToLatest = () => {
+      container.scrollTop = container.scrollHeight;
+    };
+
+    if (typeof window.requestAnimationFrame !== "function") {
+      scrollToLatest();
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(scrollToLatest);
+    return () => window.cancelAnimationFrame(frame);
   }, [state.conversation.entries, state.tasks.items, state.tasks.activeTaskId]);
 
   function toggleKnowledgeDetails(entryId: string) {

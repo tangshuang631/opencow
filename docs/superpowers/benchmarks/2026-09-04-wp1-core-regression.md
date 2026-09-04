@@ -52,5 +52,6 @@ Screenshots were kept as local QA artifacts under `output/playwright/`; they are
 - CowCore is additive; ordinary production chat is not yet switched to `cowcoreFastLane` because managed/external Ollama local-only lifecycle and cloud policy verification are not wired.
 - The gate is now enforced inside `runFastLane`; default flags remain off. `performanceProfiles` persistence, cache continuation benchmark, and WP1C SQLite memory MVP remain open.
 - The current local baseline moved to Ollama `0.33.3` and `gemma4:12b-mlx`; this is evidence only, not a hard-coded compatibility requirement. The `qwen3-embedding:8b-q4_K_M` candidate remains the separate embedding baseline.
+- The cache continuation harness now keeps a deterministic stable prefix ahead of changing user content and reports `candidate-hit` only when repeated `prompt_eval_duration / cold prompt_eval_duration <= 0.70`. The latest local sample was `0.436` (`393.37ms → 171.54ms`, 115 prefix characters); it is a candidate observation, not an 8K-token release claim.
 - Model-specific MLX/MTP/DFlash behavior remains Ollama-owned; CowCore observes metadata and measured performance only.
 - No WP2 registry/grant or WP3 sandbox/Host Apply work is enabled. The next permitted slice is WP1 runtime lifecycle/flag wiring, not host execution.

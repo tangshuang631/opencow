@@ -30,6 +30,14 @@ export function buildNativeChatRequest({ model, message, context, keepAlive = "1
   };
 }
 
+export function buildCacheContinuationRequests({ model, stablePrefix, firstMessage, secondMessage, context, keepAlive = "10m", think = false }) {
+  const base = { model, stream: false, think, keep_alive: keepAlive, options: { num_ctx: context } };
+  return [
+    { ...base, messages: [{ role: "system", content: stablePrefix }, { role: "user", content: firstMessage }] },
+    { ...base, messages: [{ role: "system", content: stablePrefix }, { role: "user", content: secondMessage }] }
+  ];
+}
+
 function resolveContextWindow(show) {
   const info = show?.model_info ?? {};
   const known = info["general.context_length"] ?? info["llama.context_length"] ?? info.context_length;
@@ -61,6 +69,16 @@ export function parseChatMetrics(payload, wallClockMs) {
     evalDurationMs: evalDuration,
     generationTokensPerSecond: throughput(payload.eval_count ?? 0, payload.eval_duration ?? 0),
     doneReason: payload.done_reason ?? null
+  };
+}
+
+export function parseCacheContinuation(cold, repeated) {
+  const coldDuration = Number.isFinite(cold?.promptEvalDurationMs) && cold.promptEvalDurationMs > 0 ? cold.promptEvalDurationMs : null;
+  const repeatedDuration = Number.isFinite(repeated?.promptEvalDurationMs) && repeated.promptEvalDurationMs >= 0 ? repeated.promptEvalDurationMs : null;
+  const ratio = coldDuration !== null && repeatedDuration !== null ? repeatedDuration / coldDuration : null;
+  return {
+    status: ratio !== null && ratio <= 0.7 ? "candidate-hit" : "unverified",
+    promptEvalDurationRatio: ratio
   };
 }
 
@@ -106,6 +124,17 @@ export async function collectOllamaBaseline({
   const cold = await runChatProbe(fetchImpl, base, { ...chatRequest, keep_alive: "0s" });
   await runChatProbe(fetchImpl, base, chatRequest);
   const warm = await runChatProbe(fetchImpl, base, chatRequest);
+  const [cacheColdRequest, cacheRepeatedRequest] = buildCacheContinuationRequests({
+    model: selected,
+    stablePrefix: "OpenCow stable system contract v1\nCapability schema order: retrieval.answer, diagnostic.read\nTask mode: direct-chat",
+    firstMessage: "cache continuation first turn",
+    secondMessage: "cache continuation second turn",
+    context,
+    keepAlive,
+    think
+  });
+  const cacheCold = await runChatProbe(fetchImpl, base, cacheColdRequest);
+  const cacheRepeated = await runChatProbe(fetchImpl, base, cacheRepeatedRequest);
   let embedding = null;
   const selectedEmbedding = embeddingModel || tags.models?.find(advertisesEmbedding)?.name || null;
   if (includeEmbedding && selectedEmbedding) {
@@ -163,7 +192,12 @@ export async function collectOllamaBaseline({
     memoryPressure: null,
     cold,
     warm,
-    cacheObservation: "same-request-shape-second-call-is-warm-candidate; confirm with prompt_eval_duration",
+    cacheObservation: {
+      ...parseCacheContinuation(cacheCold, cacheRepeated),
+      stablePrefixChars: cacheColdRequest.messages[0].content.length,
+      coldPromptEvalDurationMs: cacheCold.promptEvalDurationMs,
+      repeatedPromptEvalDurationMs: cacheRepeated.promptEvalDurationMs
+    },
     embedding
   };
 }

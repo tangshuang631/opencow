@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildNativeChatRequest, buildNativeEmbedRequest, collectOllamaBaseline, parseChatMetrics } from "./ollama-baseline.mjs";
+import { buildCacheContinuationRequests, buildNativeChatRequest, buildNativeEmbedRequest, collectOllamaBaseline, parseCacheContinuation, parseChatMetrics } from "./ollama-baseline.mjs";
 
 test("builds native Ollama chat and embed requests with cache-friendly controls", () => {
   assert.equal(buildNativeChatRequest({ model: "m", message: "x", context: 4096 }).keep_alive, "10m");
@@ -13,6 +13,36 @@ test("parses Ollama usage metrics without inventing offload estimates", () => {
   assert.equal(metrics.promptTokensPerSecond, 10);
   assert.equal(metrics.generationTokensPerSecond, 10);
   assert.equal(Object.hasOwn(metrics, "estimatedCpuOffloadRatio"), false);
+});
+
+test("keeps the stable prefix byte-identical while moving changing content to the tail", () => {
+  const [first, second] = buildCacheContinuationRequests({
+    model: "m",
+    stablePrefix: "stable-system-contract",
+    firstMessage: "first turn",
+    secondMessage: "second turn",
+    context: 8192
+  });
+
+  assert.deepEqual(first.messages[0], second.messages[0]);
+  assert.equal(first.messages.at(-1).content, "first turn");
+  assert.equal(second.messages.at(-1).content, "second turn");
+  assert.notEqual(first.messages.at(-1).content, second.messages.at(-1).content);
+});
+
+test("only labels cache continuation as a candidate when prompt evaluation improves", () => {
+  assert.deepEqual(parseCacheContinuation({ promptEvalDurationMs: 100 }, { promptEvalDurationMs: 60 }), {
+    status: "candidate-hit",
+    promptEvalDurationRatio: 0.6
+  });
+  assert.deepEqual(parseCacheContinuation({ promptEvalDurationMs: 100 }, { promptEvalDurationMs: 80 }), {
+    status: "unverified",
+    promptEvalDurationRatio: 0.8
+  });
+  assert.deepEqual(parseCacheContinuation({}, {}), {
+    status: "unverified",
+    promptEvalDurationRatio: null
+  });
 });
 
 test("collects native metadata and refuses remote endpoints", async () => {
