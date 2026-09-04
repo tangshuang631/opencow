@@ -125,8 +125,9 @@ describe("desktop dev server contract", () => {
 
     expect(syncScript).toContain('["npm", "--workspace", "apps/desktop", "run", "build"]');
     expect(syncScript).toContain('["npm", "run", "tauri:build"]');
-    expect(syncScript).toContain('LATEST_TEST_APP = Path("/Users/apple/Desktop/opencow最新测试版.app")');
-    expect(syncScript).toContain("write_latest_test_launcher_app()");
+    expect(syncScript).toContain("copy_app_bundle(DESKTOP_BUNDLE, DESKTOP_TARGET)");
+    expect(syncScript).not.toContain("LATEST_TEST_APP");
+    expect(syncScript).not.toContain("WEB_TARGET");
     expect(syncScript.indexOf('["npm", "--workspace", "apps/desktop", "run", "build"]')).toBeLessThan(
       syncScript.indexOf("copy_app_bundle")
     );
@@ -135,9 +136,8 @@ describe("desktop dev server contract", () => {
     );
   });
 
-  it("starts the mac latest-test launcher by syncing before opening the desktop app", () => {
+  it("starts the mac desktop launcher by syncing before opening the desktop app", () => {
     const launcher = readRepoFile("scripts/start-opencow-latest-desktop-mac.command");
-    const launcherApp = readRepoFile("scripts/OpenCow最新测试版启动器.applescript");
 
     expect(launcher).toContain('SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"');
     expect(launcher).toContain('python3 "${SYNC_SCRIPT}"');
@@ -149,7 +149,6 @@ describe("desktop dev server contract", () => {
     );
     expect(launcher).toContain("APP_BUNDLE_ID=\"cn.opencow.desktop\"");
     expect(launcher).toContain("APP_EXECUTABLE=\"opencow-desktop\"");
-    expect(launcherApp).toContain("start-opencow-latest-desktop-mac.command");
   });
 
   it("exposes a local-only WebView2 debugging port for desktop smoke automation", () => {

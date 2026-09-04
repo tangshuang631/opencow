@@ -181,6 +181,7 @@ This section is the execution companion to the single frozen architecture Spec. 
 
 - `dev` is the only integration branch. Each medium/large milestone is saved with a descriptive commit and pushed; `main` is untouched until WP7 release approval.
 - A package task must pass its focused unit test before its neighboring integration test. Full `npm run test:unit`, `npm run build`, `npm run check:encoding`, `npm run check:health`, and the relevant Rust tests run at every WP exit.
+- After each verified milestone is pushed to `origin/dev`, immediately run `npm run desktop:sync:mac` and then `npm run check:health`. Manual Mac QA uses the single canonical bundle `/Users/apple/Desktop/OpenCow桌面端.app`; the sync script must not regenerate duplicate desktop/web wrapper apps. Web preview remains available through the Vite dev command when needed.
 - No task may enable `workspace.project.run`, `sandbox.shell.execute`, `mcp.server.start`, or any legacy host process path before WP3D security exit. WP1 tool loops use pure fixtures only.
 - Every persistent format has a schema version, deterministic serialization, migration, rollback, and a fixture. Every runtime/network boundary fails closed on malformed metadata, non-loopback Ollama endpoints, missing locality proof, or unknown capability.
 - New feature flags default off; `cowcoreFastLane` remains disabled until `ollamaNativeProfile` and `ollamaLocalOnly` are both verified. A flag cannot weaken an existing security invariant and must have a kill-switch test.

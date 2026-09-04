@@ -95,6 +95,15 @@ npm run desktop:run:mac
 npm run desktop:test:check
 ```
 
+macOS 手工试用最新桌面构建：
+
+```bash
+npm run desktop:sync:mac
+open "/Users/apple/Desktop/OpenCow桌面端.app"
+```
+
+桌面同步只维护这一份可试用应用；网页预览直接运行 Vite 开发命令即可。
+
 ## 常用命令
 
 ```bash

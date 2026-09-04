@@ -37,7 +37,7 @@ test("findStaleGeneratedFiles reports generated adapter files older than their s
   );
 });
 
-test("runHealthCheck rejects Mac latest launcher that uses a relative sync script path", () => {
+test("runHealthCheck rejects Mac desktop launcher that uses a relative sync script path", () => {
   const files = new Map([
     ["start-opencow-test.bat", 'if /I "%MODE%"=="check"\npause >nul'],
     [
@@ -92,11 +92,6 @@ test("findStaleTargets reports optional install and release targets older than t
       target: "/Users/apple/Desktop/OpenCow桌面端.app/Contents/MacOS/opencow-desktop",
       command: "npm run desktop:sync:mac"
     },
-    {
-      source: "scripts/start-opencow-latest-desktop-mac.command",
-      target: "/Users/apple/Desktop/opencow最新测试版.app/Contents/MacOS/opencow-latest-launcher",
-      command: "npm run desktop:sync:mac"
-    }
   ];
   const mtimes = new Map([
     ["apps/desktop/src/app/App.tsx", 30_000],
@@ -105,8 +100,6 @@ test("findStaleTargets reports optional install and release targets older than t
       20_000
     ],
     ["/Users/apple/Desktop/OpenCow桌面端.app/Contents/MacOS/opencow-desktop", 20_500],
-    ["scripts/start-opencow-latest-desktop-mac.command", 10_000],
-    ["/Users/apple/Desktop/opencow最新测试版.app/Contents/MacOS/opencow-latest-launcher", 11_000]
   ]);
 
   const stale = findStaleTargets(
@@ -142,8 +135,6 @@ test("runHealthCheck rejects stale Mac desktop release or install targets when t
       20_000
     ],
     ["/Users/apple/Desktop/OpenCow桌面端.app/Contents/MacOS/opencow-desktop", 20_000],
-    ["scripts/start-opencow-latest-desktop-mac.command", 20_000],
-    ["/Users/apple/Desktop/opencow最新测试版.app/Contents/MacOS/opencow-latest-launcher", 20_000]
   ]);
 
   assert.throws(

@@ -53,7 +53,6 @@ const generatedSourcePairs = [
 const macDesktopBinary =
   "apps/desktop/src-tauri/target/release/bundle/macos/opencow.app/Contents/MacOS/opencow-desktop";
 const desktopInstallBinary = "/Users/apple/Desktop/OpenCow桌面端.app/Contents/MacOS/opencow-desktop";
-const latestLauncherBinary = "/Users/apple/Desktop/opencow最新测试版.app/Contents/MacOS/opencow-latest-launcher";
 
 const macFreshnessPairs = [
   {
@@ -74,16 +73,6 @@ const macFreshnessPairs = [
   {
     source: macDesktopBinary,
     target: desktopInstallBinary,
-    command: "npm run desktop:sync:mac"
-  },
-  {
-    source: "scripts/start-opencow-latest-desktop-mac.command",
-    target: latestLauncherBinary,
-    command: "npm run desktop:sync:mac"
-  },
-  {
-    source: "scripts/sync-opencow-mac-apps.py",
-    target: latestLauncherBinary,
     command: "npm run desktop:sync:mac"
   }
 ];
@@ -152,11 +141,11 @@ export function runHealthCheck({
 
   const macLauncher = readText("scripts/start-opencow-latest-desktop-mac.command", "utf8");
   if (!macLauncher.includes('SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"')) {
-    throw new Error("Mac latest-test desktop launcher must sync the desktop app before opening it");
+    throw new Error("Mac desktop launcher must sync the desktop app before opening it");
   }
 
   if (macLauncher.includes("python3 scripts/sync-opencow-mac-apps.py")) {
-    throw new Error("Mac latest-test desktop launcher must use an absolute sync script path");
+    throw new Error("Mac desktop launcher must use an absolute sync script path");
   }
 
   const workspaceRuntime = readText("apps/desktop/src-tauri/src/workspace.rs", "utf8");

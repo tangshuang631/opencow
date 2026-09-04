@@ -14,7 +14,8 @@ Consumers:
 
 - `apps/desktop/src-tauri/icons/`
 - `/Users/apple/Desktop/OpenCow桌面端.app`
-- `/Users/apple/Desktop/OpenCow网页端.app`
+
+The macOS desktop sync keeps `/Users/apple/Desktop/OpenCow桌面端.app` as the single manual-test bundle. The web preview uses Vite and does not require a second `.app` wrapper.
 
 Regenerate with:
 

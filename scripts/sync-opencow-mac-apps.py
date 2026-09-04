@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import plistlib
-import stat
 import tempfile
 import time
 from pathlib import Path
@@ -16,12 +14,6 @@ DESKTOP_BUILD_CMD = ["npm", "--workspace", "apps/desktop", "run", "build"]
 DESKTOP_TAURI_BUILD_CMD = ["npm", "run", "tauri:build"]
 DESKTOP_BUNDLE = ROOT / "apps" / "desktop" / "src-tauri" / "target" / "release" / "bundle" / "macos" / "opencow.app"
 DESKTOP_TARGET = Path("/Users/apple/Desktop/OpenCow桌面端.app")
-WEB_TARGET = Path("/Users/apple/Desktop/OpenCow网页端.app")
-WEB_ICON_SOURCE = ROOT / "assets" / "brand" / "opencow-icons" / "exports" / "web-launcher.icns"
-LATEST_TEST_APP = Path("/Users/apple/Desktop/opencow最新测试版.app")
-LATEST_TEST_ICON_SOURCE = ROOT / "assets" / "brand" / "opencow-icons" / "exports" / "icon.icns"
-LATEST_TEST_EXECUTABLE_NAME = "opencow-latest-launcher"
-LATEST_TEST_LAUNCH_SCRIPT = ROOT / "scripts" / "start-opencow-latest-desktop-mac.command"
 DESKTOP_APP_BUNDLE_ID = "cn.opencow.desktop"
 DESKTOP_APP_EXECUTABLE = "opencow-desktop"
 
@@ -105,62 +97,6 @@ def copy_app_bundle(source: Path, destination: Path) -> None:
     remove_path(tmp_root)
 
 
-def update_web_launcher_icon() -> None:
-    if not WEB_TARGET.exists() or not WEB_ICON_SOURCE.exists():
-        return
-    icon_target = WEB_TARGET / "Contents" / "Resources" / "applet.icns"
-    shutil.copy2(WEB_ICON_SOURCE, icon_target)
-
-
-def write_latest_test_launcher_app() -> None:
-    remove_path(LATEST_TEST_APP)
-    contents_dir = LATEST_TEST_APP / "Contents"
-    macos_dir = contents_dir / "MacOS"
-    resources_dir = contents_dir / "Resources"
-    macos_dir.mkdir(parents=True, exist_ok=True)
-    resources_dir.mkdir(parents=True, exist_ok=True)
-
-    plist = {
-        "CFBundleDevelopmentRegion": "zh_CN",
-        "CFBundleDisplayName": "opencow最新测试版",
-        "CFBundleExecutable": LATEST_TEST_EXECUTABLE_NAME,
-        "CFBundleIconFile": "icon",
-        "CFBundleIdentifier": "cn.opencow.latest-test",
-        "CFBundleInfoDictionaryVersion": "6.0",
-        "CFBundleName": "opencow最新测试版",
-        "CFBundlePackageType": "APPL",
-        "CFBundleShortVersionString": "0.1.0",
-        "CFBundleVersion": "1",
-        "LSMinimumSystemVersion": "12.0",
-    }
-    with (contents_dir / "Info.plist").open("wb") as file:
-        plistlib.dump(plist, file, sort_keys=False)
-    (contents_dir / "PkgInfo").write_text("APPL????", encoding="ascii")
-
-    executable = macos_dir / LATEST_TEST_EXECUTABLE_NAME
-    executable.write_text(
-        f"""#!/bin/zsh
-set -euo pipefail
-
-LOG_FILE="/tmp/opencow-latest-desktop-launch.log"
-LAUNCHER_SCRIPT="{LATEST_TEST_LAUNCH_SCRIPT}"
-
-{{
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] handing off latest desktop launch to Terminal"
-  /usr/bin/open "${{LAUNCHER_SCRIPT}}"
-}} > "${{LOG_FILE}}" 2>&1
-""",
-        encoding="utf-8",
-    )
-    executable.chmod(executable.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    LATEST_TEST_LAUNCH_SCRIPT.chmod(
-        LATEST_TEST_LAUNCH_SCRIPT.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
-    )
-
-    if LATEST_TEST_ICON_SOURCE.exists():
-        shutil.copy2(LATEST_TEST_ICON_SOURCE, resources_dir / "icon.icns")
-
-
 def refresh_finder_metadata(app_path: Path) -> None:
     subprocess.run(["xattr", "-cr", str(app_path)], check=False)
     subprocess.run(["touch", str(app_path)], check=False)
@@ -174,12 +110,7 @@ def main() -> None:
         raise SystemExit(f"missing desktop bundle: {DESKTOP_BUNDLE}")
 
     copy_app_bundle(DESKTOP_BUNDLE, DESKTOP_TARGET)
-    update_web_launcher_icon()
-    write_latest_test_launcher_app()
     refresh_finder_metadata(DESKTOP_TARGET)
-    if WEB_TARGET.exists():
-        refresh_finder_metadata(WEB_TARGET)
-    refresh_finder_metadata(LATEST_TEST_APP)
     print(f"synced {DESKTOP_TARGET}")
 
 
