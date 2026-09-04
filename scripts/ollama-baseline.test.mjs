@@ -36,16 +36,40 @@ test("collects native metadata and refuses remote endpoints", async () => {
   await assert.rejects(() => collectOllamaBaseline({ endpoint: "https://example.com", fetchImpl }), /loopback endpoint/);
 });
 
-test("keeps chat baseline usable when no local embedding model is installed", async () => {
+test("selects a chat model separately from an embedding model", async () => {
   const fetchImpl = async (url) => {
     if (url.endsWith("/api/version")) return { ok: true, json: async () => ({ version: "test" }) };
-    if (url.endsWith("/api/tags")) return { ok: true, json: async () => ({ models: [{ name: "chat", digest: "sha" }] }) };
+    if (url.endsWith("/api/tags")) {
+      return {
+        ok: true,
+        json: async () => ({
+          models: [
+            { name: "embed", digest: "embed-sha", capabilities: ["embedding"] },
+            { name: "chat", digest: "sha", capabilities: ["completion"] }
+          ]
+        })
+      };
+    }
     if (url.endsWith("/api/show")) return { ok: true, json: async () => ({ digest: "sha", capabilities: ["completion"] }) };
     if (url.endsWith("/api/ps")) return { ok: true, json: async () => ({ models: [] }) };
     return { ok: true, json: async () => ({ prompt_eval_count: 1, prompt_eval_duration: 1e6, eval_count: 1, eval_duration: 1e6 }) };
   };
   const report = await collectOllamaBaseline({ fetchImpl });
-  assert.equal(report.cold.doneReason, null);
+  assert.equal(report.model.id, "chat");
+  assert.equal(report.embedding.status, "measured");
+  assert.equal(report.embedding.modelId, "embed");
+  assert.equal(report.capabilities.embedding, true);
+});
+
+test("keeps chat baseline usable when no local embedding model is installed", async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith("/api/version")) return { ok: true, json: async () => ({ version: "test" }) };
+    if (url.endsWith("/api/tags")) return { ok: true, json: async () => ({ models: [{ name: "chat", digest: "sha", capabilities: ["completion"] }] }) };
+    if (url.endsWith("/api/show")) return { ok: true, json: async () => ({ digest: "sha", capabilities: ["completion"] }) };
+    if (url.endsWith("/api/ps")) return { ok: true, json: async () => ({ models: [] }) };
+    return { ok: true, json: async () => ({ prompt_eval_count: 1, prompt_eval_duration: 1e6, eval_count: 1, eval_duration: 1e6 }) };
+  };
+  const report = await collectOllamaBaseline({ fetchImpl });
   assert.equal(report.embedding.status, "unavailable");
   assert.equal(report.capabilities.embedding, false);
 });

@@ -121,7 +121,7 @@
 
   Run: `npm run check:wp0-baseline`.
 
-  Expected: deterministic report includes the exact current `dev` SHA and OpenClaw version; no commit or push is performed.
+  Expected: deterministic report includes the exact current `dev` SHA and OpenClaw version; the report command itself does not mutate Git state (milestone saving follows the global execution contract).
 
 ### Task 5: Fixed P0/P1/P2 evaluation runner
 
@@ -162,3 +162,177 @@
 - Task 3 implementation and focused verification are complete: the legacy host-execution kill switch is explicit and fail-closed; macOS release/install artifacts were synchronized after explicit authorization and full `check:health` is green.
 - Tasks 5–7 are complete with 20 script tests passing; `eval:wp0`, Ollama Native request/metadata harness, and Vector feasibility matrix are runnable without enabling WP1 execution.
 - `npm run check:health` passes after the authorized macOS release/install synchronization. Web historical fixture drift and the task/conversation identity regressions are resolved.
+
+## Full implementation roadmap: WP1–WP7
+
+This section is the execution companion to the single frozen architecture Spec. It does not change the architecture or open a second implementation route. Every task below is gated by the preceding exit, uses test-first changes, and stays on `dev` until its milestone evidence is complete.
+
+### Global execution contract
+
+- `dev` is the only integration branch. Each medium/large milestone is saved with a descriptive commit and pushed; `main` is untouched until WP7 release approval.
+- A package task must pass its focused unit test before its neighboring integration test. Full `npm run test:unit`, `npm run build`, `npm run check:encoding`, `npm run check:health`, and the relevant Rust tests run at every WP exit.
+- No task may enable `workspace.project.run`, `sandbox.shell.execute`, `mcp.server.start`, or any legacy host process path before WP3D security exit. WP1 tool loops use pure fixtures only.
+- Every persistent format has a schema version, deterministic serialization, migration, rollback, and a fixture. Every runtime/network boundary fails closed on malformed metadata, non-loopback Ollama endpoints, missing locality proof, or unknown capability.
+- New feature flags default off except the already-delivered `cowcoreFastLane` read-only route. A flag cannot weaken an existing security invariant and must have a kill-switch test.
+- `ponytail:` comments are required only where a deliberate bounded simplification remains (for example, a global lock or bounded linear scan); each names the measurable ceiling and upgrade trigger.
+
+### Dependency and milestone order
+
+```text
+WP0 (green, complete)
+  ├─ WP1A Ollama Runtime ─┬─ WP1B Fast Lane ─┐
+  │                       └─ WP1C Memory MVP ─┤
+  ├─ WP2A Registry ─ WP2B Grants ─────────────┤
+  └────────────────────────────── WP3A → WP3B → WP3C → WP3D
+                                                ├─ WP4 RAG 2.0
+                                                ├─ WP5 Web Research
+                                                └─ WP6 Sidecar
+WP4 + WP5 + WP6 → WP7 Migration / Release
+```
+
+No branch may skip a parent exit. WP1C can ship independently behind its flag, but it never blocks the P0 direct-chat path.
+
+### WP1 — CowCore contract and local Fast Lane
+
+#### WP1A — Ollama Native Runtime
+
+**Implementation surface:** introduce one small `@opencow/cowcore` package (split only when a module becomes independently testable), with `modelGateway`, `ollamaNativeProvider`, `runtimeProfile`, `modelProfile`, `contextBudgeter`, `prefixSerializer`, `localityEnforcement`, `residencyController`, and `metricsCollector`. Keep the existing Rust Ollama transport as a compatibility seam until the native provider has parity.
+
+**Tasks:**
+
+1. Define versioned types for RuntimeProfile/ModelProfile, capability evidence, hardware snapshot, cold/warm metrics, processor placement, and `runtimeOptimizations`; reject unknown security fields rather than guessing.
+2. Implement native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, `/api/chat`, `/api/embed`; preserve streaming, structured output, tools, thinking, vision, `keep_alive`, cancellation, and usage metrics.
+3. Implement Locality Enforcement separately from Residency Observation. Require loopback plus cloud-disabled/verified egress policy; never use `/api/ps` as a locality attestation. Expose `estimatedCpuOffloadRatio` only with the Apple unified-memory semantics defined in the Spec; otherwise use `unknown`.
+4. Build capability probes from metadata, a bounded probe, and cached same-machine benchmark evidence. Never infer MLX/MTP/DFlash/tools from a model-name suffix.
+5. Implement Context Budgeter and keep-alive policy using model context, unified memory/VRAM, model size, task class, current pressure, and measured offload risk. Use 64K+ only when the decision function accepts it.
+6. Serialize stable system contract and ordered Capability Schema once per security-contract version; append volatile request/Evidence data after the stable prefix.
+
+**Tests and exit:** native request/stream/JSON-schema/tool/thinking/embed fixtures; locality redirect/cloud-disabled tests; metadata and malformed-response tests; cold/warm and cache-prefix comparison; context-budget property tests; Apple offload semantic tests. Exit requires direct-chat and one-shot transform working with OpenClaw disabled, no host effects, and a repeatable Profile report.
+
+#### WP1B — Fast Lane protocol
+
+**Tasks:**
+
+1. Add deterministic TaskClass routing for chat, transform, extraction, summarize, retrieval-answer, and simple workbench actions.
+2. Add a bounded typed-tool loop using only pure-function and readonly diagnostic fixtures. Validate JSON Schema, tool order, cancellation, timeout, duplicate result, and malformed model output.
+3. Keep retrieval adapter input at the interface boundary; do not claim RAG 2.0 until WP4. Preserve stable prefix and put changing evidence at the tail.
+4. Add an observability record without raw user text, thinking, system prompt, or evidence body.
+
+**Tests and exit:** route matrix, structured-output, streaming, cache continuation, cancellation, failure-closed, and zero-effect proof tests. Exit requires the Fast Lane to remain usable with Sidecar disabled and all tools to have zero side effects.
+
+#### WP1C — Cross-session Memory MVP
+
+**Tasks:**
+
+1. Add versioned SQLite tables and FTS5 for `MemoryItem`, user/workspace scope, source conversation, confidence, created/updated/expiry, revoked, and export state.
+2. Add explicit `MemoryProposal` review/save flow; no silent extraction from arbitrary model text. User confirmation is the write authority.
+3. Inject memories as an untrusted context block after the stable prefix, with scope and expiry filters; never let memory content alter Capability/Grant policy.
+4. Add settings list/search/revoke/delete/export and a migration rollback.
+
+**Tests and exit:** scope isolation, prompt-injection memory, expiry/revocation, deletion/export, disabled-flag no-write/no-inject, and cross-session property tests. The 10-case memory extension in the WP0 eval must pass; the feature remains independently toggleable.
+
+### WP2 — Capability and authorization foundation
+
+#### WP2A — Registry and Broker
+
+**Implementation surface:** extend `packages/permission-engine` and `packages/safety-engine`; add `capabilityRegistry`, `capabilityBroker`, `jcsCanonicalizer`, and versioned registry fixtures rather than a new framework package.
+
+**Tasks:**
+
+1. Define Capability records whose effect/risk/execution zone are registry-owned and immutable to model input.
+2. Implement RFC 8785 JCS plus SHA-256 `securityContractHash` with Rust/TypeScript golden vectors and invalid I-JSON rejection.
+3. Implement capability-specific scope comparator and containment relation; add only typed, non-arbitrary host capabilities (reveal/open/fixed application actions/read-only diagnostics).
+4. Keep project.run, sandbox.shell.execute, and mcp.server.start disabled and add a negative reachability test from every Fast Lane route.
+
+**Exit:** Registry/Broker tests pass; model cannot self-report effect/risk/zone; `SEC-35` is green.
+
+#### WP2B — Grant and Authorization
+
+**Tasks:**
+
+1. Add versioned Grant records, revocation, expiry, device/user scope, capability scope, sandbox policy hash, artifact policy hash, and audit linkage.
+2. Implement equivalence matching with no string/semantic-language matching; persistent grants are denied for shell, project run, MCP start, credential access, and broad network/filesystem effects.
+3. Add separate Sandbox Execute and Host Apply approvals; implement UI settings for review/revoke without changing broker decisions.
+
+**Tests and exit:** property tests prove equivalent requests reuse safely and every scope/policy/hash expansion mismatches 100%; crash/restart and clock-skew cases remain fail closed.
+
+### WP3 — Certified Sandbox, Artifact, and Host Apply
+
+#### WP3A — Backend feasibility spike
+
+Evaluate one macOS and one Windows candidate with a disposable guest runner. Measure process-tree containment, I/O, cancellation, resource limits, network policy, artifact channel, and platform prerequisites. Produce a signed decision record; if a platform cannot satisfy the contract, leave execution disabled there. No user shell is opened in the spike.
+
+#### WP3B — Mirror and immutable artifact protocol
+
+Add the sandbox backend interface, workspace mirror, sanitized Git context, content-addressed Artifact Store, ChangeSet schema, guest protocol, parser-zone boundary, network proxy, and resource/process-tree limits. Tests must prove no guest-visible host path and no read-write workspace mount.
+
+#### WP3C — TOCTOU-safe Host Apply
+
+Implement descriptor/handle-relative traversal, file identity and policy rechecks, staged writes, atomic replacement, rollback snapshots, durable Apply Journal, idempotency, and crash recovery. Add symlink/junction/hardlink/reparse races, filesystem fuzz, and fault injection at every commit point.
+
+#### WP3D — Enable typed execution
+
+Only after WP3A–C exits, map `sandbox.shell.execute`, `workspace.project.run`, and `mcp.server.start` to Certified Sandbox. Keep execute and Host Apply grants separate; unsupported platforms remain disabled. Exit requires all P1 tests and `SEC-10…SEC-12`, `SEC-21…SEC-26` green.
+
+### WP4 — Local RAG 2.0
+
+**Implementation surface:** split the monolithic Rust workspace responsibilities into focused modules (`document_parser_zone`, `knowledge_index`, `vector_index`, `evidence_store`) without changing public behavior until tests cover each seam.
+
+**Tasks:**
+
+1. Add parser-zone adapters for md/txt first, then PDF/HTML/code as individually gated formats; enforce schema, byte/token/time/memory limits and malformed-document fuzzing.
+2. Add SQLite metadata/FTS5, deterministic chunk IDs, source offsets, and versioned index tables. Keep embedding calls exclusively on Ollama `/api/embed` with batched input, `truncate: false`, explicit `keep_alive`, model digest, dimensions, and index version.
+3. Implement dense retrieval, lexical retrieval, reciprocal-rank/weighted fusion, optional rerank hook, deduplication, confidence, and claim-to-Evidence spans. A stale or mismatched vector index is `stale`, never silently mixed.
+4. Implement rebuild/resume/cancel/rollback, memory-aware batch sizing, 10k/50k/100k × 384/768/1024 VectorIndexBackend runs, and source-locator UI. The WP0 feasibility harness is not a product performance claim.
+
+**Tests and exit:** parser fuzz/resource tests, digest/dimension mismatch tests, hybrid ranking goldens, source-span verification, cancellation/rebuild recovery, and the formal matrix. Exit requires the P2 local-RAG thresholds from the Spec.
+
+### WP5 — Web Research
+
+**Implementation surface:** add a small native research provider boundary; retain OpenClaw only as an adapter. Do not extend the old keyword planner as the primary path.
+
+**Tasks:**
+
+1. Run independent providers concurrently with bounded deadlines, cancellation, per-provider quotas, cache TTL, and stale-cache labels.
+2. Normalize result identity, canonical URL, title, publication/update time, author, content type, retrieval time, and extraction confidence.
+3. Use safe fetching with redirect/size/content-type limits, parser zone, robots/credential rules, and no arbitrary page execution.
+4. Classify query freshness and required source diversity; rank by time/relevance/provider agreement and bind every displayed claim to Evidence spans.
+5. Keep unavailable/contradictory sources visible; never fabricate current facts or silently fall back to old cached content.
+
+**Tests and exit:** provider timeout/partial failure, stale cache, date extraction, duplicate canonicalization, prompt injection in pages, claim-to-evidence, and P2 freshness/relevance goldens.
+
+### WP6 — OpenClaw Sidecar
+
+**Tasks:**
+
+1. Generate and review the `2026.8.2` vendor manifest, dependency integrity, Node engine check, start/stop health, backup/restore, and rollback before behavior changes.
+2. Complete package-topology and metadata compatibility against actual manifests; missing `llm-runtime` remains an explicit partial alias and missing non-security fields use versioned compatibility parsing.
+3. Add an `AdvancedRuntime` sidecar protocol with lifecycle, session visibility/recovery, approvals, credentials, plugin SDK and update events. Disable cloud/channel/node/plugin surfaces not needed by OpenCow.
+4. Route every OpenClaw tool/exec/approval event through CowCore Capability/Grant and Certified Sandbox; direct host execution is impossible even if Sidecar is compromised at the protocol boundary.
+5. Keep the migration rollback switch and prove P0 still works with Sidecar stopped.
+
+**Tests and exit:** vendor/manifest tests, sidecar lifecycle/recovery, protocol fuzz, capability projection, approval/credential isolation, sandbox routing, and P0-offline parity. Exit requires no P0 regression and the WP6 security evaluation green.
+
+### WP7 — Migration, soak, and release
+
+**Tasks:**
+
+1. Add JSON→SQLite migrations with preflight, backup, checksum, resumability, rollback, and idempotent rerun. Never mutate user data irreversibly in place.
+2. Run macOS/Windows install, upgrade, uninstall, low-memory, low-disk, offline, Ollama-missing, and sandbox-missing scenarios.
+3. For every new Ollama stable, run the compatibility pipeline: native API, streaming, Schema, tools, thinking, embedding, cancellation, Profile, Fast Lane, RAG, cache, and Apple Silicon path; update the recommendation range only after all pass.
+4. Run long-session, memory-pressure, cancellation, crash-journal, index rebuild, and authorization-revocation soak tests. Review UX for runtime, sandbox, grant, memory, and Evidence status.
+5. Produce release notes, threat-model delta, migration guide, signed artifacts, rollback rehearsal, and the `dev`→`main` merge approval record.
+
+**Exit:** full workspace/Rust tests, build, encoding, health, P0/P1/P2 evals, platform matrix, security review, rollback rehearsal, and install smoke all pass. Only then merge `dev` to `main`.
+
+### Per-work-package evidence bundle
+
+Each WP exit must attach, in its milestone commit or release artifact:
+
+1. exact source/model/runtime versions and digests;
+2. focused test output and full-gate output;
+3. benchmark/eval JSON with schema version and hardware metadata;
+4. feature-flag state and rollback command;
+5. known ceilings (never hidden by timeout increases) and the next permitted work package.
+
+The current pass changes planning only (plus the explicitly requested Ollama model installation); it does not implement WP1–WP7 code or enable new host effects.

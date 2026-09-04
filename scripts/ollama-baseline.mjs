@@ -94,7 +94,7 @@ export async function collectOllamaBaseline({
   const base = assertLocalEndpoint(endpoint).toString().replace(/\/$/, "");
   const version = await requestJson(fetchImpl, `${base}/api/version`);
   const tags = await requestJson(fetchImpl, `${base}/api/tags`);
-  const selected = model || tags.models?.[0]?.name;
+  const selected = model || tags.models?.find((item) => !advertisesEmbedding(item))?.name || tags.models?.[0]?.name;
   if (!selected) throw new Error("Ollama returned no local model for baseline");
   const show = await requestJson(fetchImpl, `${base}/api/show`, {
     method: "POST",
