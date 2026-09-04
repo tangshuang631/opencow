@@ -163,10 +163,11 @@
 - Tasks 5–7 are complete with 20 script tests passing; `eval:wp0`, Ollama Native request/metadata harness, and Vector feasibility matrix are runnable without enabling WP1 execution.
 - `npm run check:health` passes after the authorized macOS release/install synchronization. Web historical fixture drift and the task/conversation identity regressions are resolved.
 - The first WP1 implementation slice is saved on `dev` in milestone `0657186`: `@opencow/cowcore` exposes the native Ollama provider, runtime/model profiles, locality enforcement, residency observation, adaptive context budget, stable prefix serialization, keep-alive policy, deterministic task routing, bounded zero-effect typed-tool loop, and Fast Lane orchestration. The desktop wrapper provides a native profile smoke path without replacing the legacy transport.
-- The next WP1 gate slice adds fail-closed `cowcoreFastLane`/`ollamaNativeProfile`/`ollamaLocalOnly` evaluation, requires an allowed gate before Fast Lane execution, and normalizes Ollama usage plus Residency Observation into a performance profile without deriving Apple unified-memory CPU offload. This slice is not yet an exit claim until runtime lifecycle/configuration, cache continuation, metrics persistence, and WP1C are complete.
+- The next WP1 gate slice adds fail-closed `cowcoreFastLane`/`ollamaNativeProfile`/`ollamaLocalOnly` evaluation, requires an allowed gate before Fast Lane execution, and normalizes Ollama usage plus Residency Observation into a performance profile without deriving Apple unified-memory CPU offload. This slice is not yet an exit claim until runtime lifecycle/configuration, cache continuation, metrics persistence, and formal WP1C evidence are complete.
 - The same WP1 slice adds a stable-prefix/cache-continuation harness with an explicit `prompt_eval_duration` ratio; the latest local run on Ollama `0.33.3` produced a `0.436` candidate ratio. It is evidence only and does not replace the required 8K-token multi-turn release benchmark.
 - The desktop conversation now follows the newest message on the compositor frame only while the reader is near the bottom; a reader who scrolls upward is not pulled back during streaming. Reduced-motion behavior remains guarded.
 - UI smoke coverage includes the motion scope, reduced-motion guard, Codex-inspired sidebar/inspector styling, and a real Playwright web chat round-trip against local Ollama. No host execution, MCP start, project run, or shell capability is connected to the new loop.
+- WP1C now has an additive implementation slice behind `crossSessionMemory`: versioned SQLite/FTS5 storage, bounded audit metadata, explicit top-level-user save/edit/revoke/list/export/clear commands, user/workspace and expiry filtering, untrusted-context formatting, and a settings-panel opt-in. Local chat reads memory only when the persisted opt-in is enabled; the dynamic suffix is capped at five items and a conservative 2,000-character budget. This is implementation evidence, not the WP1C exit: the formal 10-case memory evaluation, desktop-native E2E, and release evidence remain open.
 
 ## Full implementation roadmap: WP1–WP7
 
@@ -234,7 +235,7 @@ No branch may skip a parent exit. WP1C can ship independently behind its flag, b
 3. Inject memories as an untrusted context block after the stable prefix, with scope and expiry filters; never let memory content alter Capability/Grant policy.
 4. Add settings list/search/revoke/delete/export and a migration rollback.
 
-**Tests and exit:** scope isolation, prompt-injection memory, expiry/revocation, deletion/export, disabled-flag no-write/no-inject, and cross-session property tests. The 10-case memory extension in the WP0 eval must pass; the feature remains independently toggleable.
+**Tests and exit:** scope isolation, prompt-injection memory, expiry/revocation, deletion/export, disabled-flag no-write/no-inject, and cross-session property tests. The 10-case memory extension in the WP0 eval must pass; the feature remains independently toggleable. The current slice covers the native schema/commands and desktop settings/chat wiring, but does not claim the exit until the 10-case eval, native desktop E2E, migration/rollback rehearsal, and evidence bundle are complete.
 
 ### WP2 — Capability and authorization foundation
 
@@ -340,4 +341,4 @@ Each WP exit must attach, in its milestone commit or release artifact:
 4. feature-flag state and rollback command;
 5. known ceilings (never hidden by timeout increases) and the next permitted work package.
 
-The current pass implements additive WP1 core and gate slices only; it does not claim the WP1A/WP1B exits or enable new host effects. Remaining WP1 exit work is native runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, cache continuation benchmarking, metrics persistence, and the WP1C SQLite memory MVP. WP2–WP7 remain gated by the dependency order above.
+The current pass implements additive WP1 core, gate, interaction-smoothness, and WP1C memory slices only; it does not claim the WP1A/WP1B/WP1C exits or enable new host effects. Remaining WP1 exit work is native runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, cache continuation benchmarking, metrics persistence, and the WP1C formal 10-case/native-desktop/migration evidence. WP2–WP7 remain gated by the dependency order above.

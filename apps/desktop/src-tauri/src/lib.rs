@@ -1,4 +1,5 @@
 mod chat_attachments;
+mod memory;
 mod ollama;
 mod rollback_files;
 mod workbench_state;
@@ -72,6 +73,13 @@ pub fn run() {
             chat_attachments::chat_attachments_pick,
             chat_attachments::chat_attachment_open,
             chat_attachments::external_link_open,
+            memory::memory_clear,
+            memory::memory_edit,
+            memory::memory_export,
+            memory::memory_list,
+            memory::memory_revoke,
+            memory::memory_save,
+            memory::memory_search,
             workspace::knowledge_file_import,
             workspace::knowledge_file_remove,
             workspace::knowledge_imports_clear,

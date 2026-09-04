@@ -8,6 +8,11 @@ import {
 } from "../features/assistant/localRecoveryStrategy";
 import { cancelOllamaChat, chatWithOllamaModel, loadOllamaOverview } from "../features/ollama/ollamaService";
 import type { OllamaOverview } from "../features/ollama/ollamaService";
+import {
+  createMemoryContextLines,
+  isCrossSessionMemoryEnabled,
+  memorySearch
+} from "../features/memory/memoryService";
 import { resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { Workbench } from "../features/workbench/Workbench";
 import { pickChatAttachments } from "../features/workbench/chatAttachments";
@@ -944,7 +949,7 @@ function normalizeSearchGroundedAnswer(message: string) {
     .trim();
 }
 
-function createLocalModelChatMessage(payload: {
+export function createLocalModelChatMessage(payload: {
   message: string;
   attachments?: ChatAttachment[];
   selectedModel?: string;
@@ -954,6 +959,7 @@ function createLocalModelChatMessage(payload: {
   sources: WorkbenchState["sources"]["items"];
   localKnowledgeContextLines?: string[];
   npcContextLines?: string[];
+  memoryContextLines?: string[];
   showMissingNetworkSourcesNotice?: boolean;
 }): string {
   const normalizedMessage = payload.message.trim();
@@ -1003,6 +1009,7 @@ function createLocalModelChatMessage(payload: {
               `当前搜索 provider：${payload.searchProviderLabel.trim() || "未配置"}`,
               "不要声称已经完成实时联网检索；如果回答需要最新资料，请说明缺少可用联网来源，并基于已有知识谨慎回答。"
             ]),
+        ...(payload.memoryContextLines?.length ? ["", ...payload.memoryContextLines] : []),
         "",
         `用户问题：${normalizedMessage}`
       ].join("\n");
@@ -1014,6 +1021,8 @@ function createLocalModelChatMessage(payload: {
       ...(payload.npcContextLines?.length ? [""] : []),
       ...(payload.localKnowledgeContextLines ?? []),
       ...(payload.localKnowledgeContextLines?.length ? [""] : []),
+      ...(payload.memoryContextLines ?? []),
+      ...(payload.memoryContextLines?.length ? [""] : []),
       normalizedMessage
     ].join("\n");
   }
@@ -1044,6 +1053,7 @@ function createLocalModelChatMessage(payload: {
     "输出约束：正文只写你整理后的判断、分析和结论，不要写“根据提供的来源”“来自某某来源”这类句式。",
     "输出约束：不要在正文逐条点名 Sohu、Toutiao、网易、Bing、搜狗等来源名；来源归属统一放到下方引用区。",
     ...sourceLines,
+    ...(payload.memoryContextLines?.length ? ["", ...payload.memoryContextLines] : []),
     "",
     `用户问题：${normalizedMessage}`
   ].join("\n");
@@ -1518,6 +1528,7 @@ async function executeLocalModelChatTask(payload: {
   let searchFallbackReason: string | null = null;
   let usedSearchFallback = false;
   let localKnowledgeResult: LocalKnowledgeContextResult | null = null;
+  let memoryContextLines: string[] = [];
   const sourcePriority = resolveKnowledgeSourcePriority(payload.message);
 
   try {
@@ -1527,6 +1538,15 @@ async function executeLocalModelChatTask(payload: {
     );
   } catch {
     localKnowledgeResult = null;
+  }
+
+  if (isCrossSessionMemoryEnabled()) {
+    try {
+      const memoryEnvelope = await memorySearch({ query: payload.message, enabled: true });
+      memoryContextLines = createMemoryContextLines(memoryEnvelope);
+    } catch {
+      memoryContextLines = [];
+    }
   }
 
   if (payload.searchEnabled) {
@@ -1621,6 +1641,7 @@ async function executeLocalModelChatTask(payload: {
       selectedModelSupportsVision: isLikelyVisionOllamaModel(selectedModelSummary),
       showMissingNetworkSourcesNotice: shouldShowMissingNetworkSourcesNotice,
       npcContextLines: createNpcContextLines(payload.npcContext ?? null),
+      memoryContextLines,
       localKnowledgeContextLines: deduplicatedLocalKnowledgeResult
         ? [
             ...createDeduplicatedNetworkNotice(
@@ -1668,6 +1689,7 @@ async function executeLocalModelChatTask(payload: {
       `Search context status: ${searchContextStatus}`,
       `Search provider: ${searchProviders.join(", ") || "none"}`,
       `Knowledge source priority: ${sourcePriority}`,
+      `Memory context items: ${memoryContextLines.length > 0 ? memoryContextLines.length - 1 : 0}`,
       ...(payload.npcContext
         ? [
             `NPC context: ${payload.npcContext.name}`,

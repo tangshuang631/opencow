@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Composer } from "./components/Composer";
 import { Inspector } from "./components/Inspector";
 import { MainConversation } from "./components/MainConversation";
+import { MemoryPanel } from "./components/MemoryPanel";
 import { Sidebar, type WorkbenchViewId } from "./components/Sidebar";
 import { openChatAttachment } from "./chatAttachments";
 import {
@@ -2014,6 +2015,8 @@ function SettingsPanel({
           </button>
         </div>
       </section>
+
+      <MemoryPanel />
 
       <section className="settings-section">
         <h2>NPC 本地模型</h2>
