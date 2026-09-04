@@ -171,6 +171,7 @@
 - Profile/metrics persistence now has a bounded, digest/version-keyed `PerformanceProfileStore` (24 samples, schema-versioned, no prompt/evidence text) and Ollama Native Provider restores and records validated samples. Streaming UI updates now coalesce chunks on the compositor frame and flush on completion/cancellation; this is an interaction-smoothness improvement, not a visual redesign.
 - The native Provider now exposes an explicit bounded cold/warm benchmark using a fixed no-user-data fixture (`keep_alive: 0` then configured keep-alive) and persists its normalized metrics; it is diagnostic-only until desktop lifecycle/flag wiring schedules it.
 - The native Provider maps `/api/ps` into the existing read-only `ResidencyObservation`; Apple unified-memory results preserve resident bytes/ratio and `processorPlacement=unknown` unless Ollama explicitly reports placement.
+- Capability probes now update only the requested fields in a loaded `ModelProfile`, so a successful virtual tool/Schema/thinking probe is reusable evidence without changing Registry/Grant security decisions.
 
 ## Full implementation roadmap: WP1–WP7
 
@@ -344,4 +345,4 @@ Each WP exit must attach, in its milestone commit or release artifact:
 4. feature-flag state and rollback command;
 5. known ceilings (never hidden by timeout increases) and the next permitted work package.
 
-The current pass implements additive WP1 core, gate, interaction-smoothness, profile persistence, an explicit diagnostic cold/warm benchmark, read-only `/api/ps` residency mapping, and WP1C memory slices only; it does not claim the WP1A/WP1B/WP1C exits or enable new host effects. Remaining WP1 exit work is production native-runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, desktop diagnostic scheduling/observation, the required 8K-token cache continuation benchmark, and WP1C formal 10-case/native-desktop/migration evidence. WP2–WP7 remain gated by the dependency order above.
+The current pass implements additive WP1 core, gate, interaction-smoothness, profile persistence, an explicit diagnostic cold/warm benchmark, read-only `/api/ps` residency mapping, cached capability-probe evidence, and WP1C memory slices only; it does not claim the WP1A/WP1B/WP1C exits or enable new host effects. Remaining WP1 exit work is production native-runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, desktop diagnostic scheduling/observation, the required 8K-token cache continuation benchmark, and WP1C formal 10-case/native-desktop/migration evidence. WP2–WP7 remain gated by the dependency order above.

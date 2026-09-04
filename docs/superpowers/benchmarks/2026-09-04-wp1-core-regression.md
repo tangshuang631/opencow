@@ -20,7 +20,7 @@ Latest same-host native baseline (one sampled run; not a release threshold): col
 
 ## Verified implementation surface
 
-- `@opencow/cowcore`: native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, streaming `/api/chat`, `/api/embed`, locality enforcement, read-only `/api/ps` residency observation, adaptive context budget, stable prefix serializer, keep-alive policy, TaskClass router, zero-effect typed-tool loop, fail-closed runtime gate, bounded cold/warm benchmark with persisted performance profiles, performance-profile collector, and Fast Lane orchestration.
+- `@opencow/cowcore`: native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, streaming `/api/chat`, `/api/embed`, locality enforcement, read-only `/api/ps` residency observation, metadata-backed capability probes with loaded-profile caching, adaptive context budget, stable prefix serializer, keep-alive policy, TaskClass router, zero-effect typed-tool loop, fail-closed runtime gate, bounded cold/warm benchmark with persisted performance profiles, performance-profile collector, and Fast Lane orchestration.
 - `apps/desktop/src/features/ollama/ollamaNativeProfile.ts`: additive runtime/model/locality profile wrapper; legacy service remains the compatibility seam.
 - UI: deterministic conversation motion scope, reduced-motion guard, frame-coalesced streaming conversation updates, and Codex-inspired sidebar/inspector styling. The WP1C memory slice adds an opt-in settings panel and a bounded untrusted dynamic suffix without changing the visual system. No host execution capability is connected.
 
@@ -28,7 +28,7 @@ Latest same-host native baseline (one sampled run; not a release threshold): col
 
 | Command | Result |
 | --- | --- |
-| `npm run test:unit` | pass: 1,035 tests across packages, desktop, and web |
+| `npm run test:unit` | pass: 1,036 tests across packages, desktop, and web |
 | `cargo test` (`apps/desktop/src-tauri`) | pass: 102 tests |
 | `npm run build` | pass; first-build dependency order verified with CowCore `dist` removed; desktop bundle `745.10 kB` warning and web bundle `527.60 kB` warning remain known ceilings |
 | `npm run check:encoding` | pass |

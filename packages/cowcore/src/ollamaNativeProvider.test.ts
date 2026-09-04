@@ -275,6 +275,34 @@ describe("OllamaNativeProvider", () => {
     expect(observation.cpuExecutionShare).toBeUndefined();
   });
 
+  it("caches only requested capability probe results on the loaded model profile", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/api/version") return jsonResponse(version);
+      if (path === "/api/tags") return jsonResponse(tags);
+      if (path === "/api/show") return jsonResponse(show);
+      if (path === "/api/ps") return jsonResponse({ models: [] });
+      if (path !== "/api/chat") throw new Error(`unexpected path ${path}`);
+      expect(JSON.parse(String(init?.body)).tools?.[0]?.function?.name).toBe("opencow_probe_noop");
+      const encoder = new TextEncoder();
+      return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('{"model":"qwen3.5:9b","message":{"tool_calls":[{"function":{"name":"opencow_probe_noop","arguments":{}}}]},"done":true,"done_reason":"stop","eval_count":1,"eval_duration":1000000}\n'));
+          controller.close();
+        }
+      }), { status: 200 });
+    });
+    const provider = new OllamaNativeProvider({ fetch: fetchMock, cloudPolicy: "disabled-confirmed" });
+    await provider.profileModel("qwen3.5:9b");
+
+    const result = await provider.probeModelCapabilities("qwen3.5:9b", { tools: true, structuredOutput: false, thinking: false });
+    const profile = await provider.profileModel("qwen3.5:9b");
+
+    expect(result.tools.state).toBe("probed-supported");
+    expect(profile.capabilities.tools).toEqual(result.tools);
+    expect(profile.capabilities.structuredOutput.state).toBe("unknown");
+  });
+
   it("can probe an unknown tool capability with a virtual tool and never execute it", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(new URL(String(input)).pathname).toBe("/api/chat");

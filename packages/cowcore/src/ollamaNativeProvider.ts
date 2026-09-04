@@ -211,6 +211,15 @@ export class OllamaNativeProvider {
         result.thinking = { state: "unknown", evidence: `probe failed: ${error instanceof Error ? error.message : "unknown error"}` };
       }
     }
+    const cached = this.profileCache.get(model.trim());
+    if (cached) {
+      const capabilities = { ...cached.profile.capabilities };
+      if (requested.tools) capabilities.tools = result.tools;
+      if (requested.structuredOutput) capabilities.structuredOutput = result.structuredOutput;
+      if (requested.thinking) capabilities.thinking = result.thinking;
+      const profile = { ...cached.profile, capabilities };
+      this.profileCache.set(model.trim(), { ...cached, profile });
+    }
     return result;
   }
 
