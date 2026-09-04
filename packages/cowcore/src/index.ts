@@ -21,4 +21,5 @@ export type { FastLaneObservation, FastLaneResult } from "./fastLane.js";
 export type { CowCoreFeatureFlags, FastLaneGateDecision } from "./runtimeGate.js";
 export type { PerformanceSample } from "./metricsCollector.js";
 export type { PerformanceProfileStore, ProfileStorage } from "./performanceProfileStore.js";
+export type { OllamaBenchmarkResult } from "./ollamaNativeProvider.js";
 export type { EgressPolicyObservation, LocalOnlyPolicyObservation, OllamaLifecycleMode } from "./localOnlyPolicy.js";

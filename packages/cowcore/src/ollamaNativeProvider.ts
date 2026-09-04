@@ -20,6 +20,12 @@ import type {
 } from "./types.js";
 export type { OllamaPsResponse, OllamaShowResponse, OllamaTagsResponse } from "./types.js";
 
+export type OllamaBenchmarkResult = {
+  cold: OllamaChatResult;
+  warm: OllamaChatResult;
+  profile: ModelProfile;
+};
+
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export class OllamaNativeProvider {
@@ -101,6 +107,34 @@ export class OllamaNativeProvider {
     const profile = { ...cached.profile, performanceProfiles };
     this.profileCache.set(model, { ...cached, profile });
     return profile;
+  }
+
+  async benchmarkModel(input: {
+    model: string;
+    scenario?: Exclude<PerformanceSample["scenario"], "embedding">;
+    contextLength?: number;
+    think?: OllamaChatRequest["think"];
+    keepAlive?: string | number;
+    signal?: AbortSignal;
+  }): Promise<OllamaBenchmarkResult> {
+    const model = input.model.trim();
+    const profile = await this.profileModel(model, input.signal);
+    const contextLength = resolveBenchmarkContextLength(profile, input.contextLength);
+    const keepAlive = normalizeBenchmarkKeepAlive(input.keepAlive);
+    const think = input.think ?? false;
+    const messages: OllamaMessage[] = [{ role: "user", content: "OpenCow native runtime benchmark. Reply with OK." }];
+    const options = { temperature: 0, seed: 0, num_predict: 16 };
+    const cold = await this.chat({ model, messages, think, keepAlive: 0, options, signal: input.signal });
+    const warm = await this.chat({ model, messages, think, keepAlive, options, signal: input.signal });
+    const measuredProfile = this.recordPerformanceProfile(model, {
+      scenario: input.scenario ?? "direct-chat",
+      contextLength,
+      thinkSetting: benchmarkThinkSetting(think),
+      keepAlive,
+      cold: cold.metrics,
+      warm: warm.metrics
+    });
+    return { cold, warm, profile: measuredProfile };
   }
 
   async probeModelCapabilities(model: string, requested: { tools?: boolean; structuredOutput?: boolean; thinking?: boolean }, signal?: AbortSignal): Promise<ModelProfile["capabilities"]> {
@@ -343,6 +377,24 @@ function millis(nanoseconds: number | undefined): number | undefined {
 
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function resolveBenchmarkContextLength(profile: ModelProfile, requested?: number): number {
+  const contextLength = requested ?? Math.min(8192, profile.maxContextWindow || 8192);
+  if (!Number.isFinite(contextLength) || contextLength < 1) throw new Error("benchmark context length must be positive.");
+  return Math.min(Math.floor(contextLength), profile.maxContextWindow > 0 ? profile.maxContextWindow : Math.floor(contextLength));
+}
+
+function normalizeBenchmarkKeepAlive(value: string | number | undefined): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  const normalized = typeof value === "string" ? value.trim() : undefined;
+  return normalized || "10m";
+}
+
+function benchmarkThinkSetting(value: OllamaChatRequest["think"]): PerformanceSample["thinkSetting"] {
+  if (value === undefined || value === false) return "off";
+  if (value === true) return "on";
+  return value;
 }
 
 export type { OllamaMessage };

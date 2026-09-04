@@ -20,7 +20,7 @@ Latest same-host native baseline (one sampled run; not a release threshold): col
 
 ## Verified implementation surface
 
-- `@opencow/cowcore`: native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, streaming `/api/chat`, `/api/embed`, locality enforcement, residency observation, adaptive context budget, stable prefix serializer, keep-alive policy, TaskClass router, zero-effect typed-tool loop, fail-closed runtime gate, performance-profile collector, and Fast Lane orchestration.
+- `@opencow/cowcore`: native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, streaming `/api/chat`, `/api/embed`, locality enforcement, residency observation, adaptive context budget, stable prefix serializer, keep-alive policy, TaskClass router, zero-effect typed-tool loop, fail-closed runtime gate, bounded cold/warm benchmark with persisted performance profiles, performance-profile collector, and Fast Lane orchestration.
 - `apps/desktop/src/features/ollama/ollamaNativeProfile.ts`: additive runtime/model/locality profile wrapper; legacy service remains the compatibility seam.
 - UI: deterministic conversation motion scope, reduced-motion guard, frame-coalesced streaming conversation updates, and Codex-inspired sidebar/inspector styling. The WP1C memory slice adds an opt-in settings panel and a bounded untrusted dynamic suffix without changing the visual system. No host execution capability is connected.
 
@@ -28,7 +28,7 @@ Latest same-host native baseline (one sampled run; not a release threshold): col
 
 | Command | Result |
 | --- | --- |
-| `npm run test:unit` | pass: 1,033 tests across packages, desktop, and web |
+| `npm run test:unit` | pass: 1,034 tests across packages, desktop, and web |
 | `cargo test` (`apps/desktop/src-tauri`) | pass: 102 tests |
 | `npm run build` | pass; first-build dependency order verified with CowCore `dist` removed; desktop bundle `745.10 kB` warning and web bundle `527.60 kB` warning remain known ceilings |
 | `npm run check:encoding` | pass |
@@ -53,7 +53,7 @@ Screenshots were kept as local QA artifacts under `output/playwright/`; they are
 ## Known ceilings and next gate
 
 - CowCore is additive; ordinary production chat is not yet switched to `cowcoreFastLane` because managed/external Ollama local-only lifecycle and cloud policy verification are not wired.
-- The gate is now enforced inside `runFastLane`; default flags remain off. The bounded `PerformanceProfileStore` is implemented and tested, while production runtime sample capture, the required 8K-token cache continuation benchmark, and WP1C formal evaluation/native-desktop/migration evidence remain open.
+- The gate is now enforced inside `runFastLane`; default flags remain off. The bounded `PerformanceProfileStore` and explicit native cold/warm benchmark are implemented and tested, while production diagnostic wiring/sample scheduling, the required 8K-token cache continuation benchmark, and WP1C formal evaluation/native-desktop/migration evidence remain open.
 - WP1C implementation is present but remains behind the opt-in flag. Native commands enforce explicit top-level-user authority, sensitive-content rejection, user/workspace scope and expiry/revocation filters, and audit metadata without storing memory content. Prompt injection is bounded to an untrusted/none-authority suffix; the formal memory evaluation and native desktop E2E are still required before calling WP1C complete.
 - The current local baseline moved to Ollama `0.33.3` and `gemma4:12b-mlx`; this is evidence only, not a hard-coded compatibility requirement. The `qwen3-embedding:8b-q4_K_M` candidate remains the separate embedding baseline.
 - The cache continuation harness now keeps a deterministic stable prefix ahead of changing user content and reports `candidate-hit` only when repeated `prompt_eval_duration / cold prompt_eval_duration <= 0.70`. The latest local sample was `0.350` (`302.41ms → 105.81ms`, 115 prefix characters); it is a candidate observation, not an 8K-token release claim.

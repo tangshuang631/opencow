@@ -232,6 +232,29 @@ describe("OllamaNativeProvider", () => {
     expect(restoredProfile.performanceProfiles).toEqual(updated.performanceProfiles);
   });
 
+  it("runs a bounded cold/warm native benchmark and persists the measured profile", async () => {
+    const storage = new TestStorage();
+    const profileStore = createPerformanceProfileStore(storage, "profile:");
+    const chatBodies: Array<Record<string, unknown>> = [];
+    const fetchMock = createBenchmarkFetchMock(chatBodies);
+    const provider = new OllamaNativeProvider({ fetch: fetchMock, cloudPolicy: "disabled-confirmed", profileStore });
+
+    const result = await provider.benchmarkModel({ model: "qwen3.5:9b", contextLength: 8192, keepAlive: "10m" });
+
+    expect(chatBodies).toHaveLength(2);
+    expect(chatBodies[0]).toMatchObject({ model: "qwen3.5:9b", keep_alive: 0, stream: true });
+    expect(chatBodies[1]).toMatchObject({ model: "qwen3.5:9b", keep_alive: "10m", stream: true });
+    expect(result.profile.performanceProfiles).toHaveLength(1);
+    expect(result.profile.performanceProfiles[0]).toMatchObject({
+      scenario: "direct-chat",
+      contextLength: 8192,
+      keepAlive: "10m",
+      sampleCount: 1
+    });
+    expect(result.cold.metrics.promptEvalCount).toBe(10);
+    expect(result.warm.metrics.evalCount).toBe(5);
+  });
+
   it("can probe an unknown tool capability with a virtual tool and never execute it", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(new URL(String(input)).pathname).toBe("/api/chat");
@@ -273,5 +296,29 @@ function createProfileFetchMock() {
     if (path === "/api/show") return jsonResponse(show);
     if (path === "/api/ps") return jsonResponse({ models: [] });
     throw new Error(`unexpected path ${path}`);
+  });
+}
+
+function createBenchmarkFetchMock(chatBodies: Array<Record<string, unknown>>) {
+  let chatCount = 0;
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/version") return jsonResponse(version);
+    if (path === "/api/tags") return jsonResponse(tags);
+    if (path === "/api/show") return jsonResponse(show);
+    if (path === "/api/ps") return jsonResponse({ models: [] });
+    if (path !== "/api/chat") throw new Error(`unexpected path ${path}`);
+    chatBodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+    chatCount += 1;
+    const duration = chatCount === 1 ? 1_000_000_000 : 200_000_000;
+    const loadDuration = chatCount === 1 ? 100_000_000 : 10_000_000;
+    const encoder = new TextEncoder();
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"model":"qwen3.5:9b","message":{"content":"ok"}}\n'));
+        controller.enqueue(encoder.encode(`{"model":"qwen3.5:9b","done":true,"done_reason":"stop","total_duration":${duration},"load_duration":${loadDuration},"prompt_eval_count":10,"prompt_eval_duration":200000000,"eval_count":5,"eval_duration":250000000}\n`));
+        controller.close();
+      }
+    }), { status: 200 });
   });
 }
