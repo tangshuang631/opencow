@@ -20,8 +20,8 @@ test("collects native metadata and refuses remote endpoints", async () => {
   const fetchImpl = async (url, init = {}) => {
     calls.push([url, init]);
     if (url.endsWith("/api/version")) return { ok: true, json: async () => ({ version: "test" }) };
-    if (url.endsWith("/api/tags")) return { ok: true, json: async () => ({ models: [{ name: "m", digest: "sha" }] }) };
-    if (url.endsWith("/api/show")) return { ok: true, json: async () => ({ digest: "sha", details: { family: "llama", quantization_level: "Q4" }, capabilities: ["tools"] }) };
+    if (url.endsWith("/api/tags")) return { ok: true, json: async () => ({ models: [{ name: "m", digest: "sha", capabilities: ["embedding"] }] }) };
+    if (url.endsWith("/api/show")) return { ok: true, json: async () => ({ digest: "sha", model_info: { "qwen35.context_length": 32768 }, details: { family: "llama", quantization_level: "Q4" }, capabilities: ["tools", "embedding"] }) };
     if (url.endsWith("/api/ps")) return { ok: true, json: async () => ({ models: [] }) };
     if (url.endsWith("/api/chat")) return { ok: true, json: async () => ({ prompt_eval_count: 1, prompt_eval_duration: 1e6, eval_count: 1, eval_duration: 1e6, done_reason: "stop" }) };
     return { ok: true, json: async () => ({ embeddings: [[0, 1]] }) };
@@ -29,8 +29,23 @@ test("collects native metadata and refuses remote endpoints", async () => {
   const report = await collectOllamaBaseline({ fetchImpl });
   assert.equal(report.runtimePath, "ollama-native-api");
   assert.equal(report.model.digest, "sha");
+  assert.equal(report.model.contextWindow, 32768);
   assert.equal(report.cold.ttftSource, "non-streaming-request-latency-upper-bound");
   assert.ok(report.warm);
   assert.ok(calls.some(([url]) => url.endsWith("/api/embed")));
   await assert.rejects(() => collectOllamaBaseline({ endpoint: "https://example.com", fetchImpl }), /loopback endpoint/);
+});
+
+test("keeps chat baseline usable when no local embedding model is installed", async () => {
+  const fetchImpl = async (url) => {
+    if (url.endsWith("/api/version")) return { ok: true, json: async () => ({ version: "test" }) };
+    if (url.endsWith("/api/tags")) return { ok: true, json: async () => ({ models: [{ name: "chat", digest: "sha" }] }) };
+    if (url.endsWith("/api/show")) return { ok: true, json: async () => ({ digest: "sha", capabilities: ["completion"] }) };
+    if (url.endsWith("/api/ps")) return { ok: true, json: async () => ({ models: [] }) };
+    return { ok: true, json: async () => ({ prompt_eval_count: 1, prompt_eval_duration: 1e6, eval_count: 1, eval_duration: 1e6 }) };
+  };
+  const report = await collectOllamaBaseline({ fetchImpl });
+  assert.equal(report.cold.doneReason, null);
+  assert.equal(report.embedding.status, "unavailable");
+  assert.equal(report.capabilities.embedding, false);
 });

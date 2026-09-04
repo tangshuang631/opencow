@@ -32,11 +32,18 @@ export function buildNativeChatRequest({ model, message, context, keepAlive = "1
 
 function resolveContextWindow(show) {
   const info = show?.model_info ?? {};
-  return info["general.context_length"] ?? info["llama.context_length"] ?? info.context_length ?? null;
+  const known = info["general.context_length"] ?? info["llama.context_length"] ?? info.context_length;
+  if (known != null) return known;
+  const key = Object.keys(info).find((name) => name.endsWith(".context_length"));
+  return key ? info[key] : null;
 }
 
 export function buildNativeEmbedRequest({ model, input, truncate = false, keepAlive = "5m" }) {
   return { model, input, truncate, keep_alive: keepAlive };
+}
+
+function advertisesEmbedding(model) {
+  return model?.capabilities?.some((capability) => capability.toLowerCase() === "embedding") ?? false;
 }
 
 export function parseChatMetrics(payload, wallClockMs) {
@@ -76,6 +83,7 @@ async function requestJson(fetchImpl, url, init = {}) {
 export async function collectOllamaBaseline({
   endpoint = DEFAULT_OLLAMA_ENDPOINT,
   model,
+  embeddingModel,
   context = 8192,
   keepAlive = "10m",
   think = false,
@@ -99,18 +107,34 @@ export async function collectOllamaBaseline({
   await runChatProbe(fetchImpl, base, chatRequest);
   const warm = await runChatProbe(fetchImpl, base, chatRequest);
   let embedding = null;
-  if (includeEmbedding) {
-    const embedStartedAt = performance.now();
-    const embed = await requestJson(fetchImpl, `${base}/api/embed`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(buildNativeEmbedRequest({ model: selected, input: ["wp0 baseline"], truncate: false }))
-    });
-    embedding = {
-      latencyMs: performance.now() - embedStartedAt,
-      dimensions: Array.isArray(embed.embeddings?.[0]) ? embed.embeddings[0].length : null,
-      modelDigest: show.digest ?? null
-    };
+  const selectedEmbedding = embeddingModel || tags.models?.find(advertisesEmbedding)?.name || null;
+  if (includeEmbedding && selectedEmbedding) {
+    try {
+      const embeddingShow = selectedEmbedding === selected
+        ? show
+        : await requestJson(fetchImpl, `${base}/api/show`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ model: selectedEmbedding })
+          });
+      const embedStartedAt = performance.now();
+      const embed = await requestJson(fetchImpl, `${base}/api/embed`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(buildNativeEmbedRequest({ model: selectedEmbedding, input: ["wp0 baseline"], truncate: false }))
+      });
+      embedding = {
+        status: "measured",
+        modelId: selectedEmbedding,
+        latencyMs: performance.now() - embedStartedAt,
+        dimensions: Array.isArray(embed.embeddings?.[0]) ? embed.embeddings[0].length : null,
+        modelDigest: embeddingShow.digest ?? tags.models?.find((item) => item.name === selectedEmbedding)?.digest ?? null
+      };
+    } catch (error) {
+      embedding = { status: "unavailable", modelId: selectedEmbedding, reason: error.message };
+    }
+  } else if (includeEmbedding) {
+    embedding = { status: "unavailable", modelId: null, reason: "no local model advertises embedding capability" };
   }
 
   return {
@@ -131,7 +155,7 @@ export async function collectOllamaBaseline({
       structuredOutput: show.capabilities?.includes("structured_output") ?? null,
       thinking: show.capabilities?.includes("thinking") ?? null,
       vision: show.capabilities?.includes("vision") ?? null,
-      embedding: Boolean(embedding)
+      embedding: embedding?.status === "measured"
     },
     runtimePath: "ollama-native-api",
     residencyObservation: ps.models ?? [],
@@ -146,7 +170,11 @@ export async function collectOllamaBaseline({
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const endpoint = process.env.OPENCOW_OLLAMA_ENDPOINT || DEFAULT_OLLAMA_ENDPOINT;
-  collectOllamaBaseline({ endpoint, model: process.env.OPENCOW_OLLAMA_MODEL })
+  collectOllamaBaseline({
+    endpoint,
+    model: process.env.OPENCOW_OLLAMA_MODEL,
+    embeddingModel: process.env.OPENCOW_OLLAMA_EMBED_MODEL
+  })
     .then((report) => console.log(JSON.stringify(report)))
     .catch((error) => {
       console.error(`ollama baseline unavailable: ${error.message}`);
