@@ -1632,10 +1632,32 @@ function createBrowserPreviewNetworkSearch(
 
 function createBrowserPreviewLocalSkillScan(): LocalSkillScanResult {
   return {
-    summary: "Browser preview mode found 0 installed OpenCow skills.",
-    total_count: 0,
-    scanned_root_count: 1,
-    items: []
+    summary: "Browser preview mode found 3 installed OpenCow skills across 2 scanned roots.",
+    total_count: 3,
+    scanned_root_count: 2,
+    items: [
+      {
+        name: "coding-agent",
+        path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+        source: "vendor-openclaw-skill",
+        description: "OpenClaw coding agent workflow",
+        enabled: true
+      },
+      {
+        name: "docs-helper",
+        path: "vendor/openclaw/skills/docs-helper/SKILL.md",
+        source: "vendor-openclaw-skill",
+        description: "OpenClaw documentation workflow",
+        enabled: false
+      },
+      {
+        name: "browser-automation",
+        path: "vendor/openclaw/skills/browser-automation/SKILL.md",
+        source: "vendor-openclaw-skill",
+        description: "OpenClaw browser automation workflow",
+        enabled: false
+      }
+    ]
   };
 }
 
@@ -1689,7 +1711,7 @@ function createBrowserPreviewLocalSkillEnable(query: string): LocalSkillEnableRe
   return {
     query,
     enabled_skill_name: "coding-agent",
-    registry_path: "skills/enabled-skills.json",
+    registry_path: ".opencow/skills/enabled-skills.json",
     status: "enabled",
     summary: "Browser preview mode registered coding-agent in the OpenCow skill registry."
   };
@@ -1699,7 +1721,7 @@ function createBrowserPreviewLocalSkillInstall(query: string): LocalSkillInstall
   return {
     query,
     installed_skill_name: "gpt-taste",
-    installed_skill_path: "skills/installed/gpt-taste/SKILL.md",
+    installed_skill_path: "skills/gpt-taste/SKILL.md",
     source_skill_path: "vendor/openclaw/skills/gpt-taste/SKILL.md",
     status: "installed",
     summary: "Browser preview mode copied gpt-taste into the OpenCow skills directory."
@@ -1710,7 +1732,7 @@ function createBrowserPreviewLocalSkillDisable(query: string): LocalSkillDisable
   return {
     query,
     disabled_skill_name: "coding-agent",
-    registry_path: "skills/enabled-skills.json",
+    registry_path: ".opencow/skills/enabled-skills.json",
     status: "disabled",
     summary: "Browser preview mode removed coding-agent from the OpenCow skill registry."
   };
@@ -1748,10 +1770,17 @@ function createBrowserPreviewOpencowWorkspaceProjectRuntimeRegistryRepair(
 
 function createBrowserPreviewEnabledLocalSkills(): EnabledLocalSkillsResult {
   return {
-    summary: "Browser preview mode found 0 enabled OpenCow skills.",
-    total_count: 0,
-    registry_path: "skills/enabled-skills.json",
-    items: []
+    summary: "Browser preview mode found 1 enabled OpenCow skill.",
+    total_count: 1,
+    registry_path: ".opencow/skills/enabled-skills.json",
+    items: [
+      {
+        name: "coding-agent",
+        path: "vendor/openclaw/skills/coding-agent/SKILL.md",
+        source: "vendor-openclaw-skill",
+        description: "OpenClaw coding agent workflow"
+      }
+    ]
   };
 }
 
@@ -1803,9 +1832,9 @@ function createBrowserPreviewEnabledLocalSkillMatch(query: string): EnabledLocal
 
 function createBrowserPreviewLocalMcpPluginScan(): LocalMcpPluginScanResult {
   return {
-    summary: "Browser preview mode found 1 installed MCP entry in the OpenCow product directory.",
-    total_count: 1,
-    scanned_root_count: 1,
+    summary: "Browser preview mode found 2 installed MCP entries across 2 scanned roots.",
+    total_count: 2,
+    scanned_root_count: 2,
     items: [
       {
         id: "browser",
@@ -1816,6 +1845,18 @@ function createBrowserPreviewLocalMcpPluginScan(): LocalMcpPluginScanResult {
         activation: "startup",
         tool_count: 1,
         skill_count: 1,
+        status: "stopped",
+        supported: true
+      },
+      {
+        id: "codex-supervisor",
+        name: "Codex Supervisor",
+        path: "mcp/installed/codex-supervisor/openclaw.plugin.json",
+        source: "opencow-installed-mcp",
+        description: "用于受控任务编排和审计回传。",
+        activation: "manual",
+        tool_count: 1,
+        skill_count: 0,
         status: "stopped",
         supported: true
       }
@@ -1884,12 +1925,12 @@ function createBrowserPreviewLocalMcpPluginStartPreview(query: string): LocalMcp
         path: "mcp/installed/browser/openclaw.plugin.json",
         source: "opencow-installed-mcp",
         activation: "startup",
-        startup_allowed: true,
-        command_preview: "node vendor/openclaw/openclaw.mjs browser start",
+        startup_allowed: false,
+        command_preview: "No resolved executable launcher is available for this local MCP plugin.",
         working_directory: "vendor/openclaw",
-        risk_summary: "会尝试通过 OpenClaw browser CLI 启动浏览器控制服务；如果本地依赖缺失会返回明确诊断。",
+        risk_summary: "Preview only; does not yet resolve or launch a real local MCP plugin process.",
         requires_config: false,
-        config_hint: "建议先保证 OpenClaw browser 运行依赖完整。"
+        config_hint: "No required config schema fields were detected."
       }
     ]
   };

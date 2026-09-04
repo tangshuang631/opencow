@@ -13,6 +13,7 @@ const requiredPaths = [
   "apps/desktop/src/app/App.tsx",
   "apps/desktop/src/features/workbench/Workbench.tsx",
   "apps/desktop/src-tauri/tauri.conf.json",
+  "apps/desktop/src-tauri/src/workspace.rs",
   "packages/openclaw-adapter/package.json",
   "packages/openclaw-adapter/src/index.ts",
   "packages/openclaw-adapter/src/upstreamMetadata.ts",
@@ -156,6 +157,11 @@ export function runHealthCheck({
 
   if (macLauncher.includes("python3 scripts/sync-opencow-mac-apps.py")) {
     throw new Error("Mac latest-test desktop launcher must use an absolute sync script path");
+  }
+
+  const workspaceRuntime = readText("apps/desktop/src-tauri/src/workspace.rs", "utf8");
+  if (!workspaceRuntime.includes("const LEGACY_HOST_EXECUTION_ENABLED: bool = false;")) {
+    throw new Error("WP0 legacy host execution kill switch must remain explicitly disabled");
   }
 
   const staleGeneratedFiles = findStaleGeneratedFiles(generatedSourcePairs, statFile);

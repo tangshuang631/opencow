@@ -37,6 +37,7 @@ type MainConversationProps = {
   onDeleteRecentConversation?: (conversationId: string) => void;
   onSubmitTask?: (message: string) => void;
   onOpenAttachment?: (attachment: ChatAttachment) => void;
+  knowledgeReferenceLabel?: string;
 };
 
 const TEXT = {
@@ -148,7 +149,8 @@ function isLowValueReferenceSnippet(value: string) {
   }
 
   const total = normalized.length;
-  const replacementCount = [...normalized].filter((character) => character === "�").length;
+  const replacementCharacter = String.fromCharCode(0xfffd);
+  const replacementCount = [...normalized].filter((character) => character === replacementCharacter).length;
   if (replacementCount * 5 >= total) {
     return true;
   }
@@ -1038,7 +1040,8 @@ function InformationReferences({
   metadataLines,
   expanded,
   onToggle,
-  onSubmitTask
+  onSubmitTask,
+  label = "信息引用"
 }: {
   entryId: string;
   knowledgeCards: KnowledgeHitCard[];
@@ -1047,6 +1050,7 @@ function InformationReferences({
   expanded: boolean;
   onToggle: (entryId: string) => void;
   onSubmitTask?: (message: string) => void;
+  label?: string;
 }) {
   const totalCount = knowledgeCards.length + searchCards.length;
 
@@ -1054,7 +1058,7 @@ function InformationReferences({
     <section className="message-knowledge-results" aria-label="信息引用">
       <button
         aria-expanded={expanded}
-        aria-label={expanded ? "收起信息引用" : "展开信息引用"}
+        aria-label={expanded ? `收起${label}` : `展开${label}`}
         className={`message-knowledge-toggle ${expanded ? "message-knowledge-toggle-open" : ""}`}
         type="button"
         onClick={() => onToggle(entryId)}
@@ -1126,7 +1130,7 @@ function InformationReferences({
           ) : null}
           {knowledgeCards.length > 0 ? (
             <>
-              <p className="message-detail-title">知识库来源</p>
+              <p className="message-detail-title">{label === "知识详情" ? "检索命中" : "知识库来源"}</p>
               {knowledgeCards.map((card) => (
                 <div className="message-knowledge-item" key={`${entryId}-${card.sourceTitle}-${card.score}`}>
                   <p className="message-detail">来源文件：{normalizeWorkbenchText(card.sourceTitle)}</p>
@@ -1190,7 +1194,8 @@ export function MainConversation({
   onDeleteRecentConversation,
   onRetryLocalTask,
   onSubmitTask,
-  onOpenAttachment
+  onOpenAttachment,
+  knowledgeReferenceLabel
 }: MainConversationProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [expandedKnowledgeEntryIds, setExpandedKnowledgeEntryIds] = useState<Set<string>>(() => new Set());
@@ -1311,6 +1316,7 @@ export function MainConversation({
                     searchCards={searchReferenceCards}
                     onSubmitTask={onSubmitTask}
                     onToggle={toggleKnowledgeDetails}
+                    label={knowledgeReferenceLabel}
                   />
                 ) : null}
                 {visibleDetailLines.map((line) => (

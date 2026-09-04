@@ -30,6 +30,7 @@ type InspectorProps = {
   onToggleSearch: (enabled: boolean) => void;
   onSaveRemoteApiConfig: (payload: { baseUrl: string; providerLabel: string; apiKey: string }) => void;
   onSaveSearchProviderConfig: (payload: { providerLabel: string }) => void;
+  compatibilityOutputLabel?: string;
 };
 
 type ChecklistItem = {
@@ -397,7 +398,8 @@ export function Inspector({
   onToggleRemoteApi,
   onToggleSearch,
   onSaveRemoteApiConfig,
-  onSaveSearchProviderConfig
+  onSaveSearchProviderConfig,
+  compatibilityOutputLabel
 }: InspectorProps) {
   const checklistItems = useMemo(() => createChecklistItems(state), [state]);
   const changeItems = useMemo(() => collectChangeItems(state), [state]);
@@ -436,10 +438,11 @@ export function Inspector({
   const visibleSources = state.sources.items.slice(0, 3);
   const visibleTasks = state.tasks.items
     .filter((task) =>
-      checklistItems.length > 0
+      task.executionKind !== "local-model-chat"
+      && (checklistItems.length > 0
       || task.status === "failed"
       || hasTaskFailureDetail(task)
-      || normalizeInspectorRequestSummary(task.summary).length <= 80
+      || normalizeInspectorRequestSummary(task.summary).length <= 80)
     )
     .slice(0, 3);
   const hasModels = state.model.availableModels.length > 0;
@@ -519,6 +522,17 @@ export function Inspector({
 
   return (
     <aside aria-label="右侧面板" className="inspector glass-gradient-sidebar-right">
+      {compatibilityOutputLabel && state.output.title === "本地模型答复" ? (
+        <section className="inspector-task-sheet">
+          <div className="inspector-section-header">
+            <div>
+              <p className="knowledge-section-eyebrow">输出</p>
+              <h2>{state.output.title}</h2>
+            </div>
+          </div>
+          <p className="muted">已生成最新回复，请直接在左侧会话查看正文。</p>
+        </section>
+      ) : null}
       {pendingPermission ? (
         <section className="inspector-inline-notice">
           <div className="inspector-inline-title">

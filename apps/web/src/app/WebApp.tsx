@@ -1758,7 +1758,7 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
     });
   }
 
-  function handleImportLocalKnowledgeFiles(files: File[]) {
+  function handleImportLocalKnowledgeFiles(files: File[] = []) {
     const validFiles = files.filter((file) => {
       const normalizedName = file.name.trim().toLowerCase();
       return normalizedName.endsWith(".md") || normalizedName.endsWith(".txt");
@@ -1934,6 +1934,10 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
 
   return (
     <Workbench
+      knowledgeReferenceLabel="知识详情"
+      knowledgeFileInputLabel="导入本地 md/txt 文件"
+      inspectorCompatibilityOutputLabel="输出"
+      confirmRecentConversationDelete
       state={state}
       onApproveDangerousAction={() => undefined}
       onCancelDangerousAction={() => undefined}
@@ -1950,6 +1954,7 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
       onCleanupStorage={handleCleanupStorage}
       onToggleRemoteApi={() => undefined}
       onToggleSearch={() => undefined}
+      onSaveOllamaConfig={() => undefined}
       onSaveRemoteApiConfig={() => undefined}
       onSaveSearchProviderConfig={() => undefined}
       onSelectModel={(modelName) => {
@@ -1964,7 +1969,7 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
       }}
       onNewConversation={() => {
         startTransition(() => {
-          setState((current) => preserveWebKnowledgeState(current, createNewConversationState(current)));
+          setState((current) => preserveWebKnowledgeState(current, createNewConversationState(current, { keepPreviousInRecentList: false })));
         });
       }}
       onArchiveConversation={() => {
@@ -1978,6 +1983,10 @@ function handleCleanupStorage(target: "conversation" | "logs" | "cache" | "snaps
         });
       }}
       onDeleteRecentConversation={(conversationId) => {
+        if (!window.confirm("确定永久删除此对话吗？")) {
+          return;
+        }
+
         startTransition(() => {
           setState((current) => preserveWebKnowledgeState(current, deleteRecentConversationState(current, conversationId)));
         });

@@ -26,7 +26,12 @@ describe("openclaw adapter upstream boundary", () => {
 
     expect(capabilities).toMatchObject({
       llmCore: { available: true, packageName: "@openclaw/llm-core" },
-      llmRuntime: { available: true, packageName: "@openclaw/llm-runtime" },
+      llmRuntime: {
+        available: false,
+        packageName: "@openclaw/llm-runtime",
+        compatibility: "relocated-or-removed",
+        replacementPackageNames: ["@openclaw/llm-core"]
+      },
       modelCatalog: { available: true, packageName: "@openclaw/model-catalog-core" },
       pluginSdk: { available: true, packageName: "@openclaw/plugin-sdk" },
       terminalCore: { available: true, packageName: "@openclaw/terminal-core" },

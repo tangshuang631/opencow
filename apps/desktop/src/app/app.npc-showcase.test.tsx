@@ -97,7 +97,7 @@ describe("App npc local run flow", () => {
     await user.type(composerInput as HTMLTextAreaElement, "use npc collaboration to run the matched cattle project now");
     await user.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/ });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -148,7 +148,7 @@ describe("App npc local run flow", () => {
     );
     await user.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/ });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -200,7 +200,7 @@ describe("App npc local run flow", () => {
     );
     await user.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/ });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();

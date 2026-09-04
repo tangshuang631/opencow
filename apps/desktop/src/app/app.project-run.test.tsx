@@ -100,7 +100,7 @@ describe("App project run flow", () => {
     await user.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: /^批准提权$/ });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -215,7 +215,7 @@ describe("App project run flow", () => {
     await user.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: /^批准提权$/ });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();
@@ -270,7 +270,7 @@ describe("App project run flow", () => {
     await user.click(sendButton as HTMLButtonElement);
 
     const inspectorPanel = await screen.findByRole("complementary", { name: INSPECTOR_PANEL_NAME });
-    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(inspectorPanel).findByRole("button", { name: /^批准提权$/ });
     const permissionSection = approvePermissionButton.closest("section");
 
     expect(permissionSection).not.toBeNull();

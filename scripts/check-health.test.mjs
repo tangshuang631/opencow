@@ -44,7 +44,8 @@ test("runHealthCheck rejects Mac latest launcher that uses a relative sync scrip
       "scripts/start-opencow-latest-desktop-mac.command",
       'SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"\npython3 scripts/sync-opencow-mac-apps.py'
     ],
-    ["scripts/sync-opencow-mac-apps.py", "# sync script"]
+    ["scripts/sync-opencow-mac-apps.py", "# sync script"],
+    ["apps/desktop/src-tauri/src/workspace.rs", "const LEGACY_HOST_EXECUTION_ENABLED: bool = false;"]
   ]);
 
   assert.throws(
@@ -55,6 +56,27 @@ test("runHealthCheck rejects Mac latest launcher that uses a relative sync scrip
         statFile: () => ({ mtimeMs: 20_000 })
       }),
     /absolute sync script path/
+  );
+});
+
+test("runHealthCheck rejects a missing WP0 legacy host execution kill switch", () => {
+  const files = new Map([
+    ["start-opencow-test.bat", 'if /I "%MODE%"=="check"\npause >nul'],
+    [
+      "scripts/start-opencow-latest-desktop-mac.command",
+      'SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"\npython3 "${SYNC_SCRIPT}"'
+    ],
+    ["scripts/sync-opencow-mac-apps.py", "# sync script"]
+  ]);
+
+  assert.throws(
+    () =>
+      runHealthCheck({
+        existsPath: () => true,
+        readText: (path) => files.get(path) ?? "",
+        statFile: () => ({ mtimeMs: 20_000 })
+      }),
+    /legacy host execution kill switch/
   );
 });
 
@@ -104,7 +126,8 @@ test("runHealthCheck rejects stale Mac desktop release or install targets when t
       "scripts/start-opencow-latest-desktop-mac.command",
       'SYNC_SCRIPT="${REPO_ROOT}/scripts/sync-opencow-mac-apps.py"\npython3 "${SYNC_SCRIPT}"'
     ],
-    ["scripts/sync-opencow-mac-apps.py", "# sync script"]
+    ["scripts/sync-opencow-mac-apps.py", "# sync script"],
+    ["apps/desktop/src-tauri/src/workspace.rs", "const LEGACY_HOST_EXECUTION_ENABLED: bool = false;"]
   ]);
   const mtimes = new Map([
     ["packages/openclaw-adapter/src/localAssistantPlan.ts", 20_000],

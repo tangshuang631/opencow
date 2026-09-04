@@ -20,7 +20,7 @@ function createDraftConversationRecord(
   const summary = latestResultEntry?.summary.trim() || latestUserEntry?.summary.trim() || "等待第一条消息";
 
   return {
-    id: state.conversation.restoredFromConversationId ?? `draft-conversation-${state.storage.sessionCount}`,
+    id: state.conversation.id || state.conversation.restoredFromConversationId || `draft-conversation-${state.storage.sessionCount}`,
     title,
     summary,
     entries,
@@ -78,7 +78,10 @@ function createNewConversationAuditDetail(preservedTasks: WorkbenchState["tasks"
   ].join(" ");
 }
 
-export function createNewConversationState(state: WorkbenchState): WorkbenchState {
+export function createNewConversationState(
+  state: WorkbenchState,
+  options: { keepPreviousInRecentList?: boolean } = {}
+): WorkbenchState {
   const activeTask = state.tasks.activeTaskId
     ? state.tasks.items.find((item) => item.id === state.tasks.activeTaskId)
     : null;
@@ -97,12 +100,14 @@ export function createNewConversationState(state: WorkbenchState): WorkbenchStat
           npcId: null,
           archivedAt: null
         },
-    ...(
-      shouldPreserveConversationHistory
+    ...(options.keepPreviousInRecentList === false
+      ? []
+      : shouldPreserveConversationHistory
         ? [{ ...draftRecord, archivedAt: null }]
-        : []
-    ),
-    ...getDraftConversations(state).filter((record) => record.id !== draftRecord.id)
+        : []),
+    ...getDraftConversations(state).filter(
+      (record) => record.id !== draftRecord.id && record.id !== state.conversation.id
+    )
   ].slice(0, MAX_RECENT_CONVERSATIONS);
   const nextArchivedConversations = shouldPreserveConversationHistory
     ? [

@@ -9,6 +9,8 @@ export interface OpenClawCapability {
   readonly available: boolean;
   readonly packageName: string;
   readonly packagePath: string;
+  readonly compatibility: "native" | "relocated-or-removed";
+  readonly replacementPackageNames?: readonly string[];
 }
 
 export interface OpenClawCapabilities {

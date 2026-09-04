@@ -249,6 +249,7 @@ describe("WebApp", () => {
       target: { value: "把这段网页端对话放进最近会话" }
     });
     fireEvent.click(getComposerSendButton());
+    await new Promise((resolve) => setTimeout(resolve, 300));
 
     await waitFor(() => {
       expect(screen.getAllByText("把这段网页端对话放进最近会话").length).toBeGreaterThan(0);

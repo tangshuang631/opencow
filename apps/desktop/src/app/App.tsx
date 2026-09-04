@@ -939,7 +939,7 @@ function normalizeSearchGroundedAnswer(message: string) {
     .replace(/\n\s*\d+\.\s*.+?\s+url=https?:\/\/\S+.*$/gm, "")
     .replace(/（?来自(?:[^）\n。；;]*?)来源）?/g, "")
     .replace(/\(?来自(?:[^\)\n。；;]*?)来源\)?/g, "")
-    .replace(/（?基于(?:[^）\n。；;]*?)来源）?/g, "")
+    .replace(/^\s*（?基于(?:以上|提供|相关|这些|上述)[^）\n。；;]*来源）?\s*/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -1264,6 +1264,10 @@ function resolvePreferredOllamaChatModel(
 
 function looksLikeTimeSensitiveNetworkQuestion(message: string): boolean {
   const normalized = message.trim();
+
+  if (/最近(?:会话|对话|记录|任务)/.test(normalized)) {
+    return false;
+  }
 
   return /最新|最近|今天|昨日|昨天|刚刚|本周|本月|今年|实时|新闻|动态|进展|发布|公告|股价|汇率|天气|比分|热搜/i.test(normalized);
 }

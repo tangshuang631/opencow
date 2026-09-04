@@ -76,9 +76,13 @@ type WorkbenchProps = {
   onArchiveConversation: () => void;
   onRestoreRecentConversation: (conversationId: string) => void;
   onDeleteRecentConversation: (conversationId: string) => void;
+  confirmRecentConversationDelete?: boolean;
   onImportKnowledgeFile: (path: string) => void;
-  onImportLocalKnowledgeFiles?: () => void;
+  onImportLocalKnowledgeFiles?: (files?: File[]) => void;
   onRemoveKnowledgeFile: (path: string) => void;
+  knowledgeReferenceLabel?: string;
+  knowledgeFileInputLabel?: string;
+  inspectorCompatibilityOutputLabel?: string;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
     id: string;
@@ -1440,6 +1444,7 @@ function renderKnowledgeLibraryFileRow(
       <div className="knowledge-file-main">
         <p>{file.title}</p>
         <p className="workspace-knowledge-source">{file.path}</p>
+        <p className="workspace-knowledge-source">{file.path.startsWith("uploads/") ? "本地上传" : "知识库文件"}</p>
         {file.status === "missing" ? (
           <p className="workspace-knowledge-warning">文件已失效，检索时会自动跳过。</p>
         ) : null}
@@ -1461,6 +1466,7 @@ function KnowledgePanel({
   onImportKnowledgeFile,
   onImportLocalKnowledgeFiles,
   onRemoveKnowledgeFile,
+  knowledgeFileInputLabel,
   knowledgeLibraryLabel,
   knowledgeLibraries,
   onCreateKnowledgeLibrary,
@@ -1470,8 +1476,9 @@ function KnowledgePanel({
 }: {
   state: WorkbenchState;
   onImportKnowledgeFile: (path: string) => void;
-  onImportLocalKnowledgeFiles?: () => void;
+  onImportLocalKnowledgeFiles?: (files?: File[]) => void;
   onRemoveKnowledgeFile: (path: string) => void;
+  knowledgeFileInputLabel?: string;
   knowledgeLibraryLabel?: string;
   knowledgeLibraries?: Array<{
     id: string;
@@ -1487,6 +1494,7 @@ function KnowledgePanel({
 }) {
   const [draftLibraryName, setDraftLibraryName] = useState("");
   const [draftLibraryDescription, setDraftLibraryDescription] = useState("");
+  const [knowledgeFilter, setKnowledgeFilter] = useState("");
   const [isCreateLibraryDialogOpen, setIsCreateLibraryDialogOpen] = useState(false);
   const stateKnowledgeLibraries = state.knowledge.libraries ?? [];
   const derivedKnowledgeLibraries =
@@ -1510,6 +1518,13 @@ function KnowledgePanel({
   const canCreateKnowledgeLibrary = Boolean(onCreateKnowledgeLibrary);
   const importedFiles = state.knowledge.importedFiles;
   const availableFiles = state.knowledge.availableFiles;
+  const normalizedKnowledgeFilter = knowledgeFilter.trim().toLowerCase();
+  const filteredImportedFiles = normalizedKnowledgeFilter
+    ? importedFiles.filter((file) => `${file.title} ${file.path}`.toLowerCase().includes(normalizedKnowledgeFilter))
+    : importedFiles;
+  const filteredAvailableFiles = normalizedKnowledgeFilter
+    ? availableFiles.filter((file) => `${file.title} ${file.path}`.toLowerCase().includes(normalizedKnowledgeFilter))
+    : availableFiles;
 
   function submitKnowledgeLibraryDraft() {
     const nextName = draftLibraryName.trim();
@@ -1538,7 +1553,26 @@ function KnowledgePanel({
               <p>知识库列表</p>
               <span>{supportsNamedLibraries ? `${availableKnowledgeLibraries.length} 个知识库` : "默认知识库"}</span>
             </div>
-            {canCreateKnowledgeLibrary ? (
+            {canCreateKnowledgeLibrary && knowledgeFileInputLabel ? (
+              <div className="knowledge-inline-create">
+                <input
+                  aria-label="新知识库名称"
+                  className="knowledge-inline-input"
+                  placeholder="例如：产品文档库"
+                  type="text"
+                  value={draftLibraryName}
+                  onChange={(event) => setDraftLibraryName(event.target.value)}
+                />
+                <button
+                  aria-label="创建知识库"
+                  className="knowledge-create-button"
+                  type="button"
+                  onClick={() => submitKnowledgeLibraryDraft()}
+                >
+                  创建知识库
+                </button>
+              </div>
+            ) : canCreateKnowledgeLibrary ? (
               <button
                 aria-label="创建知识库"
                 className="knowledge-create-button"
@@ -1630,10 +1664,19 @@ function KnowledgePanel({
           <div className="knowledge-main-header">
             <div>
               <p className="knowledge-section-eyebrow">当前知识库</p>
+              {knowledgeFileInputLabel ? <span>当前知识库：{currentKnowledgeLibraryLabel}</span> : null}
               <h2>{currentKnowledgeLibraryLabel}</h2>
             </div>
             <span className="workspace-history-badge">已索引文件 {state.storage.knowledgeCount}</span>
           </div>
+          <input
+            aria-label="筛选当前知识库文件"
+            className="knowledge-inline-input"
+            placeholder="筛选当前知识库文件"
+            type="text"
+            value={knowledgeFilter}
+            onChange={(event) => setKnowledgeFilter(event.target.value)}
+          />
           <div className="knowledge-dropzone">
             <strong>把文件拖到这里加入当前知识库</strong>
             <p>可以从右侧文件库拖入，也可以直接拖入 Finder 文件。文件先上传到文件库，再拖进某个知识库。文件库对所有知识库互通。</p>
@@ -1641,14 +1684,14 @@ function KnowledgePanel({
           <div className="knowledge-section-heading">
             <div>
               <p>当前知识库文件</p>
-              <span>{importedFiles.length === 0 ? "还没有文件" : `${importedFiles.length} 个文件`}</span>
+              <span>{filteredImportedFiles.length === 0 ? "还没有文件" : `${filteredImportedFiles.length} 个文件`}</span>
             </div>
           </div>
           <div className="knowledge-file-list">
-            {importedFiles.length === 0 ? (
-              <p className="knowledge-empty-state">还没有已纳入知识库的文件。先把右侧文件拖进来。</p>
+            {filteredImportedFiles.length === 0 ? (
+              <p className="knowledge-empty-state">还没有已纳入知识库的文件。先从下方候选文件中手动加入。</p>
             ) : (
-              importedFiles.map((file) => renderKnowledgeLibraryFileRow(file, onRemoveKnowledgeFile))
+              filteredImportedFiles.map((file) => renderKnowledgeLibraryFileRow(file, onRemoveKnowledgeFile))
             )}
           </div>
         </section>
@@ -1657,7 +1700,7 @@ function KnowledgePanel({
           <div className="knowledge-section-heading">
             <div>
               <p>文件库</p>
-              <span>{availableFiles.length === 0 ? "暂无待加入文件" : `${availableFiles.length} 个待加入文件`}</span>
+              <span>{filteredAvailableFiles.length === 0 ? "暂无待加入文件" : `${filteredAvailableFiles.length} 个待加入文件`}</span>
             </div>
             <button
               aria-label="上传文件到文件库"
@@ -1667,20 +1710,38 @@ function KnowledgePanel({
             >
               +
             </button>
+            {knowledgeFileInputLabel ? (
+              <input
+                aria-label={knowledgeFileInputLabel}
+                accept=".md,.txt,text/markdown,text/plain"
+                hidden
+                type="file"
+                multiple
+                onChange={(event) => {
+                  onImportLocalKnowledgeFiles?.(Array.from(event.target.files ?? []));
+                  event.currentTarget.value = "";
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  onImportLocalKnowledgeFiles?.(Array.from(event.dataTransfer.files));
+                }}
+              />
+            ) : null}
           </div>
           <p className="knowledge-file-pool-hint">点击右上角加号，把本机文档直接纳入文件库。</p>
           <div className="knowledge-file-list">
-            {availableFiles.length === 0 ? (
+            {filteredAvailableFiles.length === 0 ? (
               <p className="knowledge-empty-state">当前没有新的可导入文件。</p>
             ) : (
-              availableFiles.map((file) => (
+              filteredAvailableFiles.map((file) => (
                 <div className="knowledge-file-row" key={file.path}>
                   <div className="knowledge-file-main">
                     <p>{file.title}</p>
                     <p className="workspace-knowledge-source">{file.path}</p>
                   </div>
                   <button
-                    aria-label={`导入知识库文件：${file.title}`}
+                    aria-label={`加入知识库：${file.title}`}
                     className="action-button"
                     type="button"
                     onClick={() => onImportKnowledgeFile(file.path)}
@@ -2190,9 +2251,13 @@ export function Workbench({
   onArchiveConversation,
   onRestoreRecentConversation,
   onDeleteRecentConversation,
+  confirmRecentConversationDelete,
   onImportKnowledgeFile,
   onImportLocalKnowledgeFiles,
   onRemoveKnowledgeFile,
+  knowledgeReferenceLabel,
+  knowledgeFileInputLabel,
+  inspectorCompatibilityOutputLabel,
   knowledgeLibraryLabel,
   knowledgeLibraries,
   onCreateKnowledgeLibrary,
@@ -2640,6 +2705,11 @@ export function Workbench({
   }
 
   function handleDeleteConversationClick(conversationId: string) {
+    if (confirmRecentConversationDelete) {
+      onDeleteRecentConversation(conversationId);
+      return;
+    }
+
     setPendingDeleteConversationId(conversationId);
   }
 
@@ -2710,12 +2780,14 @@ export function Workbench({
             onOpenAttachment={(attachment) => {
               void openChatAttachment(attachment);
             }}
+            knowledgeReferenceLabel={knowledgeReferenceLabel}
           />
         ) : activeView === "knowledge" ? (
         <KnowledgePanel
           state={state}
           onImportKnowledgeFile={onImportKnowledgeFile}
           onImportLocalKnowledgeFiles={onImportLocalKnowledgeFiles}
+          knowledgeFileInputLabel={knowledgeFileInputLabel}
           onRemoveKnowledgeFile={onRemoveKnowledgeFile}
           knowledgeLibraryLabel={knowledgeLibraryLabel}
           knowledgeLibraries={knowledgeLibraries}
@@ -2899,6 +2971,7 @@ export function Workbench({
         onToggleSearch={onToggleSearch}
         onSaveRemoteApiConfig={onSaveRemoteApiConfig}
         onSaveSearchProviderConfig={onSaveSearchProviderConfig}
+        compatibilityOutputLabel={inspectorCompatibilityOutputLabel}
       />
       {pendingDeleteConversationId ? (
         <div className="app-close-overlay" role="dialog" aria-label="删除会话确认">

@@ -8,6 +8,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, time::Duration};
 use tauri::{AppHandle, Runtime};
 
+// WP0 safety gate: legacy host process/file execution stays fail-closed until
+// the typed Capability + sandbox path has passed its milestone review.
+const LEGACY_HOST_EXECUTION_ENABLED: bool = false;
+
+fn ensure_legacy_host_execution_allowed() -> Result<(), String> {
+    if LEGACY_HOST_EXECUTION_ENABLED {
+        return Ok(());
+    }
+
+    Err("legacy host execution is disabled during WP0; use the approved sandbox capability path after its milestone gate".to_string())
+}
+
 #[derive(Serialize)]
 pub struct WorkspaceOverview {
     root_name: String,
@@ -2399,6 +2411,7 @@ pub fn workspace_project_run_preview(query: String) -> Result<WorkspaceProjectRu
 
 #[tauri::command]
 pub fn workspace_project_run(query: String) -> Result<WorkspaceProjectRunResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     let root = resolve_workspace_root()?;
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
@@ -2503,6 +2516,7 @@ pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusR
     let record = find_workspace_project_runtime_record(&root, &matched.relative_path)?;
 
     if let Some(runtime) = record {
+        ensure_legacy_host_execution_allowed()?;
         let powershell_command = format!(
             "if (Get-Process -Id {0} -ErrorAction SilentlyContinue) {{ \"running:{0}\" }} else {{ \"stopped:{0}\" }}",
             runtime.pid
@@ -2584,6 +2598,7 @@ pub fn workspace_project_status(query: String) -> Result<WorkspaceProjectStatusR
 
 #[tauri::command]
 pub fn workspace_project_stop(query: String) -> Result<WorkspaceProjectStopResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     let root = resolve_workspace_root()?;
     let candidates = collect_workspace_project_run_candidates(&root)?;
     let normalized_query = query.to_lowercase();
@@ -2694,6 +2709,7 @@ pub fn workspace_project_npc_screenshot_capture(
         &current_unix_timestamp_string(),
     );
 
+    ensure_legacy_host_execution_allowed()?;
     capture_url_to_png_via_edge(&capture_target, &artifact_path)?;
 
     Ok(WorkspaceProjectNpcScreenshotCaptureResult {
@@ -2713,6 +2729,7 @@ pub fn workspace_project_npc_showcase_site_write(
     query: String,
     rollback_context: Option<RollbackContextPayload>,
 ) -> Result<WorkspaceProjectNpcShowcaseSiteWriteResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     workspace_project_npc_showcase_site_write_with_app(&app, query, rollback_context)
 }
 
@@ -3458,6 +3475,7 @@ pub fn local_mcp_plugin_start_preview(
 
 #[tauri::command]
 pub fn local_mcp_plugin_start(query: String) -> Result<LocalMcpPluginStartResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     let root = resolve_workspace_root()?;
     let normalized = query.to_lowercase();
 
@@ -4433,6 +4451,7 @@ fn is_skill_enabled(enabled_skills: &[Value], name: &str, path: &str) -> bool {
 pub fn workspace_readonly_command(
     command_id: String,
 ) -> Result<ReadonlyShellCommandResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     let root = resolve_workspace_root()?;
     let spec = build_readonly_shell_command(&command_id, &root)?;
     let output = Command::new("powershell")
@@ -4477,6 +4496,7 @@ pub fn workspace_write_command(
     rollback_context: Option<RollbackContextPayload>,
     app: AppHandle,
 ) -> Result<WorkspaceWriteShellCommandResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     workspace_write_command_with_app(command_id, rollback_context, &app)
 }
 
@@ -4485,6 +4505,7 @@ fn workspace_write_command_with_app<R: Runtime>(
     rollback_context: Option<RollbackContextPayload>,
     app: &AppHandle<R>,
 ) -> Result<WorkspaceWriteShellCommandResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     let root = resolve_workspace_root()?;
     let spec = build_workspace_write_shell_command(&command_id, &root)?;
     let snapshot_paths = match command_id.as_str() {
@@ -4535,6 +4556,7 @@ pub fn controlled_full_command(
     rollback_context: Option<RollbackContextPayload>,
     app: AppHandle,
 ) -> Result<ControlledFullShellCommandResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     controlled_full_command_with_app(command_id, rollback_context, &app)
 }
 
@@ -4543,6 +4565,7 @@ fn controlled_full_command_with_app<R: Runtime>(
     rollback_context: Option<RollbackContextPayload>,
     app: &AppHandle<R>,
 ) -> Result<ControlledFullShellCommandResult, String> {
+    ensure_legacy_host_execution_allowed()?;
     let root = resolve_workspace_root()?;
     let spec = build_controlled_full_shell_command(&command_id, &root)?;
     let snapshot_paths = match command_id.as_str() {
@@ -6531,6 +6554,13 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
     use tauri::test::{mock_app, MockRuntime};
+
+    #[test]
+    fn legacy_host_execution_kill_switch_is_fail_closed() {
+        let error = super::ensure_legacy_host_execution_allowed().unwrap_err();
+
+        assert!(error.contains("legacy host execution is disabled during WP0"));
+    }
 
     fn workspace_test_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

@@ -3087,7 +3087,7 @@ describe("App", () => {
 
     submitComposerMessageFast("你能帮我创建一个课程助手npc吗");
 
-    const approveButton = await screen.findByRole("button", { name: "批准" });
+    const approveButton = await screen.findByRole("button", { name: /^批准提权$/ });
 
     vi.useFakeTimers();
     try {
@@ -3170,7 +3170,7 @@ describe("App", () => {
 
     submitComposerMessageFast("你能帮我创建一个课程助手npc吗");
 
-    const approveButton = await screen.findByRole("button", { name: "批准" });
+    const approveButton = await screen.findByRole("button", { name: /^批准提权$/ });
 
     vi.useFakeTimers();
     try {
@@ -3236,7 +3236,7 @@ describe("App", () => {
     await findModelPicker("qwen3.6:35b");
 
     submitComposerMessageFast("你能帮我配置一个文档处理npc吗");
-    const approveButton = await screen.findByRole("button", { name: "批准" });
+    const approveButton = await screen.findByRole("button", { name: /^批准提权$/ });
     fireEvent.click(approveButton);
 
     await waitFor(() => {
@@ -3292,7 +3292,7 @@ describe("App", () => {
     await findModelPicker("qwen3.6:35b");
 
     submitComposerMessageFast("你能帮我配置一个文档处理npc吗");
-    fireEvent.click(await screen.findByRole("button", { name: "批准" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^批准提权$/ }));
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalled();
@@ -3925,7 +3925,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    const approvePermissionButton = await screen.findByRole("button", { name: "批准" });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/ });
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
@@ -3971,7 +3971,7 @@ describe("App", () => {
     });
     fireEvent.click(getComposerSendButton());
 
-    fireEvent.click(await screen.findByRole("button", { name: "批准" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^批准提权$/ }));
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({

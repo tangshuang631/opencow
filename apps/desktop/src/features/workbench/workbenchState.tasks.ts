@@ -135,6 +135,7 @@ export function createUserTaskSubmittedState(
             summary: duplicateOutputSummary
           },
           conversation: {
+            ...state.conversation,
             entries: prependConversationEntry(state.conversation.entries, {
               id: duplicateSkipId,
               kind: "system",
@@ -339,6 +340,7 @@ export function createAssistantPlanningFailedState(
           summary: `${userSummary}${userRecovery}`
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: planningFailureId,
             kind: "system",
@@ -408,6 +410,7 @@ export function createDuplicatePlanningFailureSkippedState(
           summary: conciseSummary
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: duplicateId,
             kind: "system",
@@ -553,6 +556,7 @@ export function createStaleActiveTaskSlotRecoveredState(state: WorkbenchState): 
           summary: `${STALE_ACTIVE_TASK_RECOVERY_SUMMARY}${STALE_ACTIVE_TASK_DIAGNOSTICS_SUMMARY}`
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: taskEventId,
             kind: "system",
@@ -675,6 +679,7 @@ export function createTaskExecutionSucceededState(
           summary: payload.resultSummary
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: `${taskEventId}-assistant`,
             kind: "assistant",
@@ -899,6 +904,7 @@ export function createTaskExecutionFailedState(
           summary: failureOutputSummary
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: taskEventId,
             kind: "system",
@@ -999,6 +1005,7 @@ export function createTaskExecutionRetriedState(state: WorkbenchState, taskId?: 
           summary: retryOutputSummary
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: taskEventId,
             kind: "system",
@@ -1126,6 +1133,7 @@ export function createTaskExecutionCancelledState(state: WorkbenchState): Workbe
           summary: cancellationOutputSummary
         },
         conversation: {
+          ...state.conversation,
           entries: prependConversationEntry(state.conversation.entries, {
             id: taskEventId,
             kind: "system",

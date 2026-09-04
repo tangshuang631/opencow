@@ -10,8 +10,8 @@ describe("openclaw capability families", () => {
         capabilityId: "rag",
         title: "RAG",
         status: "ready-foundation",
-        requiredPackageCount: 3,
-        availablePackageCount: 3
+        requiredPackageCount: 2,
+        availablePackageCount: 2
       }),
       expect.objectContaining({
         capabilityId: "skills",
@@ -24,8 +24,8 @@ describe("openclaw capability families", () => {
         capabilityId: "npc",
         title: "NPC",
         status: "ready-foundation",
-        requiredPackageCount: 3,
-        availablePackageCount: 3
+        requiredPackageCount: 2,
+        availablePackageCount: 2
       }),
       expect.objectContaining({
         capabilityId: "mcp",
@@ -49,4 +49,3 @@ describe("openclaw capability families", () => {
     });
   });
 });
-

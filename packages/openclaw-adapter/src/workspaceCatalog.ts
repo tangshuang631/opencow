@@ -30,7 +30,7 @@ function readWorkspacePackage(packagesRoot: string, directoryName: string): Open
     directoryName,
     packageName: requireString(packageJson.name, `${directoryName}.name`),
     version: requireString(packageJson.version, `${directoryName}.version`),
-    private: requireBoolean(packageJson.private, `${directoryName}.private`),
+    private: packageJson.private === undefined ? false : requireBoolean(packageJson.private, `${directoryName}.private`),
     packagePath
   };
 }

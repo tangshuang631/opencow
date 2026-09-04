@@ -56,7 +56,7 @@ describe("App MCP start flow", () => {
     expect(permissionSection).not.toBeNull();
     expect(within(permissionSection as HTMLElement).getAllByText(/受控完全访问/i).length).toBeGreaterThan(0);
 
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     await user.click(approvePermissionButton);
 
     const dangerSection = await waitFor(() => {
@@ -64,7 +64,7 @@ describe("App MCP start flow", () => {
       expect(section).not.toBeNull();
       return section as HTMLElement;
     });
-    const approveDangerButton = await within(dangerSection).findByRole("button", { name: "批准" });
+    const approveDangerButton = await within(dangerSection).findByRole("button", { name: /^批准高风险操作$/ });
     expect(screen.queryByText(/no verified executable launcher has been implemented/i)).not.toBeInTheDocument();
 
     await user.click(approveDangerButton);

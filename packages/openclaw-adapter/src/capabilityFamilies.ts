@@ -9,9 +9,9 @@ import type {
 type OpenClawCapabilityKey = keyof OpenClawCapabilities;
 
 const capabilityFamilyPackages: Record<OpenClawCapabilityFamily, readonly OpenClawCapabilityKey[]> = {
-  rag: ["llmCore", "llmRuntime", "modelCatalog"],
+  rag: ["llmCore", "modelCatalog"],
   skills: ["pluginSdk", "toolCallRepair"],
-  npc: ["llmCore", "llmRuntime", "toolCallRepair"],
+  npc: ["llmCore", "toolCallRepair"],
   mcp: ["pluginSdk", "terminalCore", "toolCallRepair"]
 } as const;
 

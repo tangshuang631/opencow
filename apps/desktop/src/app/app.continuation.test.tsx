@@ -87,7 +87,7 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+        const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
@@ -149,7 +149,7 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
@@ -204,7 +204,7 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const cancelPermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "取消" });
+    const cancelPermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^取消提权$/ });
     fireEvent.click(cancelPermissionButton);
 
     await waitFor(() => {
@@ -274,7 +274,7 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
@@ -329,7 +329,7 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     fireEvent.click(approvePermissionButton);
 
     await waitFor(() => {
@@ -385,14 +385,14 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(screen.getAllByText("等待高风险确认").length).toBeGreaterThan(0);
     });
     const dangerSection = getInlineNoticeSection(inspectorPanel, "等待高风险确认");
-    const approveDangerButton = await within(dangerSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approveDangerButton = await within(dangerSection as HTMLElement).findByRole("button", { name: /^批准高风险操作$/ });
     expect(screen.queryByText(/temp-output removed/i)).not.toBeInTheDocument();
 
     await user.click(approveDangerButton);
@@ -447,14 +447,14 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(screen.getAllByText("等待高风险确认").length).toBeGreaterThan(0);
     });
     const dangerSection = getInlineNoticeSection(inspectorPanel, "等待高风险确认");
-    const cancelDangerButton = await within(dangerSection as HTMLElement).findByRole("button", { name: "取消" });
+    const cancelDangerButton = await within(dangerSection as HTMLElement).findByRole("button", { name: /^取消高风险操作$/ });
     await user.click(cancelDangerButton);
 
     await waitFor(() => {
@@ -525,14 +525,14 @@ describe("App continuation flow", () => {
     const permissionSection = getInlineNoticeSection(inspectorPanel, "等待权限确认");
 
     expect(permissionSection).not.toBeNull();
-    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approvePermissionButton = await within(permissionSection as HTMLElement).findByRole("button", { name: /^批准提权$/ });
     await user.click(approvePermissionButton);
 
     await waitFor(() => {
       expect(screen.getAllByText("等待高风险确认").length).toBeGreaterThan(0);
     });
     const dangerSection = getInlineNoticeSection(inspectorPanel, "等待高风险确认");
-    const approveDangerButton = await within(dangerSection as HTMLElement).findByRole("button", { name: "批准" });
+    const approveDangerButton = await within(dangerSection as HTMLElement).findByRole("button", { name: /^批准高风险操作$/ });
     expect(screen.queryByText(/temp-output removed/i)).not.toBeInTheDocument();
 
     await user.click(approveDangerButton);

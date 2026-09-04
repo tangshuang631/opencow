@@ -4,12 +4,16 @@ import { resolveOpenClawRoot } from "./upstreamRoot.js";
 import type { OpenClawCapabilities, OpenClawCapability } from "./types.js";
 
 const capabilityPackages = {
-  llmCore: "llm-core",
-  llmRuntime: "llm-runtime",
-  modelCatalog: "model-catalog-core",
-  pluginSdk: "plugin-sdk",
-  terminalCore: "terminal-core",
-  toolCallRepair: "tool-call-repair"
+  llmCore: { directoryName: "llm-core" },
+  llmRuntime: {
+    directoryName: "llm-runtime",
+    missingCompatibility: "relocated-or-removed",
+    replacementPackageNames: ["@openclaw/llm-core"]
+  },
+  modelCatalog: { directoryName: "model-catalog-core" },
+  pluginSdk: { directoryName: "plugin-sdk" },
+  terminalCore: { directoryName: "terminal-core" },
+  toolCallRepair: { directoryName: "tool-call-repair" }
 } as const;
 
 export function inspectOpenClawCapabilities(openClawRoot?: string): OpenClawCapabilities {
@@ -25,22 +29,34 @@ export function inspectOpenClawCapabilities(openClawRoot?: string): OpenClawCapa
   };
 }
 
-function inspectPackage(openClawRoot: string, directoryName: string): OpenClawCapability {
-  const packagePath = resolve(openClawRoot, "packages", directoryName);
+function inspectPackage(
+  openClawRoot: string,
+  definition: {
+    readonly directoryName: string;
+    readonly missingCompatibility?: "relocated-or-removed";
+    readonly replacementPackageNames?: readonly string[];
+  }
+): OpenClawCapability {
+  const packagePath = resolve(openClawRoot, "packages", definition.directoryName);
   const packageJsonPath = resolve(packagePath, "package.json");
 
   if (!existsSync(packageJsonPath)) {
     return {
       available: false,
-      packageName: `@openclaw/${directoryName}`,
-      packagePath
+      packageName: `@openclaw/${definition.directoryName}`,
+      packagePath,
+      compatibility: definition.missingCompatibility ?? "native",
+      ...(definition.replacementPackageNames
+        ? { replacementPackageNames: definition.replacementPackageNames }
+        : {})
     };
   }
 
   return {
     available: true,
     packageName: readPackageName(packageJsonPath),
-    packagePath
+    packagePath,
+    compatibility: "native"
   };
 }
 

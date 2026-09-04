@@ -193,6 +193,7 @@ function revivePersistedState(state: WorkbenchState): WorkbenchState {
   return {
     ...state,
     conversation: {
+      id: state.conversation.id || state.conversation.restoredFromConversationId || `draft-conversation-${state.storage.sessionCount}`,
       entries: revivedConversationEntries,
       npcId: revivedConversationNpcId,
       mode: revivedConversationMode,

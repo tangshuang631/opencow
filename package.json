@@ -15,7 +15,11 @@
     "test": "npm --workspaces --if-present run test",
     "test:unit": "npm --workspaces --if-present run test:unit",
     "test:scripts": "node --test scripts/*.test.mjs",
+    "eval:wp0": "node scripts/wp0-eval.mjs",
+    "benchmark:ollama": "node scripts/ollama-baseline.mjs",
+    "benchmark:vector": "node scripts/vector-benchmark.mjs",
     "graphify": "node scripts/graphify-run.mjs",
+    "check:wp0-baseline": "node scripts/wp0-baseline.mjs",
     "verify:all": "powershell -ExecutionPolicy Bypass -File scripts/verify-all.ps1",
     "check:encoding": "node scripts/check-encoding.mjs",
     "check:health": "node scripts/check-health.mjs"

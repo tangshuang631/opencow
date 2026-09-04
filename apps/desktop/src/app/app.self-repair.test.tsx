@@ -163,7 +163,7 @@ describe("App self-repair mutation continuation", () => {
       ).length
     ).toBeGreaterThan(0);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: /^批准$/i });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/i });
     fireEvent.click(approvePermissionButton as HTMLButtonElement);
 
     await waitFor(() => {
@@ -217,7 +217,7 @@ describe("App self-repair mutation continuation", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: /^批准$/i });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/i });
 
     vi.useFakeTimers();
     try {
@@ -421,7 +421,7 @@ describe("App self-repair generic target guidance", () => {
       message: expect.stringContaining("本轮没有提权、没有写文件")
     }));
     expect(screen.queryByText(/Workspace write permission is required before opencow can repair/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^批准$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^批准提权$/i })).not.toBeInTheDocument();
   });
 });
 
@@ -515,7 +515,7 @@ describe("App self-repair permission cancellation", () => {
 
     expect(screen.getAllByText(/需要先授予工作区读写权限/i).length).toBeGreaterThan(0);
 
-    const cancelPermissionButton = await screen.findByRole("button", { name: /^取消$/i });
+    const cancelPermissionButton = await screen.findByRole("button", { name: /^取消提权$/i });
     fireEvent.click(cancelPermissionButton as HTMLButtonElement);
 
     await waitFor(() => {
@@ -529,7 +529,7 @@ describe("App self-repair permission cancellation", () => {
     });
     fireEvent.click(sendButton as HTMLButtonElement);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: /^批准$/i });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/i });
     fireEvent.click(approvePermissionButton as HTMLButtonElement);
 
     await waitFor(() => {
@@ -642,7 +642,7 @@ describe("App self-repair runtime registry continuation", () => {
       ).length
     ).toBeGreaterThan(0);
 
-    const approvePermissionButton = await screen.findByRole("button", { name: /^批准$/i });
+    const approvePermissionButton = await screen.findByRole("button", { name: /^批准提权$/i });
     fireEvent.click(approvePermissionButton as HTMLButtonElement);
 
     await waitFor(() => {
