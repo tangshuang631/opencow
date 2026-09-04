@@ -8,11 +8,11 @@
 >
 > 冻结承载分支：`dev`；`main` 仅在里程碑出口全部验证通过后合并
 >
-> 评审状态：`ARCHITECTURE REVIEW: APPROVED`；开发状态：`WP0 In Progress on dev`
+> 评审状态：`ARCHITECTURE REVIEW: APPROVED`；开发状态：`WP0 Complete on dev / WP1 Not Started`
 >
 > 本文是设计与验收规范，不是实现计划；所有实现必须按已批准工作包推进，不得绕过 WP0 出口。
 >
-> 当前实现标签：Legacy Baseline + WP0 Partial Implementation。本文描述 Target Architecture，不代表 WP1 及后续能力已经实现。
+> 当前实现标签：Legacy Baseline + WP0 Green Baseline。本文描述 Target Architecture，不代表 WP1 及后续能力已经实现。
 
 ## 1. 决策摘要
 
@@ -101,7 +101,7 @@ OpenCow 下一轮采用“双通道、抽芯式重构”，不继续扩张当前
 
 | 工作包 | 当前状态 | 说明 |
 | --- | --- | --- |
-| WP0 绿色基线 | 进行中 | 桌面 774/774、Web 49/49 已通过；Web build、encoding、适配器与脚本检查已通过；旧宿主执行 kill switch 已完成，仍待处理本机可选 macOS 产物过期 |
+| WP0 绿色基线 | 已完成 | 桌面 774/774、Web 49/49、全仓 build、encoding、适配器、脚本与 health check 均通过；旧宿主执行 kill switch 已完成；macOS 发布/安装产物已同步 |
 | WP1 CowCore/Ollama Native | 未开始 | 当前仍以 `/api/tags + /api/chat` 轻量接入为主 |
 | WP2 Capability/Grant | 未开始 | 新 Registry、canonical contract hash、comparator 与 Grant 模型尚未实现 |
 | WP3 Sandbox/Artifact/Apply | 未开始 | Certified Sandbox、Artifact Store 与安全 Host Apply 尚未实现 |
@@ -112,7 +112,7 @@ OpenCow 下一轮采用“双通道、抽芯式重构”，不继续扩张当前
 
 后续不得用“继续完善 CowCore”描述起点；正式开发从 WP0 开始，现有代码只是迁移源与 benchmark baseline。
 
-本次 WP0 检查点（2026-09-03）已在 `dev` 完成：OpenClaw `2026.8.2` adapter 兼容性映射、确定性 baseline 报告、P0/P1/P2 固定评测 runner、Ollama Native 同机基线 harness、Vector feasibility matrix、桌面异步持久化/搜索回归修复、旧宿主执行 fail-closed 闸门、全仓构建与桌面全量单测（66 文件、774 测试）、Web 全量单测（49 测试）均通过。`check:health` 仍因本机可选 macOS 发布/安装产物过期而阻断；这些产物未在本轮未经授权覆盖。因此 WP0 尚未宣告完成，也不得启动 WP1。
+本次 WP0 检查点（2026-09-04）已在 `dev` 完成并推送为提交 `3b55668`：OpenClaw `2026.8.2` adapter 兼容性映射、确定性 baseline 报告、P0/P1/P2 固定评测 runner、Ollama Native 同机基线 harness、Vector feasibility matrix、桌面异步持久化/搜索回归修复、旧宿主执行 fail-closed 闸门、全仓构建与桌面全量单测（66 文件、774 测试）、Web 全量单测（49 测试）、macOS 发布/安装产物同步及 `check:health` 均通过。Ollama 未运行时 `benchmark:ollama` 按设计输出 unavailable，不伪造硬件性能数据。WP1 仍未启动。
 
 ## 5. 设计原则
 

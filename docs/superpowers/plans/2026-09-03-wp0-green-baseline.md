@@ -156,9 +156,9 @@
 
 ### Current checkpoint
 
-- Task 1, Task 2, and Task 4 are complete on `dev` with no commit.
+- Task 1, Task 2, and Task 4 are complete on `dev`; the verified WP0 checkpoint is pushed as `3b55668`.
 - Desktop unit suite is green: 66 files, 774 tests passed; Web unit suite is green: 49 tests passed.
 - Workspace build, encoding check, adapter tests/build, script tests, and WP0 baseline report are green.
-- Task 3 implementation and focused verification are complete: the legacy host-execution kill switch is explicit and fail-closed; full `check:health` remains blocked only by stale optional macOS release/install artifacts.
+- Task 3 implementation and focused verification are complete: the legacy host-execution kill switch is explicit and fail-closed; macOS release/install artifacts were synchronized after explicit authorization and full `check:health` is green.
 - Tasks 5–7 are complete with 20 script tests passing; `eval:wp0`, Ollama Native request/metadata harness, and Vector feasibility matrix are runnable without enabling WP1 execution.
-- `npm run check:health` currently reports stale optional macOS release/install artifacts; this checkpoint does not overwrite them. Web historical fixture drift and the task/conversation identity regressions are resolved.
+- `npm run check:health` passes after the authorized macOS release/install synchronization. Web historical fixture drift and the task/conversation identity regressions are resolved.
