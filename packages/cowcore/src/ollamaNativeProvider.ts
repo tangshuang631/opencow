@@ -3,6 +3,7 @@ import { collectPerformanceProfile, type PerformanceSample } from "./metricsColl
 import type { PerformanceProfileStore } from "./performanceProfileStore.js";
 import { createModelProfile } from "./profile.js";
 import { createRuntimeProfile } from "./runtimeProfile.js";
+import { observeResidency as mapResidency } from "./residency.js";
 import type {
   OllamaChatRequest,
   OllamaChatResult,
@@ -16,7 +17,8 @@ import type {
   OllamaTagsResponse,
   OllamaToolCall,
   OllamaUsageMetrics,
-  ModelProfile
+  ModelProfile,
+  ResidencyObservation
 } from "./types.js";
 export type { OllamaPsResponse, OllamaShowResponse, OllamaTagsResponse } from "./types.js";
 
@@ -135,6 +137,24 @@ export class OllamaNativeProvider {
       warm: warm.metrics
     });
     return { cold, warm, profile: measuredProfile };
+  }
+
+  async observeResidency(input: {
+    model: string;
+    platform: "macos" | "windows" | "linux";
+    architecture: string;
+    signal?: AbortSignal;
+  }): Promise<ResidencyObservation> {
+    const model = input.model.trim();
+    if (!model) throw new Error("Ollama model id is required.");
+    const running = (await this.listRunning(input.signal)).find((item) => item.name === model || item.model === model);
+    return mapResidency({
+      platform: input.platform,
+      architecture: input.architecture,
+      modelSizeBytes: running?.size,
+      sizeVramBytes: running?.size_vram,
+      contextLength: running?.context_length
+    });
   }
 
   async probeModelCapabilities(model: string, requested: { tools?: boolean; structuredOutput?: boolean; thinking?: boolean }, signal?: AbortSignal): Promise<ModelProfile["capabilities"]> {

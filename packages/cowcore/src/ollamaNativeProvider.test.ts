@@ -255,6 +255,26 @@ describe("OllamaNativeProvider", () => {
     expect(result.warm.metrics.evalCount).toBe(5);
   });
 
+  it("maps Ollama /api/ps into Apple unified-memory residency observation", async () => {
+    const provider = new OllamaNativeProvider({
+      fetch: createProfileFetchMock({ models: [{ name: "qwen3.5:9b", size: 10_000, size_vram: 7_000, context_length: 32_768 }] }),
+      cloudPolicy: "disabled-confirmed"
+    });
+
+    const observation = await provider.observeResidency({ model: "qwen3.5:9b", platform: "macos", architecture: "arm64" });
+
+    expect(observation).toMatchObject({
+      source: "ollama-ps",
+      unifiedMemory: true,
+      modelSizeBytes: 10_000,
+      acceleratorResidentBytes: 7_000,
+      acceleratorResidentRatio: 0.7,
+      contextLength: 32_768,
+      processorPlacement: "unknown"
+    });
+    expect(observation.cpuExecutionShare).toBeUndefined();
+  });
+
   it("can probe an unknown tool capability with a virtual tool and never execute it", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(new URL(String(input)).pathname).toBe("/api/chat");
@@ -288,13 +308,13 @@ class TestStorage implements ProfileStorage {
   removeItem(key: string): void { this.values.delete(key); }
 }
 
-function createProfileFetchMock() {
+function createProfileFetchMock(running: { models?: unknown[] } = { models: [] }) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input)).pathname;
     if (path === "/api/version") return jsonResponse(version);
     if (path === "/api/tags") return jsonResponse(tags);
     if (path === "/api/show") return jsonResponse(show);
-    if (path === "/api/ps") return jsonResponse({ models: [] });
+    if (path === "/api/ps") return jsonResponse(running);
     throw new Error(`unexpected path ${path}`);
   });
 }
