@@ -16,6 +16,7 @@ import {
 import { resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
 import { Workbench } from "../features/workbench/Workbench";
 import { pickChatAttachments } from "../features/workbench/chatAttachments";
+import { createStreamingChunkBatcher } from "./streamingChunkBatcher";
 import { getShellDialogRecoveryNarrative } from "../features/workbench/shellCapability";
 import {
   clearKnowledgeImports,
@@ -3040,6 +3041,22 @@ export function App() {
     let executionTimeoutId: number | null = null;
     let progressIntervalId: number | null = null;
     let assistantTaskAbortController: AbortController | null = null;
+    const streamingChunkBatcher = createStreamingChunkBatcher({
+      flush: (chunk) => {
+        startTransition(() => {
+          setState((current) => {
+            if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
+              return current;
+            }
+
+            return createTaskExecutionStreamingChunkState(current, {
+              taskId: executingTaskId,
+              chunk
+            });
+          });
+        });
+      }
+    });
     const clearExecutionTimeout = () => {
       if (executionTimeoutId !== null) {
         window.clearTimeout(executionTimeoutId);
@@ -3163,19 +3180,7 @@ export function App() {
                   hasReceivedFirstChunk = true;
                   firstChunkAfterMs = Date.now() - progressStartedAt;
                 }
-
-                startTransition(() => {
-                  setState((current) => {
-                    if (!isCurrentTaskAttempt(current, executingTaskId, executingAttemptCount)) {
-                      return current;
-                    }
-
-                    return createTaskExecutionStreamingChunkState(current, {
-                      taskId: executingTaskId,
-                      chunk
-                    });
-                  });
-                });
+                streamingChunkBatcher.push(chunk);
               }
             };
 
@@ -3197,6 +3202,7 @@ export function App() {
           .then((result) => {
             clearExecutionTimeout();
             clearProgressInterval();
+            streamingChunkBatcher.flush();
             if (activeLocalModelAbortControllerRef.current === localModelAbortController) {
               activeLocalModelAbortControllerRef.current = null;
             }
@@ -3217,6 +3223,7 @@ export function App() {
           .catch((error: unknown) => {
             clearExecutionTimeout();
             clearProgressInterval();
+            streamingChunkBatcher.flush();
             if (activeLocalModelAbortControllerRef.current === localModelAbortController) {
               activeLocalModelAbortControllerRef.current = null;
             }
@@ -3384,6 +3391,7 @@ export function App() {
       window.clearTimeout(finishTimer);
       clearExecutionTimeout();
       clearProgressInterval();
+      streamingChunkBatcher.cancel();
       assistantTaskAbortController?.abort();
     };
   }, [activeTaskExecutionDependency]);

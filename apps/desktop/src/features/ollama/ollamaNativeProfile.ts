@@ -3,6 +3,7 @@ import {
   createModelGateway,
   evaluateFastLaneGate,
   observeLocalOnlyPolicy,
+  type PerformanceProfileStore,
   type LocalityEnforcementState,
   type CowCoreFeatureFlags,
   type FastLaneGateDecision,
@@ -23,6 +24,7 @@ export async function loadOllamaNativeProfile(input: {
   cloudPolicy?: "disabled-confirmed" | "egress-blocked-confirmed" | "unverified";
   lifecycle?: Parameters<typeof observeLocalOnlyPolicy>[0];
   featureFlags?: Readonly<CowCoreFeatureFlags>;
+  profileStore?: PerformanceProfileStore;
   fetch?: typeof fetch;
   runtime: {
     operatingSystem: "macos" | "windows" | "linux";
@@ -35,7 +37,7 @@ export async function loadOllamaNativeProfile(input: {
   const cloudPolicy = input.lifecycle
     ? observeLocalOnlyPolicy(input.lifecycle).cloudPolicy
     : input.cloudPolicy ?? "unverified";
-  const gateway = createModelGateway({ endpoint: input.endpoint, cloudPolicy, fetch: input.fetch });
+  const gateway = createModelGateway({ endpoint: input.endpoint, cloudPolicy, fetch: input.fetch, profileStore: input.profileStore });
   const model = await gateway.ollama.profileModel(input.model);
   const runtime = await gateway.createRuntimeProfile(input.runtime);
   const locality = gateway.ollama.getLocalityState(input.model);

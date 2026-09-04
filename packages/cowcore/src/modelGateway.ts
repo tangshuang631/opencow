@@ -1,4 +1,5 @@
 import { OllamaNativeProvider } from "./ollamaNativeProvider.js";
+import { createPerformanceProfileStore } from "./performanceProfileStore.js";
 
 export type ModelGateway = {
   provider: "ollama-native";
@@ -9,7 +10,10 @@ export type ModelGateway = {
 };
 
 export function createModelGateway(options: ConstructorParameters<typeof OllamaNativeProvider>[0] = {}): ModelGateway {
-  const ollama = new OllamaNativeProvider(options);
+  const ollama = new OllamaNativeProvider({
+    ...options,
+    profileStore: options.profileStore ?? createPerformanceProfileStore()
+  });
   return {
     provider: "ollama-native",
     native: true,

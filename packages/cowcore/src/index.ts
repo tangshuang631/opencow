@@ -12,6 +12,7 @@ export { runTypedToolLoop } from "./typedToolLoop.js";
 export { runFastLane } from "./fastLane.js";
 export { DEFAULT_COWCORE_FEATURE_FLAGS, evaluateFastLaneGate } from "./runtimeGate.js";
 export { collectPerformanceProfile } from "./metricsCollector.js";
+export { createPerformanceProfileStore } from "./performanceProfileStore.js";
 export { observeLocalOnlyPolicy } from "./localOnlyPolicy.js";
 export type * from "./types.js";
 export type { ContextBudgetDecision } from "./contextBudgeter.js";
@@ -19,4 +20,5 @@ export type { ToolLoopResult, ToolLoopTool, ToolLoopTurn } from "./typedToolLoop
 export type { FastLaneObservation, FastLaneResult } from "./fastLane.js";
 export type { CowCoreFeatureFlags, FastLaneGateDecision } from "./runtimeGate.js";
 export type { PerformanceSample } from "./metricsCollector.js";
+export type { PerformanceProfileStore, ProfileStorage } from "./performanceProfileStore.js";
 export type { EgressPolicyObservation, LocalOnlyPolicyObservation, OllamaLifecycleMode } from "./localOnlyPolicy.js";

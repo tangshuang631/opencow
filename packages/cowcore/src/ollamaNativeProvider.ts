@@ -1,4 +1,6 @@
 import { createLocalityEnforcement, normalizeLoopbackEndpoint, assertLocalityEnforced } from "./locality.js";
+import { collectPerformanceProfile, type PerformanceSample } from "./metricsCollector.js";
+import type { PerformanceProfileStore } from "./performanceProfileStore.js";
 import { createModelProfile } from "./profile.js";
 import { createRuntimeProfile } from "./runtimeProfile.js";
 import type {
@@ -24,6 +26,7 @@ export class OllamaNativeProvider {
   readonly endpoint: string;
   private readonly fetcher: FetchLike;
   private readonly cloudPolicy: "disabled-confirmed" | "egress-blocked-confirmed" | "unverified";
+  private readonly performanceProfileStore?: PerformanceProfileStore;
   private readonly verifiedDigests = new Map<string, string>();
   private readonly profileCache = new Map<string, { ollamaVersion: string; digest: string; profile: ModelProfile }>();
   private lastVersion = "";
@@ -33,10 +36,12 @@ export class OllamaNativeProvider {
     fetch?: FetchLike;
     cloudPolicy?: "disabled-confirmed" | "egress-blocked-confirmed" | "unverified";
     verifiedModels?: Record<string, string>;
+    profileStore?: PerformanceProfileStore;
   } = {}) {
     this.endpoint = normalizeLoopbackEndpoint(options.endpoint ?? "http://127.0.0.1:11434");
     this.fetcher = options.fetch ?? fetch;
     this.cloudPolicy = options.cloudPolicy ?? "unverified";
+    this.performanceProfileStore = options.profileStore;
     for (const [model, digest] of Object.entries(options.verifiedModels ?? {})) {
       if (model.trim() && digest.trim()) this.verifiedDigests.set(model.trim(), digest.trim());
     }
@@ -80,7 +85,21 @@ export class OllamaNativeProvider {
     }
     const running = (await this.listRunning(signal)).find((item) => item.name === model || item.model === model);
     const profile = createModelProfile({ modelId: model, modelDigest: tag.digest, ollamaVersion, tag, show, running });
+    profile.performanceProfiles = this.performanceProfileStore?.read({ modelDigest: tag.digest, ollamaVersion }) ?? [];
     this.profileCache.set(model, { ollamaVersion, digest: tag.digest, profile });
+    return profile;
+  }
+
+  recordPerformanceProfile(modelId: string, sample: PerformanceSample): ModelProfile {
+    const model = modelId.trim();
+    const cached = this.profileCache.get(model);
+    if (!cached) throw new Error(`Ollama model profile is not loaded: ${model}`);
+    const performanceProfile = collectPerformanceProfile(sample);
+    const performanceProfiles = this.performanceProfileStore
+      ?.append({ modelDigest: cached.digest, ollamaVersion: cached.ollamaVersion, profile: performanceProfile })
+      ?? [...cached.profile.performanceProfiles, performanceProfile].slice(-24);
+    const profile = { ...cached.profile, performanceProfiles };
+    this.profileCache.set(model, { ...cached, profile });
     return profile;
   }
 

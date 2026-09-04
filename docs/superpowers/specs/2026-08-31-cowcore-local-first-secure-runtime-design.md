@@ -114,7 +114,7 @@ OpenCow 下一轮采用“双通道、抽芯式重构”，不继续扩张当前
 
 本次 WP0 检查点（2026-09-04）已在 `dev` 完成并推送为提交 `3b55668`：OpenClaw `2026.8.2` adapter 兼容性映射、确定性 baseline 报告、P0/P1/P2 固定评测 runner、Ollama Native 同机基线 harness、Vector feasibility matrix、桌面异步持久化/搜索回归修复、旧宿主执行 fail-closed 闸门、全仓构建与桌面全量单测（66 文件、774 测试）、Web 全量单测（49 测试）、macOS 发布/安装产物同步及 `check:health` 均通过。Ollama 未运行时 `benchmark:ollama` 按设计输出 unavailable，不伪造硬件性能数据。
 
-当前 `dev` 工作阶段（2026-09-04）已加入但尚未作为 WP1 出口冻结的核心切片：`@opencow/cowcore` 的 Ollama Native API/Profile/Locality/Residency/Context/Prefix/keep-alive、确定性 TaskClass、零效果 typed-tool loop、Fast Lane，以及桌面 native profile smoke wrapper；新增前端只包含交互稳定性与克制动效基础，不替换旧 Ollama 业务链路，也没有新增宿主执行能力。WP1A/WP1B 出口仍需完成本地运行时生命周期接线、Profile/Probe/metrics 持久化、cache continuation 真实性能验证和 flag/回滚验证后才能标记完成。
+当前 `dev` 工作阶段（2026-09-04）已加入但尚未作为 WP1 出口冻结的核心切片：`@opencow/cowcore` 的 Ollama Native API/Profile/Locality/Residency/Context/Prefix/keep-alive、确定性 TaskClass、零效果 typed-tool loop、Fast Lane、版本化 PerformanceProfileStore，以及桌面 native profile smoke wrapper；桌面交互已增加流式 chunk 的帧级合并与完成/取消 flush，但没有做新的视觉换肤。新增能力仍不替换旧 Ollama 业务链路，也没有新增宿主执行能力。WP1A/WP1B 出口仍需完成生产本地运行时生命周期接线、实际 Profile/Probe/metrics 采集、8K cache continuation 真实性能验证和 flag/回滚验证后才能标记完成。
 
 ## 5. 设计原则
 

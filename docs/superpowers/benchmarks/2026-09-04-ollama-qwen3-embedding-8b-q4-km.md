@@ -24,7 +24,7 @@
 
 - `/api/show` and `/api/tags` agree on the model digest above.
 - `/api/embed` accepted a two-item batch and returned two vectors of dimension 4,096.
-- The latest `OPENCOW_OLLAMA_EMBED_MODEL=qwen3-embedding:8b-q4_K_M npm run benchmark:ollama` run on Ollama `0.33.3` completed through the native `/api/embed` path with a 4,096-dimensional result and measured one-item latency of about `3,022.8ms`; this sample is machine-state dependent and is not a warm-latency claim.
+- The latest `OPENCOW_OLLAMA_EMBED_MODEL=qwen3-embedding:8b-q4_K_M npm run benchmark:ollama` run on Ollama `0.33.3` completed through the native `/api/embed` path with a 4,096-dimensional result and measured one-item latency of about `3,087.7ms`; this sample is machine-state dependent and is not a warm-latency claim.
 - The earlier `0.33.2` warm probe (`total_duration=173,693,500ns`, `load_duration=4,243,542ns`) remains historical and is not compared directly with the new sample.
 - `/api/ps` observed the active model at a 32,768 runtime context and `size_vram=10,946,514,779` bytes. This is residency observation, not a locality attestation and not a claim that the full model is permanently GPU-resident.
 

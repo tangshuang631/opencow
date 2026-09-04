@@ -168,6 +168,7 @@
 - The desktop conversation now follows the newest message on the compositor frame only while the reader is near the bottom; a reader who scrolls upward is not pulled back during streaming. Reduced-motion behavior remains guarded.
 - UI smoke coverage includes the motion scope, reduced-motion guard, Codex-inspired sidebar/inspector styling, and a real Playwright web chat round-trip against local Ollama. No host execution, MCP start, project run, or shell capability is connected to the new loop.
 - WP1C now has an additive implementation slice behind `crossSessionMemory`: versioned SQLite/FTS5 storage, bounded audit metadata, explicit top-level-user save/edit/revoke/list/export/clear commands, user/workspace and expiry filtering, untrusted-context formatting, and a settings-panel opt-in. Local chat reads memory only when the persisted opt-in is enabled; the dynamic suffix is capped at five items and a conservative 2,000-character budget. This is implementation evidence, not the WP1C exit: the formal 10-case memory evaluation, desktop-native E2E, and release evidence remain open.
+- Profile/metrics persistence now has a bounded, digest/version-keyed `PerformanceProfileStore` (24 samples, schema-versioned, no prompt/evidence text) and Ollama Native Provider restores and records validated samples. Streaming UI updates now coalesce chunks on the compositor frame and flush on completion/cancellation; this is an interaction-smoothness improvement, not a visual redesign.
 
 ## Full implementation roadmap: WP1–WP7
 
@@ -341,4 +342,4 @@ Each WP exit must attach, in its milestone commit or release artifact:
 4. feature-flag state and rollback command;
 5. known ceilings (never hidden by timeout increases) and the next permitted work package.
 
-The current pass implements additive WP1 core, gate, interaction-smoothness, and WP1C memory slices only; it does not claim the WP1A/WP1B/WP1C exits or enable new host effects. Remaining WP1 exit work is native runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, cache continuation benchmarking, metrics persistence, and the WP1C formal 10-case/native-desktop/migration evidence. WP2–WP7 remain gated by the dependency order above.
+The current pass implements additive WP1 core, gate, interaction-smoothness, profile persistence, and WP1C memory slices only; it does not claim the WP1A/WP1B/WP1C exits or enable new host effects. Remaining WP1 exit work is production native-runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, actual runtime sample capture, the required 8K-token cache continuation benchmark, and WP1C formal 10-case/native-desktop/migration evidence. WP2–WP7 remain gated by the dependency order above.

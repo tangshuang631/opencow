@@ -4,6 +4,7 @@ import {
   type OllamaShowResponse,
   type OllamaTagsResponse
 } from "./ollamaNativeProvider.js";
+import { createPerformanceProfileStore, type ProfileStorage } from "./performanceProfileStore.js";
 
 const version = { version: "0.33.2" };
 const tags: OllamaTagsResponse = {
@@ -209,6 +210,28 @@ describe("OllamaNativeProvider", () => {
     expect(calls).toEqual(["/api/version", "/api/tags", "/api/show", "/api/ps", "/api/version", "/api/tags"]);
   });
 
+  it("records validated performance samples and restores them by model digest/version", async () => {
+    const storage = new TestStorage();
+    const profileStore = createPerformanceProfileStore(storage, "profile:");
+    const provider = new OllamaNativeProvider({ fetch: createProfileFetchMock(), cloudPolicy: "disabled-confirmed", profileStore });
+    await provider.profileModel("qwen3.5:9b");
+
+    const updated = provider.recordPerformanceProfile("qwen3.5:9b", {
+      scenario: "direct-chat",
+      contextLength: 8192,
+      thinkSetting: "off",
+      keepAlive: "10m",
+      cold: { ttftMs: 900, totalDurationMs: 1_200, loadDurationMs: 40, promptTokensPerSecond: 80, decodeTokensPerSecond: 20 },
+      warm: { ttftMs: 120, totalDurationMs: 120, loadDurationMs: 10, promptTokensPerSecond: 100, decodeTokensPerSecond: 25 },
+      measuredAt: "2026-09-04T00:00:00.000Z"
+    });
+
+    expect(updated.performanceProfiles).toHaveLength(1);
+    const restored = new OllamaNativeProvider({ fetch: createProfileFetchMock(), cloudPolicy: "disabled-confirmed", profileStore });
+    const restoredProfile = await restored.profileModel("qwen3.5:9b");
+    expect(restoredProfile.performanceProfiles).toEqual(updated.performanceProfiles);
+  });
+
   it("can probe an unknown tool capability with a virtual tool and never execute it", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(new URL(String(input)).pathname).toBe("/api/chat");
@@ -233,3 +256,22 @@ describe("OllamaNativeProvider", () => {
     expect(result.tools.evidence).toMatch(/virtual/i);
   });
 });
+
+class TestStorage implements ProfileStorage {
+  private readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null { return this.values.get(key) ?? null; }
+  setItem(key: string, value: string): void { this.values.set(key, value); }
+  removeItem(key: string): void { this.values.delete(key); }
+}
+
+function createProfileFetchMock() {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/version") return jsonResponse(version);
+    if (path === "/api/tags") return jsonResponse(tags);
+    if (path === "/api/show") return jsonResponse(show);
+    if (path === "/api/ps") return jsonResponse({ models: [] });
+    throw new Error(`unexpected path ${path}`);
+  });
+}
