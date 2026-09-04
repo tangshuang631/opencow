@@ -10,7 +10,7 @@
 | --- | --- |
 | Host | macOS Apple Silicon (`arm64`) |
 | Unified memory | 24 GiB |
-| Ollama | `0.33.2` |
+| Ollama | `0.33.3` (latest local runtime observed on 2026-09-04) |
 | Endpoint | `http://127.0.0.1:11434` (loopback) |
 | Model | `qwen3-embedding:8b-q4_K_M` |
 | Model digest | `64b933495768fbd3b87c20583d379728a07471e0c66733a9df87cd1901b3c44b` |
@@ -24,8 +24,8 @@
 
 - `/api/show` and `/api/tags` agree on the model digest above.
 - `/api/embed` accepted a two-item batch and returned two vectors of dimension 4,096.
-- A warm one-item `/api/embed` probe measured `total_duration=173,693,500ns` and `load_duration=4,243,542ns`.
-- `OPENCOW_OLLAMA_EMBED_MODEL=qwen3-embedding:8b-q4_K_M npm run benchmark:ollama` completed through the native `/api/embed` path; the report records `embedding.status=measured` and the same digest.
+- The latest `OPENCOW_OLLAMA_EMBED_MODEL=qwen3-embedding:8b-q4_K_M npm run benchmark:ollama` run on Ollama `0.33.3` completed through the native `/api/embed` path with a 4,096-dimensional result and measured one-item latency of about `2,994.7ms`; this sample is machine-state dependent and is not a warm-latency claim.
+- The earlier `0.33.2` warm probe (`total_duration=173,693,500ns`, `load_duration=4,243,542ns`) remains historical and is not compared directly with the new sample.
 - `/api/ps` observed the active model at a 32,768 runtime context and `size_vram=10,946,514,779` bytes. This is residency observation, not a locality attestation and not a claim that the full model is permanently GPU-resident.
 
 ## Selection decision

@@ -31,6 +31,35 @@ describe("loadOllamaNativeProfile", () => {
     expect(result.model.modelDigest).toBe("sha256:chat");
     expect(result.runtime.hardwareClass).toBe("apple-silicon");
     expect(result.locality.state).toBe("enforced");
+    expect(result.fastLane).toMatchObject({ allowed: false });
+    expect(result.fastLane.reasons).toContain("cowcoreFastLane flag is disabled");
+  });
+
+  it("reports a ready gate only when all native local-only flags are explicitly enabled", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/api/version") return json({ version: "0.33.2" });
+      if (path === "/api/tags") return json({ models: [{ name: "chat:latest", digest: "sha256:chat", size: 100, details: { family: "qwen3", capabilities: ["completion"] } }] });
+      if (path === "/api/show") return json({ digest: "sha256:chat", capabilities: ["completion"], details: { family: "qwen3" }, model_info: { "qwen3.context_length": 32768 } });
+      if (path === "/api/ps") return json({ models: [] });
+      throw new Error(`unexpected path ${path}`);
+    });
+
+    const result = await loadOllamaNativeProfile({
+      model: "chat:latest",
+      cloudPolicy: "disabled-confirmed",
+      featureFlags: { cowcoreFastLane: true, ollamaNativeProfile: true, ollamaLocalOnly: true },
+      fetch: fetchMock,
+      runtime: {
+        operatingSystem: "macos",
+        hardwareArch: "arm64",
+        physicalMemoryBytes: 24 * 1024 ** 3,
+        availableMemoryBytes: 18 * 1024 ** 3,
+        memoryPressure: "low"
+      }
+    });
+
+    expect(result.fastLane).toEqual({ allowed: true, reasons: [] });
   });
 });
 

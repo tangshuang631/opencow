@@ -2,10 +2,25 @@ import { describe, expect, it } from "vitest";
 import { runFastLane } from "./fastLane.js";
 
 describe("runFastLane", () => {
+  const allowedGate = { allowed: true, reasons: [] } as const;
+
+  it("fails closed when a verified runtime gate is not supplied", async () => {
+    const invokeDirect = async () => "不应调用";
+    const result = await runFastLane({
+      route: { message: "解释一下 MCP" },
+      prefixDigest: "prefix-missing-gate",
+      invokeDirect
+    } as Parameters<typeof runFastLane>[0]);
+
+    expect(result).toMatchObject({ status: "blocked", taskClass: "direct-chat" });
+    expect(result.reason).toContain("fast lane gate is unavailable");
+  });
+
   it("keeps ordinary chat on one local call and emits metadata-only observation", async () => {
     const result = await runFastLane({
       route: { message: "解释一下 MCP" },
       prefixDigest: "prefix-1",
+      gate: allowedGate,
       invokeDirect: async () => "本地回答"
     });
 
@@ -17,6 +32,7 @@ describe("runFastLane", () => {
     const typed = await runFastLane({
       route: { message: "读取状态", explicitCapabilityId: "diagnostic.read" },
       prefixDigest: "prefix-2",
+      gate: allowedGate,
       invokeModel: async ({ turn }) => turn === 1
         ? { kind: "tool-call", calls: [{ id: "call-1", name: "diagnostic.read", arguments: { path: "." } }] }
         : { kind: "final", content: "已读取" },
@@ -25,7 +41,7 @@ describe("runFastLane", () => {
     expect(typed).toMatchObject({ status: "completed", taskClass: "typed-tool-task", content: "已读取" });
     expect(typed.observation.toolCallCount).toBe(1);
 
-    const advanced = await runFastLane({ route: { message: "规划多步任务", advancedMode: true }, prefixDigest: "prefix-3", invokeDirect: async () => "不应调用" });
+    const advanced = await runFastLane({ route: { message: "规划多步任务", advancedMode: true }, prefixDigest: "prefix-3", gate: allowedGate, invokeDirect: async () => "不应调用" });
     expect(advanced).toMatchObject({ status: "escalate", taskClass: "advanced-agent-task" });
   });
 });

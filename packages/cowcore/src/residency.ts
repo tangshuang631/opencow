@@ -9,7 +9,7 @@ export function observeResidency(input: {
   contextLength?: number;
   observedAt?: string;
 }): ResidencyObservation {
-  const unifiedMemory = input.platform === "macos" && /^arm64|aarch64$/i.test(input.architecture);
+  const unifiedMemory = input.platform === "macos" && /^(?:arm64|aarch64)$/i.test(input.architecture.trim());
   const modelSize = finitePositive(input.sizeBytes ?? input.modelSizeBytes);
   const resident = finitePositive(input.sizeVramBytes);
   const ratio = modelSize && resident ? Math.min(1, resident / modelSize) : undefined;

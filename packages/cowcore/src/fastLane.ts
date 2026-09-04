@@ -1,5 +1,6 @@
 import { routeTask } from "./taskRouter.js";
 import { runTypedToolLoop, type ToolLoopTool, type ToolLoopTurn } from "./typedToolLoop.js";
+import type { FastLaneGateDecision } from "./runtimeGate.js";
 
 export type FastLaneObservation = {
   taskClass: ReturnType<typeof routeTask>;
@@ -20,12 +21,23 @@ export type FastLaneResult = {
 export async function runFastLane(input: {
   route: Parameters<typeof routeTask>[0];
   prefixDigest: string;
+  gate: FastLaneGateDecision;
   invokeDirect?: () => Promise<string>;
   invokeModel?: (context: { turn: number; toolResults: Array<{ id: string; name: string; result: unknown }>; signal?: AbortSignal }) => Promise<ToolLoopTurn>;
   tools?: ToolLoopTool[];
   signal?: AbortSignal;
 }): Promise<FastLaneResult> {
   const taskClass = routeTask(input.route);
+  if (!input.gate?.allowed) {
+    return finish({
+      status: "blocked",
+      taskClass,
+      prefixDigest: input.prefixDigest,
+      toolCallCount: 0,
+      turnCount: 0,
+      reason: input.gate?.reasons.join("; ") || "fast lane gate is unavailable"
+    });
+  }
   if (taskClass === "advanced-agent-task") return finish({ status: "escalate", taskClass, prefixDigest: input.prefixDigest, toolCallCount: 0, turnCount: 0, reason: "advanced task requires explicit sidecar route" });
   if (taskClass !== "typed-tool-task") {
     if (!input.invokeDirect) return finish({ status: "blocked", taskClass, prefixDigest: input.prefixDigest, toolCallCount: 0, turnCount: 0, reason: "direct local invocation is unavailable" });

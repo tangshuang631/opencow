@@ -1,6 +1,10 @@
 import {
+  DEFAULT_COWCORE_FEATURE_FLAGS,
   createModelGateway,
+  evaluateFastLaneGate,
   type LocalityEnforcementState,
+  type CowCoreFeatureFlags,
+  type FastLaneGateDecision,
   type ModelProfile,
   type OllamaRuntimeProfile
 } from "@opencow/cowcore";
@@ -9,12 +13,14 @@ export type OllamaNativeProfileSnapshot = {
   runtime: OllamaRuntimeProfile;
   model: ModelProfile;
   locality: LocalityEnforcementState;
+  fastLane: FastLaneGateDecision;
 };
 
 export async function loadOllamaNativeProfile(input: {
   model: string;
   endpoint?: string;
   cloudPolicy: "disabled-confirmed" | "egress-blocked-confirmed" | "unverified";
+  featureFlags?: Readonly<CowCoreFeatureFlags>;
   fetch?: typeof fetch;
   runtime: {
     operatingSystem: "macos" | "windows" | "linux";
@@ -27,9 +33,16 @@ export async function loadOllamaNativeProfile(input: {
   const gateway = createModelGateway({ endpoint: input.endpoint, cloudPolicy: input.cloudPolicy, fetch: input.fetch });
   const model = await gateway.ollama.profileModel(input.model);
   const runtime = await gateway.createRuntimeProfile(input.runtime);
+  const locality = gateway.ollama.getLocalityState(input.model);
   return {
     runtime,
     model,
-    locality: gateway.ollama.getLocalityState(input.model)
+    locality,
+    fastLane: evaluateFastLaneGate({
+      flags: input.featureFlags ?? DEFAULT_COWCORE_FEATURE_FLAGS,
+      runtime,
+      model,
+      locality
+    })
   };
 }

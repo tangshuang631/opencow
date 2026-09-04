@@ -17,4 +17,15 @@ describe("observeResidency", () => {
     expect(observation.processorPlacement).toBe("unknown");
     expect(observation.cpuExecutionShare).toBeUndefined();
   });
+
+  it("does not classify a non-canonical architecture suffix as Apple Silicon", () => {
+    const observation = observeResidency({
+      platform: "macos",
+      architecture: "vendor-aarch64",
+      modelSizeBytes: 10,
+      sizeVramBytes: 7
+    });
+
+    expect(observation.unifiedMemory).toBe(false);
+  });
 });

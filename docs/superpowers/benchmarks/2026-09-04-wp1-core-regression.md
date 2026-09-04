@@ -9,8 +9,8 @@
 | Field | Value |
 | --- | --- |
 | Branch | `dev` |
-| Ollama | `0.33.2` |
-| Chat model | `qwen3.5:9b` |
+| Ollama | `0.33.3` (local runtime observed on 2026-09-04) |
+| Chat model | `gemma4:12b-mlx` (selected by current local tags) |
 | Embedding model | `qwen3-embedding:8b-q4_K_M` |
 | Host | macOS Apple Silicon, arm64, 24 GiB unified memory |
 | Local endpoint | `http://127.0.0.1:11434` |
@@ -18,7 +18,7 @@
 
 ## Verified implementation surface
 
-- `@opencow/cowcore`: native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, streaming `/api/chat`, `/api/embed`, locality enforcement, residency observation, adaptive context budget, stable prefix serializer, keep-alive policy, TaskClass router, zero-effect typed-tool loop, and Fast Lane orchestration.
+- `@opencow/cowcore`: native `/api/version`, `/api/tags`, `/api/show`, `/api/ps`, streaming `/api/chat`, `/api/embed`, locality enforcement, residency observation, adaptive context budget, stable prefix serializer, keep-alive policy, TaskClass router, zero-effect typed-tool loop, fail-closed runtime gate, performance-profile collector, and Fast Lane orchestration.
 - `apps/desktop/src/features/ollama/ollamaNativeProfile.ts`: additive runtime/model/locality profile wrapper; legacy service remains the compatibility seam.
 - UI: deterministic conversation motion scope, reduced-motion guard, stable streaming conversation rendering, and Codex-inspired sidebar/inspector styling. No host execution capability is connected.
 
@@ -50,6 +50,7 @@ Screenshots were kept as local QA artifacts under `output/playwright/`; they are
 ## Known ceilings and next gate
 
 - CowCore is additive; ordinary production chat is not yet switched to `cowcoreFastLane` because managed/external Ollama local-only lifecycle and cloud policy verification are not wired.
-- `performanceProfiles` and metrics persistence, cache continuation benchmark, and WP1C SQLite memory MVP remain open.
+- The gate is now enforced inside `runFastLane`; default flags remain off. `performanceProfiles` persistence, cache continuation benchmark, and WP1C SQLite memory MVP remain open.
+- The current local baseline moved to Ollama `0.33.3` and `gemma4:12b-mlx`; this is evidence only, not a hard-coded compatibility requirement. The `qwen3-embedding:8b-q4_K_M` candidate remains the separate embedding baseline.
 - Model-specific MLX/MTP/DFlash behavior remains Ollama-owned; CowCore observes metadata and measured performance only.
 - No WP2 registry/grant or WP3 sandbox/Host Apply work is enabled. The next permitted slice is WP1 runtime lifecycle/flag wiring, not host execution.
