@@ -18,3 +18,5 @@ vendor/openclaw/
 graphify/
 .superpowers/
 .opencow/
+.playwright-cli/
+output/playwright/

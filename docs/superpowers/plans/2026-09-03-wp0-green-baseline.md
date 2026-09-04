@@ -1,10 +1,10 @@
 # WP0 Green Baseline Implementation Plan
 
-> **For agentic workers:** Execute this plan task-by-task with test-first changes. Keep all work on `dev`; do not commit until the user explicitly authorizes a milestone commit.
+> **For agentic workers:** Execute this plan task-by-task with test-first changes. Keep all work on `dev`; commit and push each verified medium/large milestone. Keep `main` untouched until WP7 release approval.
 
-**Goal:** Establish the first WP0 compatibility slice for the vendored OpenClaw 2026.8.2 source, then continue toward a reproducible green baseline without enabling legacy host execution.
+**Goal:** Establish the first WP0 compatibility slice for the vendored OpenClaw 2026.8.2 source, then deliver the CowCore/Ollama Fast Lane in gated slices without enabling legacy host execution.
 
-**Architecture:** Treat the vendored OpenClaw tree as an inspected, versioned boundary. Capability readiness is derived from discovered package metadata and explicit compatibility aliases, never from model/package name guessing. WP0 adds measurement and safety gates only; real CowCore runtime and host tools remain disabled until their later work-package exits.
+**Architecture:** Treat the vendored OpenClaw tree as an inspected, versioned boundary. Capability readiness is derived from discovered package metadata and explicit compatibility aliases, never from model/package name guessing. WP0 adds measurement and safety gates; WP1 adds an additive native Ollama/CowCore path while the legacy transport remains a compatibility seam until native parity is verified.
 
 **Tech Stack:** TypeScript, Node.js 24, Vitest, npm workspaces, vendored OpenClaw source archive.
 
@@ -162,6 +162,8 @@
 - Task 3 implementation and focused verification are complete: the legacy host-execution kill switch is explicit and fail-closed; macOS release/install artifacts were synchronized after explicit authorization and full `check:health` is green.
 - Tasks 5–7 are complete with 20 script tests passing; `eval:wp0`, Ollama Native request/metadata harness, and Vector feasibility matrix are runnable without enabling WP1 execution.
 - `npm run check:health` passes after the authorized macOS release/install synchronization. Web historical fixture drift and the task/conversation identity regressions are resolved.
+- The first WP1 implementation slice is now present on `dev` (pending this milestone's final commit): `@opencow/cowcore` exposes the native Ollama provider, runtime/model profiles, locality enforcement, residency observation, adaptive context budget, stable prefix serialization, keep-alive policy, deterministic task routing, bounded zero-effect typed-tool loop, and Fast Lane orchestration. The desktop wrapper provides a native profile smoke path without replacing the legacy transport.
+- UI smoke coverage includes the motion scope, reduced-motion guard, Codex-inspired sidebar/inspector styling, and a real Playwright web chat round-trip against local Ollama. No host execution, MCP start, project run, or shell capability is connected to the new loop.
 
 ## Full implementation roadmap: WP1–WP7
 
@@ -173,7 +175,7 @@ This section is the execution companion to the single frozen architecture Spec. 
 - A package task must pass its focused unit test before its neighboring integration test. Full `npm run test:unit`, `npm run build`, `npm run check:encoding`, `npm run check:health`, and the relevant Rust tests run at every WP exit.
 - No task may enable `workspace.project.run`, `sandbox.shell.execute`, `mcp.server.start`, or any legacy host process path before WP3D security exit. WP1 tool loops use pure fixtures only.
 - Every persistent format has a schema version, deterministic serialization, migration, rollback, and a fixture. Every runtime/network boundary fails closed on malformed metadata, non-loopback Ollama endpoints, missing locality proof, or unknown capability.
-- New feature flags default off except the already-delivered `cowcoreFastLane` read-only route. A flag cannot weaken an existing security invariant and must have a kill-switch test.
+- New feature flags default off; `cowcoreFastLane` remains disabled until `ollamaNativeProfile` and `ollamaLocalOnly` are both verified. A flag cannot weaken an existing security invariant and must have a kill-switch test.
 - `ponytail:` comments are required only where a deliberate bounded simplification remains (for example, a global lock or bounded linear scan); each names the measurable ceiling and upgrade trigger.
 
 ### Dependency and milestone order
@@ -335,4 +337,4 @@ Each WP exit must attach, in its milestone commit or release artifact:
 4. feature-flag state and rollback command;
 5. known ceilings (never hidden by timeout increases) and the next permitted work package.
 
-The current pass changes planning only (plus the explicitly requested Ollama model installation); it does not implement WP1–WP7 code or enable new host effects.
+The current pass implements the additive WP1 core slice only; it does not claim the WP1A/WP1B exits or enable new host effects. Remaining WP1 exit work is native runtime wiring behind `cowcoreFastLane`, verified local-only lifecycle/configuration, cache continuation benchmarking, metrics persistence, and the WP1C SQLite memory MVP. WP2–WP7 remain gated by the dependency order above.

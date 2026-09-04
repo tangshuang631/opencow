@@ -1,6 +1,6 @@
 # CowCore 本地优先安全运行时与检索增强设计 Spec
 
-> 状态：Frozen Architecture / Approved for WP0
+> 状态：Frozen Architecture / Approved for implementation
 >
 > 日期：2026-08-31
 >
@@ -8,11 +8,11 @@
 >
 > 冻结承载分支：`dev`；`main` 仅在里程碑出口全部验证通过后合并
 >
-> 评审状态：`ARCHITECTURE REVIEW: APPROVED`；开发状态：`WP0 Complete on dev / WP1 Not Started`
+> 评审状态：`ARCHITECTURE REVIEW: APPROVED`；开发状态：`WP0 Complete on dev / WP1 core slice in progress`
 >
 > 本文是设计与验收规范，不是实现计划；所有实现必须按已批准工作包推进，不得绕过 WP0 出口。
 >
-> 当前实现标签：Legacy Baseline + WP0 Green Baseline。本文描述 Target Architecture，不代表 WP1 及后续能力已经实现。
+> 当前实现标签：Legacy Baseline + WP0 Green Baseline + WP1 Core Slice。本文仍是唯一 Target Architecture；当前代码不代表 WP1A/WP1B 出口或后续能力已经完成。
 
 ## 1. 决策摘要
 
@@ -112,7 +112,9 @@ OpenCow 下一轮采用“双通道、抽芯式重构”，不继续扩张当前
 
 后续不得用“继续完善 CowCore”描述起点；正式开发从 WP0 开始，现有代码只是迁移源与 benchmark baseline。
 
-本次 WP0 检查点（2026-09-04）已在 `dev` 完成并推送为提交 `3b55668`：OpenClaw `2026.8.2` adapter 兼容性映射、确定性 baseline 报告、P0/P1/P2 固定评测 runner、Ollama Native 同机基线 harness、Vector feasibility matrix、桌面异步持久化/搜索回归修复、旧宿主执行 fail-closed 闸门、全仓构建与桌面全量单测（66 文件、774 测试）、Web 全量单测（49 测试）、macOS 发布/安装产物同步及 `check:health` 均通过。Ollama 未运行时 `benchmark:ollama` 按设计输出 unavailable，不伪造硬件性能数据。WP1 仍未启动。
+本次 WP0 检查点（2026-09-04）已在 `dev` 完成并推送为提交 `3b55668`：OpenClaw `2026.8.2` adapter 兼容性映射、确定性 baseline 报告、P0/P1/P2 固定评测 runner、Ollama Native 同机基线 harness、Vector feasibility matrix、桌面异步持久化/搜索回归修复、旧宿主执行 fail-closed 闸门、全仓构建与桌面全量单测（66 文件、774 测试）、Web 全量单测（49 测试）、macOS 发布/安装产物同步及 `check:health` 均通过。Ollama 未运行时 `benchmark:ollama` 按设计输出 unavailable，不伪造硬件性能数据。
+
+当前 `dev` 工作阶段（2026-09-04）已加入但尚未作为 WP1 出口冻结的核心切片：`@opencow/cowcore` 的 Ollama Native API/Profile/Locality/Residency/Context/Prefix/keep-alive、确定性 TaskClass、零效果 typed-tool loop、Fast Lane，以及桌面 native profile smoke wrapper；新增前端只包含交互稳定性与克制动效基础，不替换旧 Ollama 业务链路，也没有新增宿主执行能力。WP1A/WP1B 出口仍需完成本地运行时生命周期接线、Profile/Probe/metrics 持久化、cache continuation 真实性能验证和 flag/回滚验证后才能标记完成。
 
 ## 5. 设计原则
 

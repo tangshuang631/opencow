@@ -25,8 +25,8 @@
     "check:health": "node scripts/check-health.mjs"
   },
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "packages/*",
+    "apps/*"
   ],
   "devDependencies": {
     "@types/node": "^22.19.19"

@@ -60,6 +60,14 @@ describe("MainConversation", () => {
     expect(container.querySelector(".message-card")).not.toBeInTheDocument();
   });
 
+  it("exposes a stable motion scope for progressive conversation reveals", () => {
+    const { container } = render(
+      <MainConversation state={createInitialWorkbenchState()} onPreviewRollback={vi.fn()} onCancelActiveTask={vi.fn()} />
+    );
+
+    expect(container.querySelector(".conversation-scroll")).toHaveAttribute("data-motion-scope", "conversation");
+  });
+
   it("keeps a blank conversation screen empty even when recent conversations exist", () => {
     const state = {
       ...createInitialWorkbenchState(),

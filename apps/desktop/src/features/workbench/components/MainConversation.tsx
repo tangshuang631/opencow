@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { useGSAP } from "@gsap/react";
+import gsap from "gsap";
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatAttachment, WorkbenchState } from "../workbenchState";
 import {
@@ -1222,6 +1224,28 @@ export function MainConversation({
   const pendingStatusLabel = pendingTask ? TEXT.runningLabel : TEXT.queuedLabel;
   const pendingTitle = TEXT.thinkingTitle;
 
+  useGSAP(() => {
+    const container = scrollContainerRef.current;
+
+    if (!container || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
+
+    const latestRow = container.querySelector<HTMLElement>(".message-row:last-of-type");
+
+    if (!latestRow) {
+      return;
+    }
+
+    gsap.fromTo(latestRow, { opacity: 0, y: 10 }, {
+      opacity: 1,
+      y: 0,
+      duration: 0.28,
+      ease: "power2.out",
+      clearProps: "transform,opacity"
+    });
+  }, { dependencies: [state.conversation.entries.length, state.tasks.activeTaskId, state.error?.module], scope: scrollContainerRef });
+
   useEffect(() => {
     const container = scrollContainerRef.current;
 
@@ -1260,7 +1284,7 @@ export function MainConversation({
           </div>
         </header>
       ) : null}
-      <div className="conversation-scroll" ref={scrollContainerRef}>
+      <div className="conversation-scroll" data-motion-scope="conversation" ref={scrollContainerRef}>
         {visibleEntries.map((entry) => {
           const isUser = entry.kind === "user";
           const { cards: searchReferenceCards, remainingLines: linesWithoutSearch } =

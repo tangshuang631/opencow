@@ -15,11 +15,14 @@
   },
   "dependencies": {
     "@assistant-ui/react": "^0.11.0",
+    "@gsap/react": "^2.1.2",
+    "@opencow/cowcore": "^0.1.0",
     "@opencow/permission-engine": "^0.1.0",
     "@opencow/rollback-core": "^0.1.0",
     "@opencow/safety-engine": "^0.1.0",
     "@opencow/shell-runtime": "^0.1.0",
     "@tauri-apps/api": "^2.0.0",
+    "gsap": "^3.15.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
