@@ -3,7 +3,8 @@
 ## 当前基线
 
 - 工作分支：`dev`；`main` 未修改。
-- 最近已推送基线：`21b3c30 feat(assistant): add generic intent and bounded react loop`。
+- 最近已推送基线：`9793e7a fix(assistant): ground retrieved answers and persist recent sessions`。
+- 默认远端：`origin` → GitHub `regrevia/opencow`；`cnb-origin` 保留为备用同步源。后续里程碑优先推送 GitHub 的 `dev`。
 - 本轮继续保持 Ollama-only、本地优先、OpenClaw 仅作后续 AdvancedRuntime sidecar；模型不能直接触达宿主 Shell、MCP 启动或 `project.run`。
 - macOS 产物由 `npm run desktop:sync:mac` 同步到 `/Users/apple/Desktop/OpenCow桌面端.app`；Windows 接续时应从 `dev` 拉取源码并按同一门禁重建，不能复制 macOS bundle。
 
@@ -21,7 +22,8 @@
 - `apps/desktop/src/app/app.chat-search-context.test.tsx`：5/5 通过，含“证据完整但模型先拒答→ReAct 重试”场景。
 - 本轮最终全量门禁：桌面 73 文件/802 测试、Web 49 测试、CowCore 66 测试；workspace 其余单元测试也全部通过。
 - `cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml`：103/103 通过。
-- `npm run check:encoding` 与 `npm run check:health` 应在最终同步产物后再次运行。
+- `npm run check:encoding` 与 `npm run check:health` 已在最终构建/同步产物后通过。
+- `npm run build` 已通过；Vite 仅报告既有的大 bundle size warning，不阻塞本轮交付。
 - `cargo fmt --check` 当前会报告仓库既有全文件格式差异（包含未触及的 `rollback_files.rs`）；不要为接续开发直接格式化整仓，先单独评估格式基线。
 
 ## Windows 接续建议
