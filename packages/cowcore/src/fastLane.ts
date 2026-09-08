@@ -1,5 +1,5 @@
 import { routeTask } from "./taskRouter.js";
-import { runTypedToolLoop, type ToolLoopTool, type ToolLoopTurn } from "./typedToolLoop.js";
+import { runTypedToolLoop, type ToolLoopObservation, type ToolLoopTool, type ToolLoopTurn, type ToolLoopValidation } from "./typedToolLoop.js";
 import type { FastLaneGateDecision } from "./runtimeGate.js";
 
 export type FastLaneObservation = {
@@ -25,6 +25,7 @@ export async function runFastLane(input: {
   invokeDirect?: () => Promise<string>;
   invokeModel?: (context: { turn: number; toolResults: Array<{ id: string; name: string; result: unknown }>; signal?: AbortSignal }) => Promise<ToolLoopTurn>;
   tools?: ToolLoopTool[];
+  validateFinal?: (content: string, context: { turn: number; observations: readonly ToolLoopObservation[] }) => ToolLoopValidation | Promise<ToolLoopValidation>;
   signal?: AbortSignal;
 }): Promise<FastLaneResult> {
   const taskClass = routeTask(input.route);
@@ -49,7 +50,7 @@ export async function runFastLane(input: {
     }
   }
   if (!input.invokeModel) return finish({ status: "blocked", taskClass, prefixDigest: input.prefixDigest, toolCallCount: 0, turnCount: 0, reason: "typed model invocation is unavailable" });
-  const result = await runTypedToolLoop({ invokeModel: input.invokeModel, tools: input.tools, signal: input.signal });
+  const result = await runTypedToolLoop({ invokeModel: input.invokeModel, tools: input.tools, validateFinal: input.validateFinal, signal: input.signal });
   return finish({
     status: result.status,
     taskClass,

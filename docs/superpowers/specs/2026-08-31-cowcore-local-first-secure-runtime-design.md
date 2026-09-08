@@ -323,6 +323,33 @@ Local Ollama Daemon ◄───────────────────
 
 模型可以提出 TaskClass、子查询和 claim-to-evidence 草案，但三个结果都必须经过确定性 validator：路由不得增加 Registry 未允许的 Capability；子查询必须满足数量、长度、域和联网策略；时效性 claim 没有可定位 Evidence 时必须删除或降级为不确定表达。validator 失败不能靠提示模型“更谨慎”后直接放行。
 
+### 6.1.1 通用任务链与有界 ReAct
+
+所有用户请求都经过同一条可观测任务链，不为天气、时间或其他单一领域维护独立的“特例助手”：
+
+```text
+Intent
+  → Plan
+  → Capability selection
+  → Guarded execution
+  → Observe
+  → Validate
+      ├─ pass → Answer
+      ├─ recoverable contract failure → bounded ReAct retry
+      └─ abort / budget / safety failure → blocked or cancelled
+```
+
+- `Intent` 只描述目标、时效性、证据需求和可能的 Capability，不授予权限；确定性信号优先，轻量本地分类器只在无法确定时使用，输出必须通过 Schema 与 Registry validator。
+- `Plan` 是结构化、可审计的任务计划。它可以选择 `direct-chat`、`one-shot-transform`、`retrieval-answer`、`typed-tool-task` 或 `advanced-agent-task`，但不能自报 effect、risk、executionZone、授权范围或任意命令。
+- `Capability selection` 只能从当前 Registry 暴露的最小集合中选择；Grant、参数 Schema、资源限制和安全区域由 Broker 派生并复核。模型文本、网页、RAG、Memory、OpenClaw/tool output 都不能扩大集合。
+- `Guarded execution` 通过 Model Gateway、Retrieval Orchestrator 或 Capability Broker 执行。Fast Lane 的本地回答也必须经 Ollama locality、模型身份和取消检查；需要副作用的步骤不能因为进入 ReAct 就绕过授权或沙箱。
+- `Observe` 只产生受限的结构化事实（例如结果形状、证据覆盖、postcondition、usage/错误状态），不得把未经裁剪的秘密、完整网页、凭据或任意工具输出写进模型反馈或性能日志。
+- `Validate` 是确定性终止门：至少检查输出非空、任务契约、证据/时效性、Schema/postcondition、来源展示协议和安全不变量。验证失败只能生成有限、数据化的反馈，不能直接把自然语言正文当作下一条指令执行。
+- ReAct 只用于“观察后需要修正”的可恢复失败；默认 Fast Lane 最多 2 次模型回答（初次 + 1 次修复），`typed-tool-task` 仍遵守最多 3 个模型回合 / 5 次工具调用，Agent Lane 另受其显式预算和终止条件约束。预算上限由代码强制为 1–3 的 Fast Lane 回合，不能由模型或用户输入扩大。
+- 终止条件按优先级为：用户取消/请求过期、Capability 或 locality/sandbox 失败、资源/时间预算耗尽、验证通过；预算耗尽时返回可读的部分结果或阻塞说明，不得无限重试。
+- 同一请求的每一轮尽量保持 Stable Prefix、Capability 顺序和原生 Ollama message 结构不变；只有结构化反馈与变化证据进入 Dynamic Suffix。首轮被拒绝的答案不得作为最终答案或引用展示。
+- UI 正文只显示通过 `Validate` 的答案；Intent、Plan、Capability、Execution、Observe、Validate、重试次数和阻塞原因进入可折叠的任务/审计详情。来源 URL 只进入专用“信息引用”区域，不重复出现在回答正文。
+
 ### 6.2 OpenClaw 定位
 
 OpenClaw 不再是所有请求的隐式底座，而是 `AdvancedRuntime` 接口的一个实现。
@@ -646,6 +673,8 @@ type TaskClass =
 分类优先使用确定性信号：显式命令、选中的文件/知识库、当前视图动作、用户开启的模式和 Capability 参数。
 
 只有无法确定时才允许调用轻量本地分类器。分类器必须使用结构化输出，温度为 0，不得直接产生可执行动作。
+
+分类完成后，Fast Lane 仍必须经过第 6.1.1 节的 `Plan → Capability → Execution → Observe → Validate` 链；“一次模型调用”只表示没有必要的工具循环，不表示跳过结果自检。对于普通对话，`Observe` 至少确认返回非空且没有泄漏 URL/来源区块；对于 fresh/retrieval 任务，还必须确认时效性 claim 有可定位证据；对于结构化或类型化任务，必须确认 Schema 和 postcondition。验证失败时只允许在任务预算内重新请求本地模型，不能把失败正文直接拼到下一轮，也不能把重试变成新的 Capability 请求。
 
 ### 8.6 Fast Lane 调用预算
 
@@ -2090,11 +2119,13 @@ Capability/Grant 相关发布额外要求：
 交付：
 
 - 结构化 TaskClass 分类、retrieval-answer adapter 和稳定 Prefix 的多轮 loop。
+- 通用 `Intent → Plan → Capability → Execution → Observe → Validate → Answer/Retry` 编排；普通对话、结构化事实、RAG 和文件转换共享同一条有界 ReAct 终止链，不以单一领域关键词增加特例路由。
 - Ollama tool calling、Schema、thinking、cancellation 与 tool result 原生消息协议验证。
 - typed-tool loop 只接入内置 pure-function fixture、mock capability 和 readonly/no-side-effect diagnostic fixture；禁止连接 legacy Host Capability、MCP、`project.run` 或 Shell。
 - retrieval-answer 只验证路由与协议，可使用现有只读检索 adapter 或测试 fixture；不得宣称达到 P2 RAG 2.0，正式 FTS/vector/hybrid/Evidence 由 WP4 接管。
+- ReAct 失败关闭、取消、验证失败重试和终止原因审计；首轮未通过验证的正文不得进入最终会话或信息引用展示。
 
-出口：Schema/tool loop、cache continuation、取消和失败关闭测试通过；在 WP2A 出口前所有 tool effect 均为 zero-effect。
+出口：Schema/tool loop、cache continuation、统一任务链、验证失败重试、取消和失败关闭测试通过；在 WP2A 出口前所有 tool effect 均为 zero-effect。
 
 #### WP1C：跨会话记忆 MVP（可选，不阻塞 WP1A/WP1B）
 
@@ -2316,6 +2347,7 @@ Capability/Grant 相关发布额外要求：
 本设计只有在以下条件全部满足后，才可视为产品迭代完成：
 
 - P0 日常任务默认使用本地快速通道，达到性能与路由指标。
+- 所有请求都可追溯到统一的 `Intent → Plan → Capability → Execution → Observe → Validate → Answer/Retry` 链；可恢复验证失败有界重试，取消、预算和安全失败均失败关闭，未通过验证的正文不会进入会话或引用区。
 - 本轮所有本地 chat/tool/embedding/rerank 推理只使用通过 Compatibility Manifest 的 Ollama Native Provider；没有第二套正式本地 Runtime。
 - Runtime/Model Profile、稳定 Prefix、Context Budget、keep_alive、cold/warm/cache Benchmark 和 Apple Silicon MLX discovery 达到第 8、20 节指标，Kernel 级优化仍由 Ollama 所有。
 - Locality Enforcement 阻止任何 cloud/remote model 静默进入 Fast Lane，Residency Observation 不被当作数据不出机证明；Ollama 新 stable 只有兼容流水线通过后才进入推荐范围。

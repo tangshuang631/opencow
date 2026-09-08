@@ -47,7 +47,7 @@ describe("App chat search context", () => {
     vi.clearAllMocks();
   });
 
-  it("passes compressed enabled-search references to the selected local model for ordinary chat", async () => {
+  it("keeps ordinary chat local even when the search toggle is enabled", async () => {
     searchNetworkMock.mockResolvedValue({
       query: "软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么",
       provider: "Tavily",
@@ -86,16 +86,16 @@ describe("App chat search context", () => {
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalled();
     });
+    expect(searchNetworkMock).not.toHaveBeenCalled();
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen3.6:35b",
-      message: expect.stringContaining("联网搜索参考")
+      message: expect.stringContaining("普通对话任务")
     }));
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].requestId).toMatch(/^local-model-chat-/);
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
-    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("只作为参考，不要盲信");
-    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("Flyweight pattern reference");
-    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("https://example.test/flyweight");
-    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("用户问题：软件体系设计的享元模式");
+    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).not.toContain("联网搜索参考");
+    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).not.toContain("https://example.test/flyweight");
+    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么");
   });
 
   it("records selected Ollama model and bounded search context in the audit log", async () => {
@@ -142,13 +142,14 @@ describe("App chat search context", () => {
     const auditPanel = await screen.findByRole("region", { name: "审计" });
 
     expect(within(auditPanel).getAllByText(/Ollama model: qwen3\.6:35b/).length).toBeGreaterThan(0);
-    expect(within(auditPanel).getAllByText(/Search context items: 1\/3/).length).toBeGreaterThan(0);
-    expect(within(auditPanel).getAllByText(/Search provider: Tavily/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/Search context items: 0\/3/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/Search context status: enabled-not-required/).length).toBeGreaterThan(0);
+    expect(within(auditPanel).getAllByText(/Search provider: none/).length).toBeGreaterThan(0);
   });
 
   it("guides local models to compare explicit evidence instead of overusing insufficient-source refusals", async () => {
     searchNetworkMock.mockResolvedValueOnce({
-      query: "python和java哪个历史更悠久",
+      query: "python和java哪个历史更悠久，最新资料",
       provider: "Tavily",
       effective_provider: "Tavily",
       used_fallback: false,
@@ -185,13 +186,14 @@ describe("App chat search context", () => {
     await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
 
     fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
-      target: { value: "python和java哪个历史更悠久" }
+      target: { value: "python和java哪个历史更悠久，最新资料" }
     });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));
 
     await waitFor(() => {
       expect(chatWithOllamaModelMock).toHaveBeenCalled();
     });
+    expect(searchNetworkMock).toHaveBeenCalled();
 
     const prompt = chatWithOllamaModelMock.mock.calls[0]?.[0].message ?? "";
     expect(prompt).toContain("已找到与「python」相关的来源。只用这些来源中明确写出的事实比较。不要因为比较对象数量多就直接回答无法确认。");

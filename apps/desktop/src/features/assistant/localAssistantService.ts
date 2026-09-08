@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { classifySearchIntent, type SearchIntent } from "./searchIntent";
 
 export type WorkspaceOverview = {
   root_name: string;
@@ -149,6 +150,7 @@ export type LocalNetworkSearchResult = {
   effective_provider: string;
   used_fallback: boolean;
   fallback_reason?: string | null;
+  intent?: SearchIntent["kind"];
   items: Array<{
     title: string;
     url: string;
@@ -547,8 +549,23 @@ export async function searchNetwork(
     suppressFallbackNotice?: boolean;
   }
 ): Promise<LocalNetworkSearchResult> {
+  const intent = classifySearchIntent(query);
+
+  if (intent.kind === "weather") {
+    if (hasTauriInvoke()) {
+      return invoke<LocalNetworkSearchResult>("weather_search", {
+        payload: {
+          query,
+          location: intent.location ?? ""
+        }
+      });
+    }
+
+    return createBrowserPreviewWeatherSearch(query, intent);
+  }
+
   if (hasTauriInvoke()) {
-    return invoke<LocalNetworkSearchResult>("network_search", {
+    const result = await invoke<LocalNetworkSearchResult>("network_search", {
       payload: {
         query,
         providerLabel: options?.providerLabel,
@@ -556,9 +573,13 @@ export async function searchNetwork(
         apiKey: options?.apiKey
       }
     });
+    return { ...result, intent: intent.kind };
   }
 
-  return createBrowserPreviewNetworkSearch(query, options);
+  return {
+    ...createBrowserPreviewNetworkSearch(query, options),
+    intent: intent.kind
+  };
 }
 
 export async function loadKnowledgeInventory(
@@ -1625,6 +1646,28 @@ function createBrowserPreviewNetworkSearch(
         url: "https://github.com/openai/opencow",
         source_label: "GitHub",
         summary: "默认搜索零配置可用；如用户已保存自定义 API，会优先尝试用户配置。"
+      }
+    ]
+  };
+}
+
+function createBrowserPreviewWeatherSearch(query: string, intent: SearchIntent): LocalNetworkSearchResult {
+  const location = intent.location || "当前地点";
+
+  return {
+    query,
+    provider: "Open-Meteo 天气（浏览器预览）",
+    effective_provider: "Open-Meteo 天气（浏览器预览）",
+    used_fallback: false,
+    fallback_reason: null,
+    intent: "weather",
+    items: [
+      {
+        title: `${location}天气（浏览器预览）`,
+        url: "https://open-meteo.com/",
+        source_label: "Open-Meteo 天气",
+        summary: `浏览器预览未请求实时天气；已识别地点“${location}”，桌面端会通过结构化天气接口获取数据。`,
+        fact_snippets: []
       }
     ]
   };

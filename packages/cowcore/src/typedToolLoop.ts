@@ -9,16 +9,30 @@ export type ToolLoopTool = {
   execute: (input: unknown, signal?: AbortSignal) => Promise<unknown>;
 };
 
+export type ToolLoopValidation = {
+  ok: boolean;
+  reason?: string;
+  feedback?: string;
+};
+
+export type ToolLoopObservation = {
+  kind: "tool" | "final";
+  id?: string;
+  name?: string;
+  summary: string;
+};
+
 export type ToolLoopResult =
   | { status: "completed"; content: string; toolCallCount: number; turnCount: number }
   | { status: "blocked"; reason: string; toolCallCount: number; turnCount: number }
   | { status: "cancelled"; reason: string; toolCallCount: number; turnCount: number };
 
 export async function runTypedToolLoop(input: {
-  invokeModel: (context: { turn: number; toolResults: Array<{ id: string; name: string; result: unknown }>; signal?: AbortSignal }) => Promise<ToolLoopTurn>;
+  invokeModel: (context: { turn: number; toolResults: Array<{ id: string; name: string; result: unknown }>; observations: readonly ToolLoopObservation[]; feedback?: string; signal?: AbortSignal }) => Promise<ToolLoopTurn>;
   tools?: ToolLoopTool[];
   maxTurns?: number;
   maxToolCalls?: number;
+  validateFinal?: (content: string, context: { turn: number; observations: readonly ToolLoopObservation[] }) => ToolLoopValidation | Promise<ToolLoopValidation>;
   signal?: AbortSignal;
 }): Promise<ToolLoopResult> {
   const maxTurns = Math.max(1, input.maxTurns ?? 3);
@@ -26,17 +40,33 @@ export async function runTypedToolLoop(input: {
   const tools = input.tools ?? [];
   const seenCallIds = new Set<string>();
   const toolResults: Array<{ id: string; name: string; result: unknown }> = [];
+  const observations: ToolLoopObservation[] = [];
   let toolCallCount = 0;
+  let feedback: string | undefined;
 
   for (let turn = 1; turn <= maxTurns; turn += 1) {
     if (input.signal?.aborted) return cancelled(toolCallCount, turn);
     let response: ToolLoopTurn;
     try {
-      response = await input.invokeModel({ turn, toolResults: [...toolResults], signal: input.signal });
+      response = await input.invokeModel({ turn, toolResults: [...toolResults], observations: [...observations], feedback, signal: input.signal });
     } catch (error) {
       return input.signal?.aborted ? cancelled(toolCallCount, turn) : blocked(error instanceof Error ? error.message : "model invocation failed", toolCallCount, turn);
     }
-    if (response.kind === "final") return { status: "completed", content: response.content, toolCallCount, turnCount: turn };
+    if (response.kind === "final") {
+      const observation: ToolLoopObservation = { kind: "final", summary: response.content.trim().slice(0, 500) };
+      observations.push(observation);
+      if (!input.validateFinal) return { status: "completed", content: response.content, toolCallCount, turnCount: turn };
+      let validation: ToolLoopValidation;
+      try {
+        validation = await input.validateFinal(response.content, { turn, observations: [...observations] });
+      } catch (error) {
+        return blocked(error instanceof Error ? error.message : "final answer validation failed", toolCallCount, turn);
+      }
+      if (validation.ok) return { status: "completed", content: response.content, toolCallCount, turnCount: turn };
+      feedback = (validation.feedback || validation.reason || "The final answer did not satisfy the task contract.").trim().slice(0, 500);
+      if (turn === maxTurns) return blocked(`answer validation failed: ${feedback}`, toolCallCount, turn);
+      continue;
+    }
     if (!Array.isArray(response.calls) || response.calls.length === 0) return blocked("tool call list is empty", toolCallCount, turn);
 
     for (const call of response.calls) {
@@ -51,6 +81,7 @@ export async function runTypedToolLoop(input: {
       try {
         const result = await tool.execute(call.arguments, input.signal);
         toolResults.push({ id: call.id, name: call.name, result });
+        observations.push({ kind: "tool", id: call.id, name: call.name, summary: summarizeToolResult(result) });
         toolCallCount += 1;
       } catch (error) {
         return input.signal?.aborted ? cancelled(toolCallCount, turn) : blocked(error instanceof Error ? error.message : "tool execution failed", toolCallCount, turn);
@@ -59,6 +90,14 @@ export async function runTypedToolLoop(input: {
     if (turn === maxTurns) return blocked("turn budget exceeded", toolCallCount, turn);
   }
   return blocked("turn budget exceeded", toolCallCount, maxTurns);
+}
+
+function summarizeToolResult(result: unknown): string {
+  try {
+    return JSON.stringify(result).slice(0, 500);
+  } catch {
+    return String(result).slice(0, 500);
+  }
 }
 
 function matchesSchema(value: unknown, schema: Record<string, unknown>): boolean {

@@ -17,6 +17,25 @@ describe("assistantTaskService", () => {
       kind: "workspace-overview",
       title: "Workspace overview"
     });
+    expect(plan.intent).toMatchObject({
+      kind: "workspace-read",
+      domain: "workspace",
+      requiredCapabilities: ["workspace.inspect"]
+    });
+  });
+
+  it("keeps fresh research on the unified local answer path after retrieval", () => {
+    const plan = planAssistantTask("python和java哪个历史更悠久，请联网搜索", "readonly");
+
+    expect(plan).toMatchObject({
+      kind: "local-model-chat",
+      title: "联网检索与本地回答",
+      intent: {
+        kind: "fresh-research",
+        needsNetwork: true,
+        requiredCapabilities: ["network.search"]
+      }
+    });
   });
 
   it("requests controlled full permission for destructive cleanup input", () => {

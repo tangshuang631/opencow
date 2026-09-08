@@ -51,4 +51,22 @@ describe("runTypedToolLoop", () => {
     const cancelled = await runTypedToolLoop({ invokeModel: async () => ({ kind: "final", content: "nope" }), signal: controller.signal });
     expect(cancelled.status).toBe("cancelled");
   });
+
+  it("re-plans after a rejected final answer and exposes observations to the next turn", async () => {
+    const feedback: Array<string | undefined> = [];
+    const result = await runTypedToolLoop({
+      maxTurns: 3,
+      invokeModel: async ({ turn, feedback: nextFeedback, observations }) => {
+        feedback.push(nextFeedback);
+        expect(observations.length).toBe(turn - 1);
+        return { kind: "final", content: turn === 1 ? "带来源 URL 的回答" : "干净的最终回答" };
+      },
+      validateFinal: (content) => content.includes("URL")
+        ? { ok: false, reason: "answer-protocol-leak", feedback: "删除 URL，只输出正文。" }
+        : { ok: true }
+    });
+
+    expect(result).toEqual({ status: "completed", content: "干净的最终回答", toolCallCount: 0, turnCount: 2 });
+    expect(feedback).toEqual([undefined, "删除 URL，只输出正文。"]);
+  });
 });

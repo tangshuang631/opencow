@@ -109,6 +109,53 @@ pub struct NetworkSearchPayload {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherSearchPayload {
+    query: String,
+    location: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoGeocodingResponse {
+    results: Option<Vec<OpenMeteoLocation>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoLocation {
+    name: String,
+    latitude: f64,
+    longitude: f64,
+    country: Option<String>,
+    admin1: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoForecastResponse {
+    timezone: Option<String>,
+    current: Option<OpenMeteoCurrentWeather>,
+    daily: Option<OpenMeteoDailyWeather>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoCurrentWeather {
+    time: Option<String>,
+    temperature_2m: Option<f64>,
+    apparent_temperature: Option<f64>,
+    relative_humidity_2m: Option<f64>,
+    precipitation: Option<f64>,
+    weather_code: Option<i32>,
+    wind_speed_10m: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenMeteoDailyWeather {
+    time: Option<Vec<String>>,
+    temperature_2m_max: Option<Vec<f64>>,
+    temperature_2m_min: Option<Vec<f64>>,
+    precipitation_probability_max: Option<Vec<f64>>,
+}
+
+#[derive(Debug, Deserialize)]
 struct WikipediaOpenSearchResponse((), Vec<String>, Vec<String>, Vec<String>);
 
 #[derive(Serialize)]
@@ -356,6 +403,177 @@ pub async fn network_search(payload: NetworkSearchPayload) -> Result<NetworkSear
         fallback_reason: None,
         items,
     })
+}
+
+/// Weather questions deliberately use a structured provider instead of the
+/// generic web-result fallback. This keeps encyclopedias, calendars, and
+/// unrelated result pages out of a time-sensitive weather answer.
+#[tauri::command]
+pub async fn weather_search(payload: WeatherSearchPayload) -> Result<NetworkSearchResult, String> {
+    let query = payload.query.trim().to_string();
+    let location_query = payload.location.trim().to_string();
+
+    if query.is_empty() {
+        return Err("weather search query cannot be empty".to_string());
+    }
+
+    if location_query.is_empty() {
+        return Err("weather search needs a city or location".to_string());
+    }
+
+    let client = build_search_client(false)?;
+    let encoded_location = urlencoding::encode(&location_query);
+    let geocoding_url = format!(
+        "https://geocoding-api.open-meteo.com/v1/search?name={encoded_location}&count=1&language=zh&format=json"
+    );
+    let geocoding_response = client
+        .get(&geocoding_url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("weather location lookup failed: {error}"))?;
+
+    if !geocoding_response.status().is_success() {
+        return Err(format!(
+            "weather location lookup failed with HTTP {}",
+            geocoding_response.status()
+        ));
+    }
+
+    let geocoding = geocoding_response
+        .json::<OpenMeteoGeocodingResponse>()
+        .await
+        .map_err(|error| format!("failed to parse weather location response: {error}"))?;
+    let location = geocoding
+        .results
+        .and_then(|results| results.into_iter().next())
+        .ok_or_else(|| format!("未找到“{location_query}”对应的天气地点"))?;
+    let forecast_url = format!(
+        "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=1&timezone=auto",
+        location.latitude, location.longitude
+    );
+    let forecast_response = client
+        .get(&forecast_url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|error| format!("weather forecast request failed: {error}"))?;
+
+    if !forecast_response.status().is_success() {
+        return Err(format!(
+            "weather forecast request failed with HTTP {}",
+            forecast_response.status()
+        ));
+    }
+
+    let forecast = forecast_response
+        .json::<OpenMeteoForecastResponse>()
+        .await
+        .map_err(|error| format!("failed to parse weather forecast response: {error}"))?;
+    let item = build_weather_search_item(&location, &forecast, forecast_url);
+
+    Ok(NetworkSearchResult {
+        query,
+        provider: "Open-Meteo 天气".to_string(),
+        effective_provider: "Open-Meteo 天气".to_string(),
+        used_fallback: false,
+        fallback_reason: None,
+        items: vec![item],
+    })
+}
+
+fn build_weather_search_item(
+    location: &OpenMeteoLocation,
+    forecast: &OpenMeteoForecastResponse,
+    forecast_url: String,
+) -> NetworkSearchResultItem {
+    let current = forecast.current.as_ref();
+    let daily = forecast.daily.as_ref();
+    let date = daily
+        .and_then(|value| value.time.as_ref())
+        .and_then(|times| times.first())
+        .cloned()
+        .or_else(|| current.and_then(|value| value.time.clone()))
+        .unwrap_or_else(|| "今日".to_string());
+    let condition = weather_code_label(current.and_then(|value| value.weather_code));
+    let mut facts = Vec::new();
+
+    if let Some(temperature) = current.and_then(|value| value.temperature_2m) {
+        facts.push(format!("当前约 {:.0}°C", temperature));
+    }
+    if let Some(apparent_temperature) = current.and_then(|value| value.apparent_temperature) {
+        facts.push(format!("体感约 {:.0}°C", apparent_temperature));
+    }
+    if let (Some(minimum), Some(maximum)) = (
+        daily
+            .and_then(|value| value.temperature_2m_min.as_ref())
+            .and_then(|values| values.first().copied()),
+        daily
+            .and_then(|value| value.temperature_2m_max.as_ref())
+            .and_then(|values| values.first().copied()),
+    ) {
+        facts.push(format!("今日 {:.0}–{:.0}°C", minimum, maximum));
+    }
+    if let Some(probability) = daily
+        .and_then(|value| value.precipitation_probability_max.as_ref())
+        .and_then(|values| values.first())
+    {
+        facts.push(format!("降水概率约 {:.0}%", probability));
+    }
+    if let Some(humidity) = current.and_then(|value| value.relative_humidity_2m) {
+        facts.push(format!("相对湿度约 {:.0}%", humidity));
+    }
+    if let Some(precipitation) = current.and_then(|value| value.precipitation) {
+        if precipitation > 0.0 {
+            facts.push(format!("当前降水约 {:.1} mm", precipitation));
+        }
+    }
+    if let Some(wind_speed) = current.and_then(|value| value.wind_speed_10m) {
+        facts.push(format!("风速约 {:.0} km/h", wind_speed));
+    }
+
+    let area = [location.admin1.as_deref(), location.country.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let display_name = if area.is_empty() {
+        location.name.clone()
+    } else {
+        format!("{}（{}）", location.name, area)
+    };
+    let summary = format!(
+        "{}：{}，{}。{} 时区，数据时间 {}。",
+        display_name,
+        date,
+        condition,
+        forecast.timezone.as_deref().unwrap_or("本地"),
+        current
+            .and_then(|value| value.time.as_deref())
+            .unwrap_or("未提供")
+    );
+
+    NetworkSearchResultItem {
+        title: format!("{}天气（{}）", location.name, date),
+        url: forecast_url,
+        source_label: "Open-Meteo 天气".to_string(),
+        summary,
+        fact_snippets: facts,
+    }
+}
+
+fn weather_code_label(code: Option<i32>) -> &'static str {
+    match code.unwrap_or(-1) {
+        0 => "晴",
+        1..=3 => "多云",
+        45 | 48 => "雾",
+        51..=57 => "毛毛雨",
+        61..=67 | 80..=82 => "有雨",
+        71..=77 => "有雪",
+        95..=99 => "雷雨",
+        _ => "天气状况未知",
+    }
 }
 
 async fn run_custom_network_search(
@@ -6524,6 +6742,7 @@ mod tests {
     use super::{
         build_controlled_full_shell_command, build_enabled_local_skill_items,
         build_fact_snippets_from_html, build_fact_snippets_from_html_with_url, build_knowledge_inventory,
+        build_weather_search_item, weather_code_label, OpenMeteoForecastResponse, OpenMeteoLocation,
         build_npc_showcase_screenshot_artifact_path,
         build_npc_showcase_site_root, build_openclaw_capability_spec, build_readonly_shell_command,
         build_workspace_write_shell_command, classify_mcp_plugin_source,
@@ -6601,6 +6820,49 @@ mod tests {
             normalize_network_search_query("请帮我联网搜索一下 OpenAI 最新信息"),
             "OpenAI"
         );
+    }
+
+    #[test]
+    fn builds_structured_weather_source_from_open_meteo_payload() {
+        let location = OpenMeteoLocation {
+            name: "深圳".to_string(),
+            latitude: 22.5431,
+            longitude: 114.0579,
+            country: Some("中国".to_string()),
+            admin1: Some("广东省".to_string()),
+        };
+        let forecast: OpenMeteoForecastResponse = serde_json::from_value(json!({
+            "timezone": "Asia/Shanghai",
+            "current": {
+                "time": "2026-09-04T15:00",
+                "temperature_2m": 30,
+                "apparent_temperature": 34,
+                "relative_humidity_2m": 76,
+                "precipitation": 0,
+                "weather_code": 3,
+                "wind_speed_10m": 12
+            },
+            "daily": {
+                "time": ["2026-09-04"],
+                "temperature_2m_max": [30],
+                "temperature_2m_min": [24],
+                "precipitation_probability_max": [45]
+            }
+        }))
+        .unwrap();
+
+        let item = build_weather_search_item(
+            &location,
+            &forecast,
+            "https://api.open-meteo.com/v1/forecast".to_string(),
+        );
+
+        assert_eq!(item.source_label, "Open-Meteo 天气");
+        assert_eq!(item.title, "深圳天气（2026-09-04）");
+        assert!(item.summary.contains("多云"));
+        assert!(item.fact_snippets.iter().any(|fact| fact == "当前约 30°C"));
+        assert!(item.fact_snippets.iter().any(|fact| fact == "今日 24–30°C"));
+        assert_eq!(weather_code_label(Some(95)), "雷雨");
     }
 
     #[test]

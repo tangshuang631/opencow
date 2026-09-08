@@ -264,8 +264,56 @@ describe("localAssistantService desktop knowledge inventory", () => {
           url: "https://openai.com/news/",
           summary: "OpenAI 官方新闻页。"
         }
-      ]
+      ],
+      intent: "news"
     });
+  });
+
+  it("routes weather questions to the structured weather command instead of generic web search", async () => {
+    (window as typeof window & { __TAURI_INTERNALS__?: unknown })[tauriInternals] = {};
+    const capturedCommands: string[] = [];
+    let capturedPayload: unknown;
+
+    mockIPC((cmd, payload) => {
+      capturedCommands.push(cmd);
+      if (cmd === "weather_search") {
+        capturedPayload = payload;
+        return {
+          query: "今天深圳天气怎么样",
+          provider: "Open-Meteo 天气",
+          effective_provider: "Open-Meteo 天气",
+          used_fallback: false,
+          fallback_reason: null,
+          intent: "weather",
+          items: [
+            {
+              title: "深圳天气（2026-09-04）",
+              url: "https://api.open-meteo.com/v1/forecast",
+              source_label: "Open-Meteo 天气",
+              summary: "深圳：多云，当前约 30°C。",
+              fact_snippets: ["当前约 30°C", "今日 24–30°C"]
+            }
+          ]
+        };
+      }
+
+      return null;
+    });
+
+    const result = await searchNetwork("今天深圳天气怎么样", {
+      providerLabel: "OpenCow 默认搜索"
+    });
+
+    expect(capturedCommands).toContain("weather_search");
+    expect(capturedCommands).not.toContain("network_search");
+    expect(capturedPayload).toEqual({
+      payload: {
+        query: "今天深圳天气怎么样",
+        location: "深圳"
+      }
+    });
+    expect(result.intent).toBe("weather");
+    expect(result.items[0]?.source_label).toBe("Open-Meteo 天气");
   });
 
   it("normalizes desktop knowledge clear responses into the frontend inventory shape", async () => {

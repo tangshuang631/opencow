@@ -1761,7 +1761,7 @@ describe("App", () => {
 
     expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
       model: "qwen3.6:35b",
-      message: "你能干什么"
+      message: expect.stringContaining("你能干什么")
     }));
     expect(within(conversation).queryByText(/本地助手能力说明|Workspace overview|本地助手答复/)).not.toBeInTheDocument();
     expect(within(conversation).queryByText(/任务已进入本地队列/)).not.toBeInTheDocument();
@@ -1947,7 +1947,7 @@ describe("App", () => {
     });
     searchNetworkMock
       .mockResolvedValueOnce({
-        query: "豆包是什么",
+        query: "豆包是什么，请联网搜索",
         provider: "OpenCow 默认搜索",
         effective_provider: "OpenCow 默认搜索",
         used_fallback: false,
@@ -1994,7 +1994,7 @@ describe("App", () => {
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
 
-    await user.type(getComposerInput(), "豆包是什么");
+    await user.type(getComposerInput(), "豆包是什么，请联网搜索");
     await user.click(getComposerSendButton());
     await waitFor(() => {
       expect(within(getConversationRegion()).getByText("这是关于豆包的整理。")).toBeInTheDocument();
@@ -2008,17 +2008,9 @@ describe("App", () => {
       expect(within(getConversationRegion()).getByText("这是关于大模型应用里 CLI 的整理。")).toBeInTheDocument();
       expect(within(getConversationRegion()).queryByText("豆包")).not.toBeInTheDocument();
       expect(within(getConversationRegion()).queryByText("概览：本地模型答复")).not.toBeInTheDocument();
-      expect(within(getConversationRegion()).getByText("1 条信息引用")).toBeInTheDocument();
+      expect(searchNetworkMock).toHaveBeenCalledTimes(1);
+      expect(within(getConversationRegion()).queryByText("1 条信息引用")).not.toBeInTheDocument();
     });
-
-    await user.click(within(getConversationRegion()).getByRole("button", { name: "展开信息引用" }));
-    expect(within(getConversationRegion()).getByText("联网搜索来源")).toBeInTheDocument();
-    expect(
-      within(getConversationRegion()).getByRole("button", { name: "打开来源：Hugging Face" })
-    ).toBeInTheDocument();
-    expect(
-      within(getConversationRegion()).getByRole("button", { name: "打开条目：Transformers CLI" })
-    ).toBeInTheDocument();
   }, 10_000);
 
   it("does not reuse stale network sources for a later chat when the current search request fails", async () => {
@@ -2032,7 +2024,7 @@ describe("App", () => {
     });
     searchNetworkMock
       .mockResolvedValueOnce({
-        query: "豆包是什么",
+        query: "豆包是什么，请联网搜索",
         provider: "OpenCow 默认搜索",
         effective_provider: "OpenCow 默认搜索",
         used_fallback: false,
@@ -2065,7 +2057,7 @@ describe("App", () => {
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
 
-    await user.type(getComposerInput(), "豆包是什么");
+    await user.type(getComposerInput(), "豆包是什么，请联网搜索");
     await user.click(getComposerSendButton());
     await waitFor(() => {
       expect(within(getConversationRegion()).getByText("这是关于豆包的整理。")).toBeInTheDocument();
@@ -2080,7 +2072,8 @@ describe("App", () => {
     });
 
     const secondPrompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
-    expect(secondPrompt).toContain("联网搜索已开启，但本轮没有可用外部来源");
+    expect(searchNetworkMock).toHaveBeenCalledTimes(1);
+    expect(secondPrompt).not.toContain("联网搜索已开启，但本轮没有可用外部来源");
     expect(secondPrompt).not.toContain("豆包官网");
     expect(secondPrompt).not.toContain("https://www.doubao.com/");
     expect(within(getConversationRegion()).queryByText("1 条信息引用")).not.toBeInTheDocument();
@@ -2119,7 +2112,7 @@ describe("App", () => {
     });
   }, 10_000);
 
-  it("combines local RAG hits with ordinary chat context when search is enabled but no external source is available", async () => {
+  it("uses local RAG context without forcing network search for a knowledge question", async () => {
     const user = setupUser();
     loadOllamaOverviewMock.mockResolvedValueOnce({
       reachable: true,
@@ -2130,7 +2123,7 @@ describe("App", () => {
     });
     searchNetworkMock.mockRejectedValueOnce(new Error("OpenCow 默认搜索当前不可用"));
     searchLocalKnowledgeMock.mockResolvedValueOnce({
-      query: "享元模式的内部状态和外部状态是什么",
+      query: "根据本地资料解释享元模式的内部状态和外部状态是什么",
       summary: "Local knowledge search found 1 matching passage across 3 indexed documents.",
       match_count: 1,
       indexed_document_count: 3,
@@ -2156,7 +2149,7 @@ describe("App", () => {
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
 
-    await user.type(getComposerInput(), "享元模式的内部状态和外部状态是什么");
+    await user.type(getComposerInput(), "根据本地资料解释享元模式的内部状态和外部状态是什么");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2164,9 +2157,10 @@ describe("App", () => {
     });
 
     const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
-    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith("享元模式的内部状态和外部状态是什么");
+    expect(searchNetworkMock).not.toHaveBeenCalled();
+    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith("根据本地资料解释享元模式的内部状态和外部状态是什么");
     expect(prompt).toContain("本地知识库参考");
-    expect(prompt).toContain("联网搜索已开启，但本轮没有可用外部来源");
+    expect(prompt).not.toContain("联网搜索已开启，但本轮没有可用外部来源");
     expect(prompt).toContain("patterns.md");
     expect(prompt).toContain("内部状态适合共享，外部状态由调用方按场景传入。");
   }, 10_000);
@@ -2181,7 +2175,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "豆包和 DeepSeek 谁更好用",
+      query: "豆包和 DeepSeek 谁更好用，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2207,7 +2201,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
-    await user.type(getComposerInput(), "豆包和 DeepSeek 谁更好用");
+    await user.type(getComposerInput(), "豆包和 DeepSeek 谁更好用，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2230,7 +2224,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "豆包和 DeepSeek 谁更好用",
+      query: "豆包和 DeepSeek 谁更好用，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2256,7 +2250,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
-    await user.type(getComposerInput(), "豆包和 DeepSeek 谁更好用");
+    await user.type(getComposerInput(), "豆包和 DeepSeek 谁更好用，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2280,7 +2274,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "豆包是谁家的",
+      query: "豆包是谁家的，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2306,7 +2300,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
-    await user.type(getComposerInput(), "豆包是谁家的");
+    await user.type(getComposerInput(), "豆包是谁家的，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2329,7 +2323,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "豆包是什么",
+      query: "豆包是什么，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2360,7 +2354,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
-    await user.type(getComposerInput(), "豆包是什么");
+    await user.type(getComposerInput(), "豆包是什么，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2483,7 +2477,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "豆包是什么",
+      query: "豆包是什么，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2513,7 +2507,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "开启联网搜索" }));
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
-    await user.type(getComposerInput(), "豆包是什么");
+    await user.type(getComposerInput(), "豆包是什么，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2537,7 +2531,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "享元模式的内部状态和外部状态是什么",
+      query: "文档中解释享元模式的内部状态和外部状态是什么，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2552,7 +2546,7 @@ describe("App", () => {
       ]
     });
     searchLocalKnowledgeMock.mockResolvedValueOnce({
-      query: "享元模式的内部状态和外部状态是什么",
+      query: "文档中解释享元模式的内部状态和外部状态是什么，请联网搜索",
       summary: "Local knowledge search found 1 matching passage across 3 indexed documents.",
       match_count: 1,
       indexed_document_count: 3,
@@ -2578,7 +2572,7 @@ describe("App", () => {
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
 
-    await user.type(getComposerInput(), "享元模式的内部状态和外部状态是什么");
+    await user.type(getComposerInput(), "文档中解释享元模式的内部状态和外部状态是什么，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2586,10 +2580,10 @@ describe("App", () => {
     });
 
     const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
-    expect(searchNetworkMock).toHaveBeenCalledWith("享元模式的内部状态和外部状态是什么", expect.objectContaining({
+    expect(searchNetworkMock).toHaveBeenCalledWith("文档中解释享元模式的内部状态和外部状态是什么，请联网搜索", expect.objectContaining({
       providerLabel: ""
     }));
-    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith("享元模式的内部状态和外部状态是什么");
+    expect(searchLocalKnowledgeMock).toHaveBeenCalledWith("文档中解释享元模式的内部状态和外部状态是什么，请联网搜索");
     expect(prompt).toContain("联网搜索参考");
     expect(prompt).toContain("本地知识库参考");
     expect(prompt).toContain("patterns.md");
@@ -2606,7 +2600,7 @@ describe("App", () => {
       models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
     });
     searchNetworkMock.mockResolvedValueOnce({
-      query: "解释享元模式",
+      query: "文档中解释享元模式，请联网搜索",
       provider: "OpenCow 默认搜索",
       effective_provider: "OpenCow 默认搜索",
       used_fallback: false,
@@ -2621,7 +2615,7 @@ describe("App", () => {
       ]
     });
     searchLocalKnowledgeMock.mockResolvedValueOnce({
-      query: "解释享元模式",
+      query: "文档中解释享元模式，请联网搜索",
       summary: "Local knowledge search found 2 matching passages across 4 indexed documents.",
       match_count: 2,
       indexed_document_count: 4,
@@ -2653,7 +2647,7 @@ describe("App", () => {
     await screen.findByRole("button", { name: "关闭联网搜索" });
     await user.click(screen.getByRole("button", { name: "会话" }));
 
-    await user.type(getComposerInput(), "解释享元模式");
+    await user.type(getComposerInput(), "文档中解释享元模式，请联网搜索");
     await user.click(getComposerSendButton());
 
     await waitFor(() => {
@@ -2734,10 +2728,10 @@ describe("App", () => {
     });
 
     const prompt = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
+    expect(searchNetworkMock).not.toHaveBeenCalled();
     expect(prompt).toContain("本地知识库参考");
     expect(prompt).not.toContain("联网搜索参考");
     expect(prompt).not.toContain("联网搜索已开启，但本轮没有可用外部来源");
-    expect(prompt).toContain("本轮联网搜索已执行，但与本地知识命中重复");
     expect(within(getConversationRegion()).getByText("1 条信息引用")).toBeInTheDocument();
 
     await user.click(within(getConversationRegion()).getByRole("button", { name: "展开信息引用" }));
@@ -2841,6 +2835,10 @@ describe("App", () => {
         }
       ]
     });
+    chatWithOllamaModelMock.mockResolvedValueOnce({
+      model: "qwen3.6:35b",
+      message: "这是基于联网资料整理的豆包说明。"
+    });
 
     render(<App />);
 
@@ -2857,8 +2855,10 @@ describe("App", () => {
       expect(searchNetworkMock).toHaveBeenCalledWith("帮我上网搜索豆包", expect.objectContaining({
         providerLabel: ""
       }));
-      expect(within(getConversationRegion()).getByText("联网搜索结果")).toBeInTheDocument();
-      expect(within(getConversationRegion()).getByText(/已参考 1 条联网资料/)).toBeInTheDocument();
+      expect(chatWithOllamaModelMock).toHaveBeenCalledWith(expect.objectContaining({
+        message: expect.stringContaining("联网搜索参考")
+      }));
+      expect(within(getConversationRegion()).getByText("这是基于联网资料整理的豆包说明。")).toBeInTheDocument();
       expect(within(getConversationRegion()).queryByText(/来源：豆包/)).not.toBeInTheDocument();
     });
 

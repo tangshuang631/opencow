@@ -72,7 +72,7 @@ describe("App model selection", () => {
       model: "qwen3.6:35b",
       message: expect.stringContaining("解释一下享元模式")
     }));
-    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("本地知识库参考");
+    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("输出协议");
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].requestId).toMatch(/^local-model-chat-/);
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].signal).toBeInstanceOf(AbortSignal);
   });
@@ -109,6 +109,6 @@ describe("App model selection", () => {
       model: "gemma4:26b",
       message: expect.stringContaining("解释一下享元模式")
     }));
-    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("本地知识库参考");
+    expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("输出协议");
   });
 });

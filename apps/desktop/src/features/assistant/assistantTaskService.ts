@@ -1,4 +1,5 @@
 import { planLocalAssistantTask, resolveOpencowSelfRepairTargetDescriptor } from "@opencow/openclaw-adapter/browser";
+import { classifyIntent, type IntentDecision } from "@opencow/cowcore";
 import { createPermissionEscalationRequest } from "@opencow/permission-engine";
 import { guardExecutionPlan } from "@opencow/safety-engine";
 import { planControlledCommand } from "@opencow/shell-runtime";
@@ -446,7 +447,7 @@ type ReadonlyAssistantTaskPlan =
       auditDetail: string;
     };
 
-export type AssistantTaskPlanResult =
+type AssistantTaskPlanResultBase =
   | ReadonlyAssistantTaskPlan
   | {
       kind: "permission-request";
@@ -477,6 +478,11 @@ export type AssistantTaskPlanResult =
       queuedExecutionAuditDetail?: string;
       queuedMessage?: string;
     };
+
+export type AssistantTaskPlanResult = AssistantTaskPlanResultBase & {
+  /** CowCore route metadata; execution remains behind the legacy adapter until WP2. */
+  intent?: IntentDecision;
+};
 
 export type AssistantTaskExecutionResult = {
   resultTitle: string;
@@ -554,10 +560,27 @@ async function awaitAbortable<T>(
 }
 
 export function planAssistantTask(message: string, permissionMode: PermissionMode): AssistantTaskPlanResult {
-  return planLocalAssistantTask({
+  const intent = classifyIntent({ message });
+  const plan = planLocalAssistantTask({
     message,
     permissionMode
   });
+
+  // The legacy adapter still owns typed workspace plans, but a fresh-data
+  // question must finish through the local model so it can synthesize,
+  // validate, and present the answer instead of stopping at a source list.
+  if (intent.kind === "fresh-research" && plan.kind === "network-search-guidance") {
+    return {
+      kind: "local-model-chat",
+      title: "联网检索与本地回答",
+      summary: message,
+      auditSummary: "CowCore routed a fresh-data intent through network retrieval and the local Ollama answer loop.",
+      auditDetail: `Fresh-data intent: ${message}`,
+      intent
+    };
+  }
+
+  return { ...plan, intent };
 }
 
 export async function executeAssistantTask(

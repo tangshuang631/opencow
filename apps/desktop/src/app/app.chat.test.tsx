@@ -147,8 +147,8 @@ describe("App chat fallback", () => {
 
     const requestMessage = chatWithOllamaModelMock.mock.calls.at(-1)?.[0]?.message ?? "";
     expect(requestMessage).not.toContain("只根据下面明确给出的证据作答");
-    expect(requestMessage).toContain("通用知识题");
-    expect(requestMessage).toContain("可以优先基于你已有的稳定知识直接回答");
+    expect(requestMessage).toContain("普通对话任务");
+    expect(requestMessage).not.toContain("联网搜索参考");
   });
 
   it("passes submitted image attachments into local model context", async () => {

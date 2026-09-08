@@ -87,6 +87,7 @@ pub fn run() {
             workspace::knowledge_library_select,
             workspace::knowledge_inventory,
             workspace::network_search,
+            workspace::weather_search,
             workspace::local_knowledge_search,
             workspace::local_mcp_plugin_inspect,
             workspace::local_mcp_plugin_install,

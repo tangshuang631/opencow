@@ -20,6 +20,7 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatAttachment, WorkbenchState } from "../workbenchState";
+import { normalizeSearchGroundedAnswer } from "../../assistant/answerPresentation";
 import {
   getLocalizedPermissionReason,
   getVisibleLocalTaskFailureActionLabel,
@@ -1345,7 +1346,7 @@ export function MainConversation({
                 {isUser ? (
                   <CollapsibleWorkbenchText text={getVisibleSummary(entry)} isUser={isUser} />
                 ) : (
-                  renderAssistantSummary(getVisibleSummary(entry))
+                  renderAssistantSummary(normalizeSearchGroundedAnswer(getVisibleSummary(entry)))
                 )}
                 {hasKnowledgeDetails ? (
                   <InformationReferences
@@ -1452,7 +1453,7 @@ export function MainConversation({
               ) : (
                 <div className="thinking-summary-group">
                   {pendingTask.streamingSummary?.trim() ? (
-                    renderAssistantSummary(getPendingAssistantSummaryText(pendingTask))
+                    renderAssistantSummary(normalizeSearchGroundedAnswer(getPendingAssistantSummaryText(pendingTask)))
                   ) : (
                     <p className="message-detail">正在准备回复…</p>
                   )}
