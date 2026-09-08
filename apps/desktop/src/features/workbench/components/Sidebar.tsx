@@ -94,7 +94,7 @@ export function Sidebar({
 }: SidebarProps) {
   const safeRecentConversations = recentConversations ?? [];
   const normalizedSearchQuery = conversationSearchQuery.trim().toLowerCase();
-  const shouldShowConversationDropdown = activeView === "chat" && (isConversationSearchOpen || isConversationDropdownOpen);
+  const shouldShowConversationDropdown = true;
   const filteredRecentConversations = normalizedSearchQuery
     ? safeRecentConversations.filter((item) =>
       `${item.title} ${item.summary}`.toLowerCase().includes(normalizedSearchQuery)
@@ -180,6 +180,9 @@ export function Sidebar({
                   onChange={(event) => onConversationSearchQueryChange(event.target.value)}
                 />
               </label>
+            ) : null}
+            {safeRecentConversations.length > 0 || isConversationSearchOpen ? (
+              <div className="sidebar-conversation-history-label">最近</div>
             ) : null}
             <div className="sidebar-conversation-list">
               {visibleRecentConversations.map((item) => (

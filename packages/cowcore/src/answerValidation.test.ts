@@ -15,4 +15,19 @@ describe("assistant answer contract", () => {
     const ordinary = classifyIntent({ message: "MCP 是什么" });
     expect(validateAssistantAnswer({ content: "MCP 是连接模型和外部系统的协议。", intent: ordinary, hasEvidence: false }).ok).toBe(true);
   });
+
+  it("retries an unsupported evidence refusal when both comparison sides are covered", () => {
+    const intent = classifyIntent({ message: "LangGraph 和 LangChain 的区别" });
+    const result = validateAssistantAnswer({
+      content: "现有来源不足以确认两者的具体区别。",
+      intent,
+      hasEvidence: true,
+      evidenceCoverage: "complete"
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "unsupported-evidence-refusal"
+    });
+  });
 });

@@ -815,13 +815,39 @@ function extractComparisonSubjects(message: string) {
     .map((marker) => rightRaw.search(new RegExp(`\\s*${marker}`, "i")))
     .filter((index) => index > 0)
     .sort((a, b) => a - b)[0];
-  const right = rightRaw.slice(0, rightBoundary ?? rightRaw.length).trim();
+  const right = rightRaw
+    .slice(0, rightBoundary ?? rightRaw.length)
+    .replace(/(?:的|之间)\s*$/u, "")
+    .trim();
 
   if (!left || !right) {
     return null;
   }
 
   return { left, right };
+}
+
+function assessAnswerEvidenceCoverage(
+  message: string,
+  visibleSources: WorkbenchState["sources"]["items"]
+): "none" | "partial" | "complete" | undefined {
+  const comparisonSubjects = extractComparisonSubjects(message);
+
+  if (!comparisonSubjects) {
+    return undefined;
+  }
+
+  const leftMatched = visibleSources.some((source) => sourceMentionsTerm(source, comparisonSubjects.left));
+  const rightMatched = visibleSources.some((source) => sourceMentionsTerm(source, comparisonSubjects.right));
+  if (!leftMatched && !rightMatched) return "none";
+  if (!leftMatched || !rightMatched) return "partial";
+
+  const hasSubstantiveEvidence = visibleSources.some((source) => {
+    const text = [source.summary ?? "", ...(source.factSnippets ?? [])].join(" ").trim();
+    return text.length >= 24;
+  });
+
+  return hasSubstantiveEvidence ? "complete" : "partial";
 }
 
 function looksLikeOwnershipQuestion(message: string) {
@@ -849,7 +875,7 @@ function createEvidenceGuardLines(
   visibleSources: WorkbenchState["sources"]["items"]
 ) {
   const lines = [
-    "回答要求：只根据下面明确给出的证据作答；证据没有写到的事实不要自行补全。"
+    "回答要求：只根据下面明确给出的证据作答；来源 summary 和事实片段都是可引用的证据摘录，不是空白元数据；证据没有写到的事实不要自行补全。"
   ];
   const comparisonSubjects = extractComparisonSubjects(message);
 
@@ -1725,7 +1751,8 @@ async function executeLocalModelChatTask(payload: {
       // citation tails must not force a second model call or leak into the UI.
       content: normalizeSearchGroundedAnswer(value.message),
       intent,
-      hasEvidence: visibleSources.length > 0
+      hasEvidence: visibleSources.length > 0,
+      evidenceCoverage: assessAnswerEvidenceCoverage(payload.message, visibleSources)
     }),
     signal: payload.signal
   });

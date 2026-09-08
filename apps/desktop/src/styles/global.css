@@ -235,19 +235,22 @@ input {
 }
 
 .sidebar-conversation-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 20;
+  position: static;
   display: grid;
-  gap: 6px;
-  padding: 6px 4px 4px;
-  border: 1px solid #e7e7e8;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 10px 24px rgba(31, 37, 43, 0.08);
-  backdrop-filter: blur(16px);
+  gap: 4px;
+  padding: 8px 2px 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.sidebar-conversation-history-label {
+  padding: 8px 8px 2px;
+  color: #8a8d91;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .sidebar-conversation-list {
@@ -266,10 +269,10 @@ input {
 .sidebar-conversation-card-main {
   display: block;
   min-width: 0;
-  min-height: 32px;
-  padding: 7px 10px;
+  min-height: 34px;
+  padding: 7px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: #4b4f54;
   cursor: pointer;
@@ -301,6 +304,13 @@ input {
   background: transparent;
   color: #73808a;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.sidebar-conversation-card:hover .sidebar-conversation-card-delete,
+.sidebar-conversation-card:focus-within .sidebar-conversation-card-delete {
+  opacity: 1;
 }
 
 .sidebar-conversation-card-delete:hover {

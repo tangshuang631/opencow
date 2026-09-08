@@ -6,6 +6,7 @@ export function validateAssistantAnswer(input: {
   content: string;
   intent: IntentDecision;
   hasEvidence: boolean;
+  evidenceCoverage?: "none" | "partial" | "complete";
 }): ReActValidation {
   const content = input.content.trim();
   if (!content) {
@@ -25,6 +26,14 @@ export function validateAssistantAnswer(input: {
       ok: false,
       reason: "missing-network-evidence",
       feedback: "The request requires fresh external evidence. Do not claim a current result without a usable network source."
+    };
+  }
+
+  if (input.evidenceCoverage === "complete" && /(?:现有来源|当前来源|资料|证据).{0,12}(?:不足|无法确认|不能确认|不够|缺少)/i.test(content)) {
+    return {
+      ok: false,
+      reason: "unsupported-evidence-refusal",
+      feedback: "Both comparison subjects are covered by usable evidence. Give the supported differences and conclusion directly; mention only the specific facts that remain uncertain instead of refusing the whole answer."
     };
   }
 

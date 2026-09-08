@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { App } from "./App";
+import { App, createLocalModelChatMessage } from "./App";
 
 const { chatWithOllamaModelMock, loadOllamaOverviewMock, searchNetworkMock } = vi.hoisted(() => ({
   chatWithOllamaModelMock: vi.fn(),
@@ -96,6 +96,80 @@ describe("App chat search context", () => {
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).not.toContain("联网搜索参考");
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).not.toContain("https://example.test/flyweight");
     expect(chatWithOllamaModelMock.mock.calls[0]?.[0].message).toContain("软件体系设计的享元模式易懂的解释,以及它的内部状态和外部状态是什么");
+  });
+
+  it("normalizes comparison grammar so both retrieved subjects count as covered evidence", () => {
+    const message = createLocalModelChatMessage({
+      message: "LangGraph 和 LangChain 的区别",
+      searchEnabled: true,
+      networkSearchRequested: true,
+      searchProviderLabel: "OpenCow 默认搜索",
+      sources: [
+        {
+          title: "LangGraph 与 LangChain 的关系与定位",
+          url: "https://example.test/langchain",
+          provider: "OpenCow 默认搜索",
+          sourceLabel: "官方文档",
+          query: "LangGraph 和 LangChain 的区别",
+          summary: "LangGraph 负责有状态图编排，LangChain 提供模型调用与组件基础设施。"
+        }
+      ]
+    });
+
+    expect(message).toContain("已找到与「LangGraph」相关的来源");
+    expect(message).toContain("已找到与「LangChain」相关的来源");
+    expect(message).toContain("两个比较对象都有来源覆盖时，必须先比较来源中明确出现的事实");
+    expect(message).not.toContain("证据覆盖不完整");
+  });
+
+  it("retries a comparison answer when the model refuses despite complete retrieved evidence", async () => {
+    searchNetworkMock.mockResolvedValueOnce({
+      query: "LangGraph 和 LangChain 的区别，请联网搜索",
+      provider: "OpenCow 默认搜索",
+      effective_provider: "OpenCow 默认搜索",
+      used_fallback: false,
+      fallback_reason: null,
+      items: [
+        {
+          title: "LangGraph 与 LangChain 的关系与定位",
+          url: "https://example.test/langchain",
+          source_label: "官方文档",
+          summary: "LangGraph 负责有状态图编排，LangChain 提供模型调用与组件基础设施。"
+        }
+      ]
+    });
+    loadOllamaOverviewMock.mockResolvedValueOnce({
+      reachable: true,
+      endpoint: "http://127.0.0.1:11434",
+      selectedModel: "qwen3.6:35b",
+      diagnostic: "",
+      models: [{ name: "qwen3.6:35b", sizeLabel: "20 GB" }]
+    });
+    chatWithOllamaModelMock
+      .mockResolvedValueOnce({
+        model: "qwen3.6:35b",
+        message: "现有来源不足以确认两者的具体区别。"
+      })
+      .mockResolvedValueOnce({
+        model: "qwen3.6:35b",
+        message: "LangChain 更偏向组件与线性链式编排；LangGraph 更偏向有状态、可循环的图结构工作流。"
+      });
+
+    render(<App />);
+    await screen.findByRole("button", { name: "选择模型：qwen3.6:35b" });
+    fireEvent.change(screen.getByRole("textbox", { name: "输入任务" }), {
+      target: { value: "LangGraph 和 LangChain 的区别，请联网搜索" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    await waitFor(() => {
+      expect(chatWithOllamaModelMock).toHaveBeenCalled();
+    }, { timeout: 2000 });
+    await waitFor(() => {
+      expect(screen.getByText(/LangChain 更偏向组件与线性链式编排/)).toBeInTheDocument();
+    });
+    expect(chatWithOllamaModelMock).toHaveBeenCalledTimes(2);
+    expect(chatWithOllamaModelMock.mock.calls[1]?.[0]?.message).toContain("自检反馈");
   });
 
   it("records selected Ollama model and bounded search context in the audit log", async () => {

@@ -1817,7 +1817,7 @@ describe("Workbench", () => {
     expect(screen.getByRole("button", { name: "会话" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("replaces separate new-conversation and recent-history buttons with a collapsible conversation cluster", async () => {
+  it("keeps the conversation cluster compact while showing three recent conversations by default", async () => {
     const state = {
       ...createInitialWorkbenchState(),
       history: {
@@ -1846,7 +1846,7 @@ describe("Workbench", () => {
     expect(screen.getByRole("button", { name: "搜索历史会话" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "创建新会话" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "归档当前会话" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /打开会话：最近会话 [1-7]/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /打开会话：最近会话 [1-7]/ }).length).toBe(3);
 
     await click(screen.getByRole("button", { name: "会话" }));
 
@@ -1890,7 +1890,7 @@ describe("Workbench", () => {
     expect(onRestoreRecentConversation).toHaveBeenCalledWith("recent-restore");
   });
 
-  it("toggles the recent conversation dropdown from the conversation row", async () => {
+  it("keeps recent conversations visible when the conversation row is toggled", async () => {
     const state = {
       ...createInitialWorkbenchState(),
       history: {
@@ -1909,7 +1909,7 @@ describe("Workbench", () => {
 
     render(<Workbench {...createWorkbenchProps(state)} />);
 
-    expect(screen.queryByRole("button", { name: "打开会话：可收起的历史会话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开会话：可收起的历史会话" })).toBeInTheDocument();
 
     await click(screen.getByRole("button", { name: "会话" }));
 
@@ -1917,7 +1917,7 @@ describe("Workbench", () => {
 
     await click(screen.getByRole("button", { name: "会话" }));
 
-    expect(screen.queryByRole("button", { name: "打开会话：可收起的历史会话" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开会话：可收起的历史会话" })).toBeInTheDocument();
   });
 
   it("shows the temporary blank conversation inside the draft conversation dropdown", async () => {
